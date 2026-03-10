@@ -1,0 +1,47 @@
+# ============================================
+# ZORIN Car Wash — .gitignore
+# ============================================
+
+# --- Environment ---
+.env
+.env.local
+.env.*
+!.env.example
+!**/.env.example
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+dist/
+build/
+
+# --- Python ---
+.venv-ocr/
+venv/
+__pycache__/
+*.pyc
+
+# --- Data (runtime, not in repo) ---
+/data/
+/data-backups/
+/src/data/
+/temp/
+/public/reports/*
+!/public/reports/.gitkeep
+
+# --- Build artifacts ---
+*.tsbuildinfo
+
+# --- Logs ---
+*.log
+
+# --- IDE ---
+.vscode/
+.idea/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- USB installer (local only) ---
+/ZORIN-USB/

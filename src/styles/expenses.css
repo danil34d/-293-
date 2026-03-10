@@ -1,0 +1,385 @@
+/* Expenses Page Styles - Clean & Professional */
+
+/* Expenses Container */
+.expenses {
+  padding: 24px;
+  background: #f8fafc;
+  min-height: calc(100vh - 64px);
+}
+
+/* Page Header Section */
+.page-header-section {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.page-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-title-section h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 4px 0;
+}
+
+.page-title-section p {
+  color: #6b7280;
+  margin: 0;
+}
+
+.add-expense-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  text-decoration: none;
+}
+
+.add-expense-btn:hover {
+  background: #2563eb;
+}
+
+/* Alert Styles */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid;
+  margin-bottom: 24px;
+}
+
+.alert.error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.alert-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.alert-description {
+  font-size: 14px;
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 24px;
+  max-width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dashboard Cards */
+.dashboard-card {
+  background: white;
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+  height: 110px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dashboard-card:hover {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.dashboard-card.profit {
+  background: #eff6ff;
+  border-color: #dbeafe;
+}
+
+.dashboard-card.inventory {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+.dashboard-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  min-height: 20px;
+}
+
+.dashboard-card-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.dashboard-card-icon {
+  width: 14px !important;
+  height: 14px !important;
+  flex-shrink: 0;
+}
+
+.dashboard-card-icon.revenue {
+  color: #16a34a;
+}
+
+.dashboard-card-icon.expenses {
+  color: #dc2626;
+}
+
+.dashboard-card-icon.profit {
+  color: #3b82f6;
+}
+
+.dashboard-card-icon.inventory {
+  color: #0284c7;
+}
+
+.dashboard-card-value {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.dashboard-card-value.revenue {
+  color: #16a34a;
+}
+
+.dashboard-card-value.expenses {
+  color: #dc2626;
+}
+
+.dashboard-card-value.profit.positive {
+  color: #3b82f6;
+}
+
+.dashboard-card-value.profit.negative {
+  color: #dc2626;
+}
+
+.dashboard-card-value.inventory {
+  color: #0284c7;
+}
+
+.dashboard-card-description {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: auto;
+  padding-bottom: 4px;
+}
+
+/* Expenses Table Card */
+.expenses-table-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.expenses-table-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.expenses-table-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+/* Table Styles */
+.expenses-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.expenses-table-header-row {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.expenses-table-header th {
+  padding: 12px 16px;
+  font-weight: 600;
+  color: #374151;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: left;
+}
+
+.expenses-table-header th.text-right {
+  text-align: right;
+}
+
+.expenses-table-row {
+  border-bottom: 1px solid #f3f4f6;
+  transition: background-color 0.2s ease;
+}
+
+.expenses-table-row:hover {
+  background-color: #f9fafb;
+}
+
+.expenses-table-row:last-child {
+  border-bottom: none;
+}
+
+.expenses-table-cell {
+  padding: 12px 16px;
+  vertical-align: middle;
+  border: none;
+}
+
+.expenses-table-cell.text-right {
+  text-align: right;
+}
+
+.expenses-table-cell.font-medium {
+  font-weight: 500;
+}
+
+/* Expense Description Cell */
+.expense-description {
+  font-weight: 500;
+  color: #1f2937;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+/* Category Badge */
+.category-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Expense Details */
+.expense-details {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+/* Amount Display */
+.amount-display {
+  font-weight: 600;
+  color: #dc2626;
+  font-size: 14px;
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.action-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.action-btn:hover {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.action-btn.danger:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-icon {
+  margin-bottom: 16px;
+  color: #d1d5db;
+}
+
+.empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 8px;
+}
+
+.empty-subtitle {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.empty-action-btn {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 14px;
+  padding: 8px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: white;
+  transition: all 0.2s ease;
+  display: inline-block;
+}
+
+.empty-action-btn:hover {
+  background: #eff6ff;
+  border-color: #3b82f6;
+}

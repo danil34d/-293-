@@ -1,0 +1,157 @@
+@import '../styles/zorin-sidebar.css';
+@import '../styles/zorin-dashboard.css';
+@import '../styles/zorin-workstation.css';
+@import '../styles/wash-log.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: Arial, Helvetica, sans-serif; /* Overridden by tailwind config and layout */
+}
+
+@layer base {
+  :root {
+    --background: 220 20% 96%; /* Light grayish blue */
+    --foreground: 220 10% 20%; /* Dark grayish blue for text */
+
+    --card: 0 0% 100%; /* White cards for content areas */
+    --card-foreground: 220 10% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 10% 20%;
+
+    --primary: 217 91% 60%; /* Bright blue */
+    --primary-foreground: 0 0% 100%; /* White text on primary */
+
+    --secondary: 220 15% 90%; /* Lighter grayish blue for secondary elements */
+    --secondary-foreground: 220 10% 20%;
+
+    --muted: 220 15% 85%; /* Muted grayish blue */
+    --muted-foreground: 220 10% 45%; /* Darker muted text */
+
+    --accent: 220 15% 92%;
+    --accent-foreground: 220 10% 20%;
+
+    --destructive: 350 80% 55%; /* A standard red for destructive actions */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 88%; /* Border color similar to muted */
+    --input: 220 15% 94%; /* Input background */
+    --ring: 217 91% 50%; /* Focus ring based on primary */
+
+    --radius: 0.5rem;
+    
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+
+    /* Sidebar specific colors */
+    --sidebar-background: 222 47% 11%; /* Very dark blue for sidebar */
+    --sidebar-foreground: 210 40% 96%; /* Light text for sidebar */
+    --sidebar-primary: 217 91% 60%; /* Main primary color */
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 47% 16%; /* Slightly lighter dark blue */
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 222 47% 18%; /* Slightly lighter border for sidebar elements */
+    --sidebar-ring: 217 91% 50%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 220 10% 10%; 
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 217 91% 50%;
+    
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+
+    /* Sidebar specific colors for dark mode */
+    --sidebar-background: 222.2 84% 6.9%; /* Darker background for sidebar */
+    --sidebar-foreground: 210 40% 88%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 220 10% 10%;
+    --sidebar-accent: 217.2 32.6% 12.5%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 217.2 32.6% 12.5%;
+    --sidebar-ring: 217 91% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Wash History Table - Scrolling */
+.wash-history-table-wrapper {
+  position: relative;
+}
+
+.wash-history-table-scroll {
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wash-history-table-scroll table {
+  width: 100%;
+  min-width: 700px;
+}
+
+/* Desktop - only vertical scroll */
+@media (min-width: 769px) {
+  .wash-history-table-scroll {
+    overflow-x: hidden;
+  }
+
+  .wash-history-table-scroll table {
+    min-width: 100%;
+  }
+}
+
+/* Mobile - both vertical and horizontal scroll */
+@media (max-width: 768px) {
+  .wash-history-table-scroll {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 500px;
+  }
+
+  .wash-history-table-scroll table {
+    min-width: 700px;
+  }
+}

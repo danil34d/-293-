@@ -1,0 +1,382 @@
+/* AI Reports Page Styles - Clean & Professional */
+
+/* Reports Container */
+.reports {
+  padding: 24px;
+  background: #f8fafc;
+  min-height: calc(100vh - 64px);
+}
+
+/* Page Header Section */
+.page-header-section {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.page-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-title-section h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 4px 0;
+}
+
+.page-title-section p {
+  color: #6b7280;
+  margin: 0;
+}
+
+/* AI Report Generator */
+.ai-report-generator {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Report Configuration Card */
+.report-config-card {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.config-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.config-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.config-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .config-controls {
+    flex-direction: row;
+  }
+}
+
+/* Date Range Picker */
+.date-range-picker {
+  width: 100%;
+  flex: 1;
+}
+
+.date-range-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  font-size: 14px;
+  color: #1f2937;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.date-range-input:hover {
+  border-color: #3b82f6;
+}
+
+.date-range-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.date-range-icon {
+  width: 16px;
+  height: 16px;
+  color: #6b7280;
+}
+
+/* Generate Button */
+.generate-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.generate-button:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.generate-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.generate-button .spinner {
+  width: 16px;
+  height: 16px;
+  animation: spin 1s linear infinite;
+}
+
+.generate-button .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Loading State */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px;
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  color: #3b82f6;
+  margin-bottom: 16px;
+  animation: spin 1s linear infinite;
+}
+
+.loading-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 8px;
+}
+
+.loading-subtitle {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* Alert Styles */
+.alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid;
+}
+
+.alert.error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.alert-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.alert-description {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+/* Report Display Card */
+.report-display-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  animation: fadeIn 0.5s ease-out;
+}
+
+.report-content {
+  padding: 24px;
+}
+
+/* Markdown Content */
+.report-markdown {
+  max-width: none;
+  color: #1f2937;
+  line-height: 1.6;
+}
+
+.report-markdown h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 24px 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.report-markdown h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 20px 0 12px 0;
+}
+
+.report-markdown h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+  margin: 16px 0 8px 0;
+}
+
+.report-markdown p {
+  margin-bottom: 12px;
+}
+
+.report-markdown ul,
+.report-markdown ol {
+  margin: 12px 0;
+  padding-left: 24px;
+}
+
+.report-markdown li {
+  margin-bottom: 4px;
+}
+
+.report-markdown strong {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.report-markdown em {
+  font-style: italic;
+  color: #6b7280;
+}
+
+.report-markdown code {
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.report-markdown blockquote {
+  border-left: 4px solid #3b82f6;
+  padding-left: 16px;
+  margin: 16px 0;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.report-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  background: white;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.report-markdown th {
+  background: #f9fafb;
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.report-markdown td {
+  padding: 12px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.report-markdown tr:last-child td {
+  border-bottom: none;
+}
+
+/* Animations */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .reports {
+    padding: 16px;
+  }
+
+  .page-header-section,
+  .report-config-card {
+    padding: 20px;
+  }
+
+  .config-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .date-range-picker {
+    width: 100%;
+  }
+
+  .generate-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .loading-state {
+    padding: 32px 20px;
+  }
+
+  .report-content {
+    padding: 20px;
+  }
+}

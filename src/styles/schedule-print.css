@@ -1,0 +1,221 @@
+/* Schedule Print Styles */
+
+@media print {
+  /* Hide non-essential elements */
+  .print-hidden,
+  nav,
+  aside,
+  header,
+  footer,
+  .sidebar,
+  [class*="fixed"],
+  [class*="sticky"] {
+    display: none !important;
+  }
+
+  /* Reset page styles */
+  html, body {
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Force full width for all containers */
+  body > div,
+  body > div > div,
+  body > div > div > div,
+  main,
+  [class*="flex-1"] {
+    margin: 0 !important;
+    margin-left: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    position: static !important;
+    left: 0 !important;
+  }
+
+  /* Schedule container */
+  .space-y-4 {
+    padding: 10px !important;
+    background: white !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Table container */
+  .overflow-x-auto {
+    overflow: visible !important;
+    border: 1px solid #000 !important;
+    border-radius: 0 !important;
+  }
+
+  /* Table styles */
+  table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+  }
+
+  /* Table header */
+  thead tr {
+    background: #e5e7eb !important;
+  }
+
+  thead th {
+    border: 1px solid #000 !important;
+    color: #000 !important;
+    font-size: 7pt !important;
+    padding: 2px 3px !important;
+    line-height: 1.1 !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+  }
+
+  /* First two columns (№ and Name) */
+  thead th:first-child {
+    width: 25px !important;
+  }
+
+  thead th:nth-child(2) {
+    width: 100px !important;
+    text-align: left !important;
+  }
+
+  /* Stats columns */
+  thead th:nth-last-child(1),
+  thead th:nth-last-child(2),
+  thead th:nth-last-child(3),
+  thead th:nth-last-child(4) {
+    width: 30px !important;
+  }
+
+  /* Data rows */
+  tbody tr {
+    border: 1px solid #ccc !important;
+    page-break-inside: avoid;
+  }
+
+  tbody td {
+    border: 1px solid #ccc !important;
+    padding: 2px 3px !important;
+    line-height: 1.1 !important;
+    vertical-align: middle !important;
+    font-size: 7pt !important;
+    text-align: center !important;
+  }
+
+  /* First two columns in body */
+  tbody td:first-child {
+    text-align: center !important;
+    font-weight: bold !important;
+  }
+
+  tbody td:nth-child(2) {
+    text-align: left !important;
+    font-weight: normal !important;
+  }
+
+  /* Stats columns in body */
+  tbody td:nth-last-child(1),
+  tbody td:nth-last-child(2),
+  tbody td:nth-last-child(3),
+  tbody td:nth-last-child(4) {
+    font-weight: bold !important;
+    background: #f3f4f6 !important;
+  }
+
+  /* Shift cells - preserve colors */
+  .bg-green-500 {
+    background: #22c55e !important;
+    color: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .bg-blue-500 {
+    background: #3b82f6 !important;
+    color: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Compact shift badges */
+  .rounded {
+    padding: 1px 3px !important;
+    font-size: 6pt !important;
+    font-weight: bold !important;
+    border-radius: 2px !important;
+  }
+
+  /* Weekend highlighting */
+  .bg-gray-50 {
+    background: #f9fafb !important;
+  }
+
+  /* Hide hover effects */
+  .hover\:bg-gray-100:hover {
+    background: transparent !important;
+  }
+
+  /* Legend - make compact */
+  .flex.flex-wrap.gap-4 {
+    display: flex !important;
+    gap: 8px !important;
+    margin-bottom: 5px !important;
+    font-size: 7pt !important;
+  }
+
+  .w-6.h-6 {
+    width: 14px !important;
+    height: 14px !important;
+    font-size: 6pt !important;
+  }
+
+  /* Page settings - landscape for wide table */
+  @page {
+    margin: 0.5cm;
+    size: A4 landscape;
+  }
+
+  /* Print header with date */
+  .flex.items-center.justify-between {
+    margin-bottom: 5px !important;
+  }
+
+  .flex.items-center.gap-4 {
+    justify-content: center !important;
+  }
+
+  .text-xl {
+    font-size: 10pt !important;
+    font-weight: bold !important;
+  }
+
+  /* Hide navigation buttons */
+  button {
+    display: none !important;
+  }
+
+  .text-xl.font-medium {
+    display: block !important;
+    font-size: 10pt !important;
+  }
+}
+
+/* B&W print — active when body.bw-print is set */
+@media print {
+  body.bw-print .bg-green-500,
+  body.bw-print .bg-blue-500,
+  body.bw-print [class*="bg-green"],
+  body.bw-print [class*="bg-blue"],
+  body.bw-print [class*="bg-orange"],
+  body.bw-print [class*="bg-red"],
+  body.bw-print [class*="bg-yellow"] {
+    background: white !important;
+    color: black !important;
+    border: 1px solid #333 !important;
+  }
+}

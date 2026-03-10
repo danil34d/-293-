@@ -1,0 +1,278 @@
+/* Custom Sidebar Styles - Inspired by ZORIN Personal Cabinet */
+:root {
+    --z-primary-color: #0088cc;
+    --z-primary-light: rgba(0, 136, 204, 0.1);
+    --z-primary-dark: #006699;
+    --z-light-bg: #ffffff;
+    --z-light-bg-alt: #f8f9fa;
+    --z-light-text: #2c2c2c;
+    --z-light-text-secondary: #6c757d;
+    --z-success-color: #28a745;
+    --z-warning-color: #ffc107;
+    --z-danger-color: #dc3545;
+    --z-info-color: #17a2b8;
+    --z-border-radius: 12px;
+    --z-transition: all 0.35s cubic-bezier(0.165, 0.84, 0.44, 1);
+    --z-shadow-light: 0 10px 30px rgba(0, 0, 0, 0.08);
+    --z-sidebar-width: 280px;
+    --z-sidebar-collapsed-width: 80px;
+}
+
+/* ZORIN Styled Sidebar */
+.zorin-sidebar {
+    width: var(--z-sidebar-width) !important;
+    background-color: var(--z-light-bg) !important;
+    border-right: 1px solid #e2e8f0 !important;
+    box-shadow: var(--z-shadow-light) !important;
+    transition: var(--z-transition) !important;
+    overflow: hidden !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.zorin-sidebar[data-state="collapsed"] {
+    width: var(--z-sidebar-collapsed-width) !important;
+}
+
+/* Sidebar Header */
+.zorin-sidebar-header {
+    padding: 20px !important;
+    border-bottom: 1px solid var(--z-light-bg-alt) !important;
+    background-color: var(--z-light-bg) !important;
+    flex-shrink: 0 !important;
+}
+
+.zorin-logo-link {
+    display: flex !important;
+    align-items: center !important;
+    text-decoration: none !important;
+    color: var(--z-light-text) !important;
+    font-weight: 700 !important;
+    font-size: 20px !important;
+    transition: var(--z-transition) !important;
+    overflow: hidden !important;
+}
+
+.zorin-logo-link:hover {
+    color: var(--z-primary-color) !important;
+}
+
+.zorin-logo-icon {
+    height: 30px !important;
+    width: 30px !important;
+    margin-right: 10px !important;
+    color: var(--z-primary-color) !important;
+    flex-shrink: 0 !important;
+}
+
+/* Sidebar Navigation */
+.zorin-sidebar-nav {
+    padding: 20px 0 !important;
+    flex-grow: 1 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+.zorin-nav-group {
+    margin-bottom: 10px !important;
+}
+
+.zorin-nav-group-title {
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    color: var(--z-light-text-secondary) !important;
+    padding: 0 20px !important;
+    margin-bottom: 10px !important;
+    border-bottom: 1px solid var(--z-light-bg-alt) !important;
+    padding-bottom: 5px !important;
+}
+
+.zorin-nav-item {
+    margin-bottom: 5px !important;
+}
+
+.zorin-nav-link {
+    display: flex !important;
+    align-items: center !important;
+    padding: 12px 20px !important;
+    color: var(--z-light-text) !important;
+    text-decoration: none !important;
+    border-radius: 8px !important;
+    margin: 0 10px !important;
+    transition: var(--z-transition) !important;
+    position: relative !important;
+    font-weight: 500 !important;
+}
+
+.zorin-nav-link:hover {
+    background-color: var(--z-primary-light) !important;
+    color: var(--z-primary-color) !important;
+    transform: translateX(2px) !important;
+}
+
+.zorin-nav-link.active {
+    background-color: var(--z-primary-light) !important;
+    color: var(--z-primary-color) !important;
+    font-weight: 600 !important;
+}
+
+.zorin-nav-link.active::before {
+    content: '' !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    width: 3px !important;
+    height: 20px !important;
+    background-color: var(--z-primary-color) !important;
+    border-radius: 0 2px 2px 0 !important;
+}
+
+.zorin-nav-icon {
+    margin-right: 15px !important;
+    flex-shrink: 0 !important;
+    width: 20px !important;
+    height: 20px !important;
+}
+
+.zorin-nav-text {
+    flex-grow: 1 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+.zorin-nav-badge {
+    margin-left: auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 20px !important;
+    height: 20px !important;
+    padding: 0 6px !important;
+    border-radius: 10px !important;
+    background-color: var(--z-danger-color) !important;
+    color: white !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+}
+
+/* Sidebar Footer */
+.zorin-sidebar-footer {
+    padding: 20px !important;
+    border-top: 1px solid var(--z-light-bg-alt) !important;
+    margin-top: auto !important;
+    flex-shrink: 0 !important;
+}
+
+.zorin-logout-link {
+    display: flex !important;
+    align-items: center !important;
+    padding: 12px 20px !important;
+    color: var(--z-danger-color) !important;
+    text-decoration: none !important;
+    border-radius: 8px !important;
+    transition: var(--z-transition) !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    border: none !important;
+    background: none !important;
+    width: 100% !important;
+}
+
+.zorin-logout-link:hover {
+    background-color: rgba(220, 53, 69, 0.1) !important;
+    color: var(--z-danger-color) !important;
+    transform: translateX(2px) !important;
+}
+
+/* Collapsed State Styles */
+.zorin-sidebar[data-state="collapsed"] .zorin-logo-text,
+.zorin-sidebar[data-state="collapsed"] .zorin-nav-text,
+.zorin-sidebar[data-state="collapsed"] .zorin-nav-group-title,
+.zorin-sidebar[data-state="collapsed"] .zorin-nav-badge {
+    display: none !important;
+}
+
+.zorin-sidebar[data-state="collapsed"] .zorin-nav-link {
+    margin: 0 10px !important;
+    justify-content: center !important;
+}
+
+.zorin-sidebar[data-state="collapsed"] .zorin-nav-icon {
+    margin: 0 !important;
+}
+
+.zorin-sidebar[data-state="collapsed"] .zorin-logo-link {
+    justify-content: center !important;
+}
+
+.zorin-sidebar[data-state="collapsed"] .zorin-logo-icon {
+    margin: 0 !important;
+}
+
+/* Main Content Adjustments */
+.zorin-main-content {
+    transition: var(--z-transition) !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .zorin-sidebar {
+        position: fixed !important;
+        z-index: 1000 !important;
+        height: 100vh !important;
+        transform: translateX(-100%) !important;
+    }
+
+    .zorin-sidebar[data-state="open"] {
+        transform: translateX(0) !important;
+    }
+
+    .zorin-main-content {
+        margin-left: 0 !important;
+    }
+}
+
+/* Animation for hover effects */
+.zorin-nav-link {
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.zorin-nav-link::after {
+    content: '' !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: -100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent) !important;
+    transition: left 0.5s !important;
+}
+
+.zorin-nav-link:hover::after {
+    left: 100% !important;
+}
+
+/* Custom Scrollbar */
+.zorin-sidebar ::-webkit-scrollbar {
+    width: 6px !important;
+}
+
+.zorin-sidebar ::-webkit-scrollbar-track {
+    background: var(--z-light-bg-alt) !important;
+}
+
+.zorin-sidebar ::-webkit-scrollbar-thumb {
+    background: #cbd5e1 !important;
+    border-radius: 3px !important;
+}
+
+.zorin-sidebar ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8 !important;
+}

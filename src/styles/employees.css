@@ -1,0 +1,494 @@
+/* Employees Page Styles - Clean & Professional */
+
+/* Employees Container */
+.employees {
+  padding: 24px;
+  background: #f8fafc;
+  min-height: calc(100vh - 64px);
+}
+
+/* Page Header Section */
+.page-header-section {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.page-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-title-section h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 4px 0;
+}
+
+.page-title-section p {
+  color: #6b7280;
+  margin: 0;
+}
+
+.add-employee-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  text-decoration: none;
+}
+
+.add-employee-btn:hover {
+  background: #2563eb;
+}
+
+/* Alert Styles */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid;
+  margin-bottom: 24px;
+}
+
+.alert.error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.alert-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.alert-description {
+  font-size: 14px;
+}
+
+/* Table Card */
+.employees-table-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+/* Table Styles */
+.employees-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.employees-table-header {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.employees-table-header th {
+  padding: 12px 16px;
+  font-weight: 600;
+  color: #374151;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: left;
+}
+
+.employees-table-header th.text-right {
+  text-align: right;
+}
+
+.employees-table-header th.text-center {
+  text-align: center;
+}
+
+.employees-table-row {
+  border-bottom: 1px solid #f3f4f6;
+  transition: background-color 0.2s ease;
+}
+
+.employees-table-row:hover {
+  background-color: #f9fafb;
+}
+
+.employees-table-row:last-child {
+  border-bottom: none;
+}
+
+.employees-table-cell {
+  padding: 12px 16px;
+  vertical-align: middle;
+  border: none;
+}
+
+.employees-table-cell.text-right {
+  text-align: right;
+}
+
+.employees-table-cell.text-center {
+  text-align: center;
+}
+
+/* Employee Name Cell */
+.employee-name {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+/* Employee Username Cell */
+.employee-username {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* Salary Scheme Badge */
+.salary-scheme-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #dbeafe;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Payment Details */
+.payment-details {
+  color: #6b7280;
+  font-size: 14px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Has Car Badge */
+.has-car-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.has-car-badge.yes {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #dcfce7;
+}
+
+.has-car-badge.no {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.action-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-btn:hover {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.action-btn.danger:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-icon {
+  margin-bottom: 16px;
+  color: #d1d5db;
+}
+
+.empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 8px;
+}
+
+.empty-subtitle {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.empty-action-btn {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 14px;
+  padding: 8px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: white;
+  transition: all 0.2s ease;
+  display: inline-block;
+}
+
+.empty-action-btn:hover {
+  background: #eff6ff;
+  border-color: #3b82f6;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .employees {
+    padding: 12px;
+  }
+
+  .page-header-section {
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+
+  .page-header-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .page-title-section h1 {
+    font-size: 20px;
+    margin-bottom: 4px;
+  }
+
+  .page-title-section p {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .add-employee-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 16px;
+    font-size: 15px;
+  }
+
+  /* Card view for mobile instead of table */
+  .employees-table-card {
+    padding: 0;
+    overflow: visible;
+  }
+
+  .employees-table {
+    display: block;
+  }
+
+  .employees-table-header {
+    display: none;
+  }
+
+  .employees-table tbody {
+    display: block;
+  }
+
+  .employees-table-row {
+    display: block;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  .employees-table-row:hover {
+    background: white;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .employees-table-cell {
+    display: block;
+    padding: 0;
+    margin-bottom: 10px;
+    border: none;
+    text-align: left !important;
+  }
+
+  .employees-table-cell:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Add labels before each cell */
+  .employees-table-cell::before {
+    content: attr(data-label);
+    display: block;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #6b7280;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+
+  /* Employee name - first cell */
+  .employees-table-cell:nth-child(1) {
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+
+  .employees-table-cell:nth-child(1)::before {
+    content: '👤 Сотрудник';
+  }
+
+  .employee-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 4px;
+  }
+
+  /* Username cell */
+  .employees-table-cell:nth-child(2)::before {
+    content: '🔑 Логин';
+  }
+
+  .employee-username {
+    font-size: 14px;
+    font-family: monospace;
+    color: #6b7280;
+  }
+
+  /* Salary scheme cell */
+  .employees-table-cell:nth-child(3)::before {
+    content: '💰 Схема зарплаты';
+  }
+
+  .salary-scheme-badge {
+    font-size: 12px;
+    padding: 6px 10px;
+    display: inline-flex;
+  }
+
+  /* Payment details cell */
+  .employees-table-cell:nth-child(4)::before {
+    content: '💳 Платежные данные';
+  }
+
+  .payment-details {
+    font-size: 13px;
+    max-width: 100%;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  /* Has car cell */
+  .employees-table-cell:nth-child(5)::before {
+    content: '🚗 Наличие авто';
+  }
+
+  .has-car-badge {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+
+  /* Actions cell */
+  .employees-table-cell:nth-child(6) {
+    border-top: 2px solid #e5e7eb;
+    padding-top: 12px;
+    margin-top: 4px;
+  }
+
+  .employees-table-cell:nth-child(6)::before {
+    content: '⚙️ Действия';
+  }
+
+  .action-buttons {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .action-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Alert adjustments */
+  .alert {
+    padding: 12px;
+    margin-bottom: 12px;
+    border-radius: 8px;
+  }
+
+  .alert-title {
+    font-size: 13px;
+  }
+
+  .alert-description {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  /* Empty state adjustments */
+  .empty-state {
+    padding: 40px 16px;
+  }
+
+  .empty-title {
+    font-size: 16px;
+  }
+
+  .empty-subtitle {
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+
+  .empty-action-btn {
+    font-size: 13px;
+    padding: 10px 16px;
+  }
+}

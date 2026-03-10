@@ -1,0 +1,714 @@
+/* ZORIN Workstation Styles - Modern & Professional */
+
+/* Workstation Container */
+.zorin-workstation {
+  padding: 24px !important;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  min-height: calc(100vh - 64px) !important;
+}
+
+/* Shift Control Card */
+.zorin-shift-card {
+  background: white !important;
+  border-radius: 16px !important;
+  padding: 32px !important;
+  box-shadow: 0 4px 20px rgba(0, 136, 204, 0.08) !important;
+  border: 1px solid #e2e8f0 !important;
+  transition: all 0.3s ease !important;
+  margin-bottom: 24px !important;
+}
+
+.zorin-shift-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 136, 204, 0.12) !important;
+}
+
+.zorin-shift-title {
+  font-size: 24px !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  margin-bottom: 24px !important;
+  background: linear-gradient(135deg, #0088cc 0%, #006699 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+.zorin-shift-controls {
+  display: flex !important;
+  align-items: center !important;
+  gap: 16px !important;
+  flex-wrap: wrap !important;
+}
+
+.zorin-shift-btn {
+  padding: 12px 24px !important;
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+  font-size: 16px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border: none !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.zorin-shift-btn.start {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  color: white !important;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4) !important;
+}
+
+.zorin-shift-btn.start:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6) !important;
+}
+
+.zorin-shift-btn.end {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  color: white !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4) !important;
+}
+
+.zorin-shift-btn.end:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6) !important;
+}
+
+.zorin-shift-status {
+  padding: 8px 20px !important;
+  border-radius: 20px !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  border: none !important;
+}
+
+.zorin-shift-status.active {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3) !important;
+}
+
+.zorin-shift-status.inactive {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3) !important;
+}
+
+/* Wash Registration Card */
+.zorin-registration-card {
+  background: white !important;
+  border-radius: 16px !important;
+  padding: 32px !important;
+  box-shadow: 0 4px 20px rgba(0, 136, 204, 0.08) !important;
+  border: 1px solid #e2e8f0 !important;
+  transition: all 0.3s ease !important;
+  animation: zorin-slideInUp 0.6s ease-out !important;
+}
+
+.zorin-registration-title {
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  margin-bottom: 8px !important;
+}
+
+.zorin-registration-description {
+  font-size: 14px !important;
+  color: #64748b !important;
+  line-height: 1.6 !important;
+  margin-bottom: 24px !important;
+}
+
+/* Form Sections */
+.zorin-form-section {
+  background: #f8fafc !important;
+  border-radius: 12px !important;
+  padding: 24px !important;
+  margin-bottom: 24px !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+.zorin-form-grid {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 24px !important;
+}
+
+@media (min-width: 768px) {
+  .zorin-form-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+.zorin-form-label {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #374151 !important;
+  margin-bottom: 12px !important;
+  display: block !important;
+}
+
+.zorin-input {
+  width: 100% !important;
+  padding: 12px 16px !important;
+  border: 2px solid #e5e7eb !important;
+  border-radius: 10px !important;
+  font-size: 16px !important;
+  transition: all 0.3s ease !important;
+  background: white !important;
+}
+
+.zorin-input:focus {
+  outline: none !important;
+  border-color: #0088cc !important;
+  box-shadow: 0 0 0 3px rgba(0, 136, 204, 0.1) !important;
+}
+
+.zorin-button {
+  padding: 12px 24px !important;
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  font-size: 16px !important;
+  transition: all 0.3s ease !important;
+  border: none !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.zorin-button.primary {
+  background: linear-gradient(135deg, #0088cc 0%, #006699 100%) !important;
+  color: white !important;
+  box-shadow: 0 4px 14px rgba(0, 136, 204, 0.3) !important;
+}
+
+.zorin-button.primary:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(0, 136, 204, 0.5) !important;
+}
+
+.zorin-button.secondary {
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+  border: 2px solid #e2e8f0 !important;
+}
+
+.zorin-button.secondary:hover {
+  background: #e2e8f0 !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Employee Selection */
+.zorin-employee-tags {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-bottom: 16px !important;
+}
+
+.zorin-employee-tag {
+  padding: 6px 12px !important;
+  background: linear-gradient(135deg, #0088cc 0%, #006699 100%) !important;
+  color: white !important;
+  border-radius: 20px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  border: none !important;
+}
+
+/* Vehicle Input Section */
+.zorin-vehicle-input-section {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+}
+
+.zorin-vehicle-input {
+  width: 100% !important;
+  font-size: 18px !important;
+  padding: 16px 18px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+
+.zorin-vehicle-input:focus {
+  border-color: #0088cc !important;
+  box-shadow: 0 0 0 3px rgba(0, 136, 204, 0.1) !important;
+  outline: none !important;
+}
+
+.zorin-vehicle-input::placeholder {
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-weight: 400 !important;
+  color: #94a3b8 !important;
+}
+
+.zorin-check-button {
+  width: 100% !important;
+  padding: 14px 24px !important;
+  font-size: 16px !important;
+  margin-top: 4px !important;
+}
+
+/* Payment Method Cards */
+.zorin-payment-methods {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+  gap: 16px !important;
+  margin-bottom: 24px !important;
+}
+
+.zorin-payment-card {
+  padding: 20px !important;
+  border: 2px solid #e5e7eb !important;
+  border-radius: 12px !important;
+  cursor: pointer !important;
+  transition: all 0.3s ease !important;
+  background: white !important;
+  text-align: center !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.zorin-payment-card:hover {
+  border-color: #0088cc !important;
+  background: #f0f9ff !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(0, 136, 204, 0.15) !important;
+}
+
+.zorin-payment-card.selected {
+  border-color: #0088cc !important;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
+  box-shadow: 0 4px 12px rgba(0, 136, 204, 0.25) !important;
+}
+
+.zorin-payment-icon {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 24px !important;
+}
+
+.zorin-payment-icon.cash {
+  background: rgba(16, 185, 129, 0.1) !important;
+  color: #10b981 !important;
+}
+
+.zorin-payment-icon.card {
+  background: rgba(59, 130, 246, 0.1) !important;
+  color: #3b82f6 !important;
+}
+
+.zorin-payment-icon.transfer {
+  background: rgba(139, 92, 246, 0.1) !important;
+  color: #8b5cf6 !important;
+}
+
+.zorin-payment-icon.aggregator {
+  background: rgba(99, 102, 241, 0.1) !important;
+  color: #6366f1 !important;
+}
+
+/* Service Selection */
+.zorin-service-list {
+  max-height: 400px !important;
+  overflow-y: auto !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  background: white !important;
+}
+
+.zorin-service-item {
+  padding: 16px !important;
+  border: 2px solid #e5e7eb !important;
+  border-radius: 10px !important;
+  margin-bottom: 12px !important;
+  cursor: pointer !important;
+  transition: all 0.3s ease !important;
+  background: white !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.zorin-service-item:hover {
+  border-color: #0088cc !important;
+  background: #f0f9ff !important;
+  transform: translateX(4px) !important;
+}
+
+.zorin-service-item.selected {
+  border-color: #0088cc !important;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
+  box-shadow: 0 2px 8px rgba(0, 136, 204, 0.2) !important;
+}
+
+.zorin-service-name {
+  font-weight: 600 !important;
+  color: #1f2937 !important;
+  flex-grow: 1 !important;
+}
+
+.zorin-service-price {
+  font-weight: 700 !important;
+  color: #059669 !important;
+  margin-left: 16px !important;
+  white-space: nowrap !important;
+}
+
+/* Last Wash Service Highlight */
+.zorin-service-item.from-last-wash {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%) !important;
+  border: 2px solid #f59e0b !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2) !important;
+}
+
+.zorin-service-item.from-last-wash:hover {
+  background: linear-gradient(135deg, #fde68a 0%, #fcd34d 100%) !important;
+  border-color: #f59e0b !important;
+  transform: translateX(4px) !important;
+}
+
+.last-wash-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 4px 10px !important;
+  background: #f59e0b !important;
+  color: white !important;
+  border-radius: 12px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  white-space: nowrap !important;
+}
+
+/* Confirmation Card */
+.zorin-confirmation-card {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
+  border: 2px solid #0088cc !important;
+  border-radius: 16px !important;
+  padding: 32px !important;
+  margin-top: 24px !important;
+  box-shadow: 0 8px 30px rgba(0, 136, 204, 0.15) !important;
+}
+
+.zorin-confirmation-title {
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  color: #0088cc !important;
+  margin-bottom: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+/* Summary Section */
+.zorin-summary-section {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  border-radius: 12px !important;
+  padding: 24px !important;
+  margin: 24px 0 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.zorin-summary-title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: #374151 !important;
+  margin-bottom: 16px !important;
+}
+
+.zorin-summary-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 8px 0 !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.zorin-summary-row:last-child {
+  border-bottom: none !important;
+}
+
+.zorin-summary-label {
+  font-weight: 500 !important;
+  color: #6b7280 !important;
+}
+
+.zorin-summary-value {
+  font-weight: 700 !important;
+  color: #1f2937 !important;
+}
+
+.zorin-total-amount {
+  font-size: 24px !important;
+  color: #0088cc !important;
+  background: linear-gradient(135deg, #0088cc 0%, #006699 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+/* Alerts and Messages */
+.zorin-alert {
+  border-radius: 12px !important;
+  padding: 16px 20px !important;
+  margin: 16px 0 !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+.zorin-alert.info {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%) !important;
+  color: #1e40af !important;
+}
+
+.zorin-alert.success {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%) !important;
+  color: #065f46 !important;
+}
+
+.zorin-alert.warning {
+  background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%) !important;
+  color: #92400e !important;
+}
+
+.zorin-alert.error {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
+  color: #991b1b !important;
+}
+
+/* Animations */
+@keyframes zorin-slideInUp {
+  from {
+    opacity: 0 !important;
+    transform: translateY(20px) !important;
+  }
+  to {
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+  }
+}
+
+@keyframes zorin-pulse {
+  0%, 100% {
+    transform: scale(1) !important;
+  }
+  50% {
+    transform: scale(1.05) !important;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .zorin-workstation {
+    padding: 12px !important;
+  }
+
+  .zorin-shift-card,
+  .zorin-registration-card {
+    padding: 16px !important;
+    border-radius: 12px !important;
+  }
+
+  .zorin-shift-title,
+  .zorin-registration-title {
+    font-size: 18px !important;
+  }
+
+  .zorin-registration-description {
+    font-size: 13px !important;
+  }
+
+  /* Shift controls */
+  .zorin-shift-controls {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  .zorin-shift-btn {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 14px 24px !important;
+    font-size: 15px !important;
+  }
+
+  .zorin-shift-status {
+    text-align: center !important;
+    padding: 10px 20px !important;
+  }
+
+  /* Form sections */
+  .zorin-form-section {
+    padding: 16px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .zorin-form-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .zorin-form-label {
+    font-size: 14px !important;
+  }
+
+  .zorin-input {
+    padding: 12px 14px !important;
+    font-size: 15px !important;
+  }
+
+  /* Vehicle input on mobile */
+  .zorin-vehicle-input {
+    font-size: 16px !important;
+    padding: 14px 16px !important;
+  }
+
+  .zorin-check-button {
+    padding: 16px 24px !important;
+    font-size: 16px !important;
+  }
+
+  /* Payment methods */
+  .zorin-payment-methods {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .zorin-payment-card {
+    padding: 16px !important;
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    gap: 16px !important;
+  }
+
+  .zorin-payment-icon {
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  /* Employee selection */
+  .zorin-employee-tags {
+    gap: 6px !important;
+  }
+
+  .zorin-employee-tag {
+    padding: 8px 14px !important;
+    font-size: 13px !important;
+  }
+
+  /* Service list */
+  .zorin-service-list {
+    max-height: 350px !important;
+    padding: 12px !important;
+  }
+
+  .zorin-service-item {
+    padding: 14px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .zorin-service-name {
+    font-size: 14px !important;
+  }
+
+  .zorin-service-price {
+    font-size: 15px !important;
+  }
+
+  /* Last wash badge on mobile */
+  .last-wash-badge {
+    font-size: 10px !important;
+    padding: 3px 8px !important;
+  }
+
+  /* Summary section */
+  .zorin-summary-section {
+    padding: 16px !important;
+    margin: 16px 0 !important;
+  }
+
+  .zorin-summary-title {
+    font-size: 16px !important;
+  }
+
+  .zorin-summary-row {
+    padding: 10px 0 !important;
+  }
+
+  .zorin-summary-label {
+    font-size: 14px !important;
+  }
+
+  .zorin-summary-value {
+    font-size: 14px !important;
+  }
+
+  .zorin-total-amount {
+    font-size: 28px !important;
+  }
+
+  /* Buttons */
+  .zorin-button {
+    width: 100% !important;
+    padding: 14px 24px !important;
+    font-size: 15px !important;
+    justify-content: center !important;
+  }
+
+  /* Confirmation card */
+  .zorin-confirmation-card {
+    padding: 20px !important;
+    margin-top: 16px !important;
+  }
+
+  .zorin-confirmation-title {
+    font-size: 18px !important;
+  }
+
+  /* Alerts */
+  .zorin-alert {
+    padding: 14px 16px !important;
+    margin: 12px 0 !important;
+    font-size: 13px !important;
+  }
+}
+
+/* Custom Scrollbar */
+.zorin-service-list::-webkit-scrollbar {
+  width: 8px !important;
+}
+
+.zorin-service-list::-webkit-scrollbar-track {
+  background: #f1f5f9 !important;
+  border-radius: 4px !important;
+}
+
+.zorin-service-list::-webkit-scrollbar-thumb {
+  background: #0088cc !important;
+  border-radius: 4px !important;
+}
+
+.zorin-service-list::-webkit-scrollbar-thumb:hover {
+  background: #006699 !important;
+}

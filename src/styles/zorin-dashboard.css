@@ -1,0 +1,430 @@
+/* ZORIN Dashboard Styles - Modern & Clean Design */
+
+/* Dashboard Container */
+.zorin-dashboard {
+  padding: 24px !important;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  min-height: calc(100vh - 64px) !important;
+}
+
+/* Page Header */
+.zorin-page-header {
+  margin-bottom: 32px !important;
+  background: white !important;
+  border-radius: 16px !important;
+  padding: 24px 32px !important;
+  box-shadow: 0 4px 20px rgba(0, 136, 204, 0.08) !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.zorin-page-title {
+  font-size: 32px !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  margin-bottom: 8px !important;
+  background: linear-gradient(135deg, #0088cc 0%, #006699 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+.zorin-page-description {
+  font-size: 16px !important;
+  color: #64748b !important;
+  line-height: 1.6 !important;
+  margin: 0 !important;
+}
+
+/* Dashboard Grid */
+.zorin-dashboard-grid {
+  display: grid !important;
+  gap: 24px !important;
+  margin-bottom: 32px !important;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+}
+
+@media (min-width: 768px) {
+  .zorin-dashboard-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  .zorin-dashboard-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+}
+
+/* Metric Cards */
+.zorin-metric-card {
+  background: white !important;
+  border-radius: 16px !important;
+  padding: 24px !important;
+  box-shadow: 0 4px 20px rgba(0, 136, 204, 0.08) !important;
+  border: 1px solid #e2e8f0 !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: relative !important;
+  overflow: hidden !important;
+  cursor: pointer !important;
+}
+
+.zorin-metric-card::before {
+  content: '' !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 4px !important;
+  background: linear-gradient(90deg, #0088cc 0%, #00d4ff 100%) !important;
+  transition: height 0.3s ease !important;
+}
+
+.zorin-metric-card:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: 0 12px 40px rgba(0, 136, 204, 0.15) !important;
+  border-color: #0088cc !important;
+}
+
+.zorin-metric-card:hover::before {
+  height: 8px !important;
+}
+
+.zorin-metric-card.primary {
+  background: linear-gradient(135deg, #0088cc 0%, #006699 100%) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.zorin-metric-card.success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.zorin-metric-card.danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.zorin-metric-card.warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.zorin-metric-card.info {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  color: white !important;
+  border: none !important;
+}
+
+/* Metric Card Content */
+.zorin-metric-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-bottom: 16px !important;
+}
+
+.zorin-metric-title {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  margin: 0 !important;
+}
+
+.zorin-metric-card.primary .zorin-metric-title,
+.zorin-metric-card.success .zorin-metric-title,
+.zorin-metric-card.danger .zorin-metric-title,
+.zorin-metric-card.warning .zorin-metric-title,
+.zorin-metric-card.info .zorin-metric-title {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.zorin-metric-icon {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 20px !important;
+  transition: all 0.3s ease !important;
+}
+
+.zorin-metric-card.default .zorin-metric-icon {
+  background: rgba(0, 136, 204, 0.1) !important;
+  color: #0088cc !important;
+}
+
+.zorin-metric-card.primary .zorin-metric-icon,
+.zorin-metric-card.success .zorin-metric-icon,
+.zorin-metric-card.danger .zorin-metric-icon,
+.zorin-metric-card.warning .zorin-metric-icon,
+.zorin-metric-card.info .zorin-metric-icon {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: white !important;
+}
+
+.zorin-metric-card:hover .zorin-metric-icon {
+  transform: scale(1.1) rotate(5deg) !important;
+}
+
+.zorin-metric-value {
+  font-size: 32px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  margin-bottom: 8px !important;
+  background: linear-gradient(135deg, #1e293b 0%, #475569 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+}
+
+.zorin-metric-card.primary .zorin-metric-value,
+.zorin-metric-card.success .zorin-metric-value,
+.zorin-metric-card.danger .zorin-metric-value,
+.zorin-metric-card.warning .zorin-metric-value,
+.zorin-metric-card.info .zorin-metric-value {
+  color: white !important;
+  -webkit-text-fill-color: white !important;
+}
+
+.zorin-metric-subtitle {
+  font-size: 14px !important;
+  color: #94a3b8 !important;
+  line-height: 1.4 !important;
+  margin: 0 !important;
+}
+
+.zorin-metric-card.primary .zorin-metric-subtitle,
+.zorin-metric-card.success .zorin-metric-subtitle,
+.zorin-metric-card.danger .zorin-metric-subtitle,
+.zorin-metric-card.warning .zorin-metric-subtitle,
+.zorin-metric-card.info .zorin-metric-subtitle {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* Charts Section */
+.zorin-charts-section {
+  display: grid !important;
+  gap: 24px !important;
+  margin-bottom: 32px !important;
+  grid-template-columns: 1fr !important;
+}
+
+@media (min-width: 1024px) {
+  .zorin-charts-section {
+    grid-template-columns: 2fr 1fr !important;
+  }
+}
+
+.zorin-chart-card {
+  background: white !important;
+  border-radius: 16px !important;
+  padding: 24px !important;
+  box-shadow: 0 4px 20px rgba(0, 136, 204, 0.08) !important;
+  border: 1px solid #e2e8f0 !important;
+  transition: all 0.3s ease !important;
+}
+
+.zorin-chart-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 136, 204, 0.12) !important;
+}
+
+.zorin-chart-title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: #1e293b !important;
+  margin-bottom: 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.zorin-chart-description {
+  font-size: 14px !important;
+  color: #64748b !important;
+  margin-bottom: 20px !important;
+  line-height: 1.5 !important;
+}
+
+/* Recent Activity */
+.zorin-activity-card {
+  background: white !important;
+  border-radius: 16px !important;
+  padding: 24px !important;
+  box-shadow: 0 4px 20px rgba(0, 136, 204, 0.08) !important;
+  border: 1px solid #e2e8f0 !important;
+  transition: all 0.3s ease !important;
+}
+
+.zorin-activity-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 136, 204, 0.12) !important;
+}
+
+.zorin-activity-header {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin-bottom: 20px !important;
+  padding-bottom: 16px !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.zorin-activity-title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: #1e293b !important;
+  margin: 0 !important;
+}
+
+.zorin-activity-icon {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 10px !important;
+  background: linear-gradient(135deg, #0088cc 0%, #006699 100%) !important;
+  color: white !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 18px !important;
+}
+
+/* Activity Table */
+.zorin-activity-table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+}
+
+.zorin-activity-row {
+  border-bottom: 1px solid #f1f5f9 !important;
+  transition: all 0.2s ease !important;
+}
+
+.zorin-activity-row:hover {
+  background-color: #f8fafc !important;
+}
+
+.zorin-activity-row:last-child {
+  border-bottom: none !important;
+}
+
+.zorin-activity-cell {
+  padding: 12px 0 !important;
+  font-size: 14px !important;
+  color: #475569 !important;
+}
+
+.zorin-activity-cell.vehicle {
+  font-weight: 600 !important;
+  color: #1e293b !important;
+}
+
+.zorin-activity-cell.amount {
+  font-weight: 600 !important;
+  color: #10b981 !important;
+  text-align: right !important;
+}
+
+.zorin-activity-cell.date {
+  text-align: right !important;
+  color: #94a3b8 !important;
+  font-size: 12px !important;
+}
+
+/* Empty State */
+.zorin-empty-state {
+  text-align: center !important;
+  padding: 40px 20px !important;
+  color: #64748b !important;
+}
+
+.zorin-empty-state-icon {
+  width: 64px !important;
+  height: 64px !important;
+  margin: 0 auto 16px !important;
+  background: #f1f5f9 !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #94a3b8 !important;
+  font-size: 24px !important;
+}
+
+.zorin-empty-state-text {
+  font-size: 16px !important;
+  margin-bottom: 8px !important;
+}
+
+.zorin-empty-state-subtext {
+  font-size: 14px !important;
+  color: #94a3b8 !important;
+}
+
+/* Animations */
+@keyframes zorin-slideInUp {
+  from {
+    opacity: 0 !important;
+    transform: translateY(20px) !important;
+  }
+  to {
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+  }
+}
+
+.zorin-metric-card {
+  animation: zorin-slideInUp 0.6s ease-out forwards !important;
+}
+
+.zorin-metric-card:nth-child(1) { animation-delay: 0.1s !important; }
+.zorin-metric-card:nth-child(2) { animation-delay: 0.2s !important; }
+.zorin-metric-card:nth-child(3) { animation-delay: 0.3s !important; }
+.zorin-metric-card:nth-child(4) { animation-delay: 0.4s !important; }
+.zorin-metric-card:nth-child(5) { animation-delay: 0.5s !important; }
+
+.zorin-chart-card {
+  animation: zorin-slideInUp 0.6s ease-out forwards !important;
+}
+
+.zorin-activity-card {
+  animation: zorin-slideInUp 0.6s ease-out forwards !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .zorin-dashboard {
+    padding: 16px !important;
+  }
+
+  .zorin-page-header {
+    padding: 20px !important;
+    margin-bottom: 24px !important;
+  }
+
+  .zorin-page-title {
+    font-size: 24px !important;
+  }
+
+  .zorin-metric-card {
+    padding: 20px !important;
+  }
+
+  .zorin-metric-value {
+    font-size: 28px !important;
+  }
+
+  .zorin-chart-card,
+  .zorin-activity-card {
+    padding: 20px !important;
+  }
+
+  .zorin-charts-section {
+    grid-template-columns: 1fr !important;
+  }
+}

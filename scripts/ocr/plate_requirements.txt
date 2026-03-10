@@ -1,0 +1,4 @@
+opencv-python-headless>=4.5.0
+numpy>=1.19.0
+onnxruntime==1.24.3
+rapidocr==3.7.0

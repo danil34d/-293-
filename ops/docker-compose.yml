@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: carwash-app
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    ports:
+      - "3000:3000"
+    volumes:
+      # Хранение бизнес-данных (JSON) снаружи контейнера
+      - ./data:/app/data
+    restart: unless-stopped
+
+

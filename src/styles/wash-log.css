@@ -1,0 +1,788 @@
+/* Wash Log Styles - Clean & Professional */
+
+/* Wash Log Container */
+.wash-log,
+.zorin-wash-log {
+  padding: 24px;
+  background: #f8fafc;
+  min-height: calc(100vh - 64px);
+}
+
+/* Today Summary Card */
+.summary-card {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  margin-bottom: 24px;
+  transition: box-shadow 0.2s ease;
+}
+
+.summary-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.summary-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: #3b82f6;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.summary-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+/* Filters Section */
+.zorin-filters-section {
+  background: white;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.zorin-filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.zorin-filter-item {
+  flex-shrink: 0;
+}
+
+.zorin-search-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.zorin-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+/* Search Section (legacy) */
+.search-section,
+.zorin-search-section {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.search-input,
+.zorin-search-input {
+  width: 100%;
+  padding: 10px 14px 10px 40px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+  background: white;
+  height: 40px;
+}
+
+.search-input:focus,
+.zorin-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Table Card */
+.table-card,
+.zorin-table-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+/* Table Styles */
+.table-header,
+.zorin-table-header {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.table-header th,
+.zorin-table-header th {
+  padding: 12px 16px;
+  font-weight: 600;
+  color: #374151;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: left;
+}
+
+.table-row,
+.zorin-table-row {
+  border-bottom: 1px solid #f3f4f6;
+  transition: background-color 0.2s ease;
+}
+
+.table-row:hover,
+.zorin-table-row:hover {
+  background-color: #f9fafb;
+}
+
+.table-row:last-child,
+.zorin-table-row:last-child {
+  border-bottom: none;
+}
+
+.table-cell,
+.zorin-table-cell {
+  padding: 12px 16px;
+  vertical-align: middle;
+}
+
+/* Date Cell */
+.date-cell,
+.zorin-date-cell {
+  position: relative;
+}
+
+.date-main,
+.zorin-date-main {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+.date-time,
+.zorin-date-time {
+  color: #6b7280;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.date-icons,
+.zorin-date-icons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.date-icon,
+.zorin-date-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.date-icon.history,
+.zorin-date-icon.history {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.date-icon.comment,
+.zorin-date-icon.comment {
+  background: #f0fdf4;
+  color: #22c55e;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.date-icon.comment:hover,
+.zorin-date-icon.comment:hover {
+  background: #dcfce7;
+}
+
+/* Client/Vehicle Cell */
+.client-cell,
+.zorin-client-cell {
+  min-width: 180px;
+}
+
+.vehicle-number,
+.zorin-vehicle-number {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.vehicle-icon,
+.zorin-vehicle-icon {
+  color: #6b7280;
+  width: 16px;
+  height: 16px;
+}
+
+.client-info,
+.zorin-client-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+/* Services Cell */
+.services-cell,
+.zorin-services-cell {
+  min-width: 200px;
+}
+
+.main-service,
+.zorin-main-service {
+  font-weight: 500;
+  color: #1f2937;
+  font-size: 14px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.custom-badge,
+.zorin-custom-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  background: #3b82f6;
+  color: white;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.additional-services,
+.zorin-additional-services {
+  margin-top: 4px;
+}
+
+.additional-badge,
+.zorin-additional-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  background: #f3f4f6;
+  color: #6b7280;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.additional-badge:hover,
+.zorin-additional-badge:hover {
+  background: #e5e7eb;
+  color: #4b5563;
+}
+
+/* Employees Cell */
+.employees-cell,
+.zorin-employees-cell {
+  min-width: 120px;
+}
+
+.employee-badges,
+.zorin-employee-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.employee-badge,
+.zorin-employee-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Amount Cell */
+.amount-cell,
+.zorin-amount-cell {
+  font-weight: 600;
+  color: #1f2937;
+  text-align: right;
+}
+
+.zorin-amount-value {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* Actions Cell */
+.actions-cell,
+.zorin-actions-cell {
+  text-align: right;
+  width: 120px;
+}
+
+.action-buttons,
+.zorin-action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.action-btn,
+.zorin-action-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.action-btn.edit,
+.zorin-action-btn.edit {
+  color: #6b7280;
+}
+
+.action-btn.edit:hover,
+.zorin-action-btn.edit:hover {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+/* Popover Styles */
+.tooltip,
+.zorin-tooltip {
+  background: #1f2937;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 8px 12px;
+  max-width: 300px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.popover,
+.zorin-popover {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 12px;
+  max-width: 250px;
+}
+
+.popover-content,
+.zorin-popover-content {
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.popover-title,
+.zorin-popover-title {
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 6px;
+}
+
+.popover-list,
+.zorin-popover-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.popover-item,
+.zorin-popover-item {
+  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Empty State */
+.empty-state,
+.zorin-empty-state {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-icon,
+.zorin-empty-icon {
+  margin-bottom: 16px;
+  color: #d1d5db;
+}
+
+.empty-title,
+.zorin-empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 8px;
+}
+
+.empty-subtitle,
+.zorin-empty-subtitle {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* Alert Styles */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid;
+}
+
+.alert.error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.alert strong {
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* Pagination */
+.pagination,
+.zorin-pagination {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .wash-log,
+  .zorin-wash-log {
+    padding: 16px;
+  }
+
+  .summary-card,
+  .search-section,
+  .zorin-search-section,
+  .table-card,
+  .zorin-table-card {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .summary-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .summary-title {
+    font-size: 16px;
+  }
+
+  /* Make table scrollable on mobile */
+  .table-card,
+  .zorin-table-card {
+    overflow-x: auto;
+  }
+
+  .table-header th,
+  .zorin-table-header th,
+  .table-cell,
+  .zorin-table-cell {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .table-header th,
+  .zorin-table-header th {
+    white-space: nowrap;
+  }
+
+  /* Adjust cell widths for mobile */
+  .client-cell,
+  .zorin-client-cell,
+  .services-cell,
+  .zorin-services-cell {
+    min-width: 150px;
+  }
+
+  .employees-cell,
+  .zorin-employees-cell {
+    min-width: 100px;
+  }
+
+  .actions-cell,
+  .zorin-actions-cell {
+    width: 100px;
+  }
+
+  /* Stack date info vertically */
+  .date-main,
+  .zorin-date-main {
+    font-size: 12px;
+  }
+
+  .date-time,
+  .zorin-date-time {
+    font-size: 11px;
+  }
+
+  /* Adjust action buttons for touch */
+  .action-btn,
+  .zorin-action-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* Reduce font sizes */
+  .vehicle-number,
+  .zorin-vehicle-number {
+    font-size: 13px;
+  }
+
+  .client-info,
+  .zorin-client-info,
+  .main-service,
+  .zorin-main-service {
+    font-size: 12px;
+  }
+
+  .employee-badge,
+  .zorin-employee-badge,
+  .additional-badge,
+  .zorin-additional-badge {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+
+  /* Empty state adjustments */
+  .empty-state,
+  .zorin-empty-state {
+    padding: 40px 20px;
+  }
+
+  .empty-title,
+  .zorin-empty-title {
+    font-size: 16px;
+  }
+
+  .empty-subtitle,
+  .zorin-empty-subtitle {
+    font-size: 13px;
+  }
+}
+
+/* Print Styles */
+@media print {
+  /* Hide non-essential elements */
+  .print-hidden,
+  .zorin-filters-section,
+  .summary-card,
+  .zorin-pagination,
+  .zorin-action-buttons,
+  .zorin-actions-cell,
+  nav,
+  aside,
+  header,
+  footer,
+  .sidebar,
+  [class*="fixed"],
+  [class*="sticky"] {
+    display: none !important;
+  }
+
+  /* Force hide sidebar completely */
+  .fixed,
+  div[class*="fixed"],
+  div[style*="margin-left"] {
+    position: static !important;
+    margin-left: 0 !important;
+  }
+
+  /* Reset page styles */
+  html, body {
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Force full width for all containers */
+  body > div,
+  body > div > div,
+  body > div > div > div,
+  .zorin-main-content,
+  main,
+  [class*="flex-1"] {
+    margin: 0 !important;
+    margin-left: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    position: static !important;
+    left: 0 !important;
+  }
+
+  .wash-log,
+  .zorin-wash-log {
+    padding: 10px !important;
+    background: white !important;
+    min-height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .zorin-table-card {
+    box-shadow: none !important;
+    border: 1px solid #000 !important;
+    width: 100% !important;
+  }
+
+  /* Table print styles - full width */
+  table {
+    width: 100% !important;
+    table-layout: auto !important;
+  }
+
+  .zorin-table-header {
+    background: #f0f0f0 !important;
+  }
+
+  .zorin-table-header th {
+    border-bottom: 2px solid #000 !important;
+    color: #000 !important;
+    font-size: 9pt !important;
+    padding: 4px 6px !important;
+    line-height: 1.2 !important;
+  }
+
+  .zorin-table-row {
+    border-bottom: 1px solid #ccc !important;
+    page-break-inside: avoid;
+  }
+
+  .zorin-table-row td {
+    padding: 3px 6px !important;
+    line-height: 1.2 !important;
+    vertical-align: middle !important;
+  }
+
+  .zorin-table-cell {
+    font-size: 8pt !important;
+    padding: 3px 6px !important;
+    line-height: 1.2 !important;
+  }
+
+  /* Compact cell content */
+  .zorin-date-main,
+  .zorin-vehicle-number,
+  .zorin-main-service,
+  .zorin-client-info {
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 1.2 !important;
+  }
+
+  .zorin-date-time {
+    margin-top: 1px !important;
+  }
+
+  .zorin-employee-badges {
+    gap: 2px !important;
+  }
+
+  .zorin-employee-badge {
+    padding: 1px 4px !important;
+    font-size: 7pt !important;
+  }
+
+  .zorin-additional-services {
+    margin-top: 2px !important;
+  }
+
+  .zorin-additional-badge {
+    padding: 1px 4px !important;
+    font-size: 7pt !important;
+  }
+
+  /* Remove fixed column widths - let table auto-size */
+  .zorin-date-cell,
+  .zorin-client-cell,
+  .zorin-services-cell,
+  .zorin-employees-cell,
+  .zorin-amount-cell {
+    width: auto !important;
+  }
+
+  .zorin-amount-cell {
+    text-align: right !important;
+    white-space: nowrap !important;
+  }
+
+  /* Badge styles for print */
+  .zorin-employee-badge {
+    background: #f0f0f0 !important;
+    color: #000 !important;
+    border: 1px solid #ccc !important;
+  }
+
+  /* Hide icons that don't print well */
+  .zorin-date-icon,
+  .zorin-vehicle-icon {
+    display: none !important;
+  }
+
+  /* Print header - show date element */
+  .print-date {
+    display: block !important;
+    font-size: 9pt;
+    margin-bottom: 8px;
+    text-align: left;
+  }
+
+  /* Page settings */
+  @page {
+    margin: 1cm;
+    size: landscape;
+  }
+}

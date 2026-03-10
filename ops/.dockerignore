@@ -1,0 +1,16 @@
+node_modules
+.next
+npm-debug.log
+Dockerfile
+docker-compose.yml
+.git
+.gitignore
+.env
+.env.*
+*.md
+docs
+доки
+id_rsa.zip
+*.log
+
+
