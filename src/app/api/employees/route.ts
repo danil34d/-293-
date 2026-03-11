@@ -6,7 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { Employee, EmployeeRole } from '@/types';
 import { getEmployeesData, invalidateEmployeesCache } from '@/lib/data-loader';
-import { requireAdmin } from '@/lib/server-auth';
+import { requireAuth, requireAdmin } from '@/lib/server-auth';
 
 const dataDir = path.join(process.cwd(), 'data', 'employees');
 
@@ -29,9 +29,14 @@ function normalizeEmployeeRole(id: string, requestedRole?: EmployeeRole): Employ
 }
 
 export async function GET() {
+  const auth = requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const employees = await getEmployeesData();
-    return NextResponse.json(employees);
+    // Убираем пароли из ответа
+    const safeEmployees = employees.map(({ password, ...emp }) => emp);
+    return NextResponse.json(safeEmployees);
   } catch (error) {
     console.error('Error reading employees directory:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

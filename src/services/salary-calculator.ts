@@ -49,7 +49,7 @@ function calculateIndividualShare(
     const totalSalaryPool = totalAmountAfterDeduction * (percentage / 100);
     const earning = totalSalaryPool / numEmployeesOnWash;
 
-    result.earnings = earning > 0 ? parseFloat(earning.toFixed(2)) : 0;
+    result.earnings = earning > 0 ? Math.round(earning * 100) / 100 : 0;
 
     // Build formula string
     let formulaParts: string[] = [];
@@ -117,7 +117,7 @@ function calculateIndividualShare(
 
     // 3. The employee's earning is their share of the total calculated rate.
     const earning = totalRateForWash / numEmployeesOnWash;
-    result.earnings = earning > 0 ? parseFloat(earning.toFixed(2)) : 0;
+    result.earnings = earning > 0 ? Math.round(earning * 100) / 100 : 0;
 
     // Build formula string for rate-based
     if (rateDetails.length > 0) {

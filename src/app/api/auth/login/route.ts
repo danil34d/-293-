@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getEmployeesData } from '@/lib/data-loader';
 import type { Employee } from '@/types';
 import { serializeEmployeeAuthCookie } from '@/lib/employee-auth-cookie';
+import { verifyPassword } from '@/lib/password-hash';
 
 export async function POST(request: Request) {
   try {
@@ -22,11 +23,16 @@ export async function POST(request: Request) {
     }
 
     const employees = await getEmployeesData();
-    const employee = employees.find(
-      (emp) => emp.username === username && emp.password === password
-    );
 
-    if (!employee) {
+    // Ищем по username, затем проверяем пароль через verifyPassword
+    // (поддерживает и хеш scrypt, и plain-text для обратной совместимости)
+    const employee = employees.find((emp) => emp.username === username);
+    if (!employee || !employee.password) {
+      return NextResponse.json({ error: 'Неверный логин или пароль' }, { status: 401 });
+    }
+
+    const passwordValid = await verifyPassword(password, employee.password);
+    if (!passwordValid) {
       return NextResponse.json({ error: 'Неверный логин или пароль' }, { status: 401 });
     }
 

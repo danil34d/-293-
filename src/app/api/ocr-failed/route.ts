@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAuth, requireAdmin } from '@/lib/server-auth';
 import { OCR_FAILED_DIR, saveOcrCorrectedPhoto, updateOcrFailedPhotoReason } from '@/services/plate-recognition-service';
 import { readdir, readFile, unlink, stat } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -96,7 +96,8 @@ export async function POST(request: NextRequest) {
 // DELETE /api/ocr-failed?filename=xxx  — удалить конкретный файл
 // DELETE /api/ocr-failed?all=1          — очистить всё
 export async function DELETE(request: NextRequest) {
-  const auth = requireAuth();
+  // Удаление требует прав администратора
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   const { searchParams } = new URL(request.url);

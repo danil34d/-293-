@@ -25,11 +25,18 @@ export async function POST(request: NextRequest) {
       imageBuffer = Buffer.from(base64Data, 'base64');
     }
 
-    // Проверяем что буфер не пустой
+    // Проверяем что буфер не пустой и не слишком большой
+    const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 МБ
     if (!imageBuffer || imageBuffer.length < 100) {
       return NextResponse.json({
         success: false,
         error: 'Пустое или повреждённое изображение',
+      }, { status: 400 });
+    }
+    if (imageBuffer.length > MAX_IMAGE_SIZE) {
+      return NextResponse.json({
+        success: false,
+        error: `Изображение слишком большое (макс. ${MAX_IMAGE_SIZE / 1024 / 1024} МБ)`,
       }, { status: 400 });
     }
 

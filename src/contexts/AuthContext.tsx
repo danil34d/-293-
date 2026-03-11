@@ -80,13 +80,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const response = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!response.ok) {
+        console.error('Logout API returned', response.status);
+      }
     } catch (error) {
       console.error('Logout failed', error);
-    } finally {
-      setEmployee(null);
-      router.push('/login');
     }
+    // Всегда очищаем состояние на клиенте
+    setEmployee(null);
+    router.push('/login');
   };
 
   const isAuthenticated = !!employee;
