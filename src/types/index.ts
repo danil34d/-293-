@@ -539,20 +539,20 @@ export interface Inventory {
 // --- Журнал действий сотрудников ---
 
 export type AuditActionType =
-  | ‘login’
-  | ‘logout’
-  | ‘order_create’
-  | ‘order_update’
-  | ‘order_complete’
-  | ‘order_cancel’
-  | ‘payment_accept’
-  | ‘payment_refund’
-  | ‘shift_start’
-  | ‘shift_end’
-  | ‘settings_change’
-  | ‘employee_edit’
-  | ‘price_change’
-  | ‘other’;
+  | 'login'
+  | 'logout'
+  | 'order_create'
+  | 'order_update'
+  | 'order_complete'
+  | 'order_cancel'
+  | 'payment_accept'
+  | 'payment_refund'
+  | 'shift_start'
+  | 'shift_end'
+  | 'settings_change'
+  | 'employee_edit'
+  | 'price_change'
+  | 'other';
 
 export interface AuditLogEntry {
   id: string;
@@ -562,7 +562,7 @@ export interface AuditLogEntry {
   role: EmployeeRole;
   action: AuditActionType;
   description: string;
-  entityType?: string; // ‘order’ | ‘payment’ | ‘employee’ | etc
+  entityType?: string; // 'order' | 'payment' | 'employee' | etc
   entityId?: string;
   metadata?: Record<string, unknown>;
   siteId?: string;
@@ -570,14 +570,13 @@ export interface AuditLogEntry {
 
 // --- Статусы заказа ---
 
-export type OrderStatus = ‘new’ | ‘in_progress’ | ‘ready’ | ‘paid’ | ‘closed’ | ‘cancelled’;
+export type OrderStatus = 'new' | 'in_progress' | 'ready' | 'paid' | 'closed' | 'cancelled';
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  new: ‘Новый’,
-  in_progress: ‘В работе’,
-  ready: ‘Готов’,
-  paid: ‘Оплачен’,
-  closed: ‘Закрыт’,
-  cancelled: ‘Отменён’,
+  new: 'Новый',
+  in_progress: 'В работе',
+  ready: 'Готов',
+  paid: 'Оплачен',
+  closed: 'Закрыт',
+  cancelled: 'Отменён',
 };
-

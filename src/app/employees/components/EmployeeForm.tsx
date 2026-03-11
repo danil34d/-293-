@@ -32,10 +32,19 @@ const employeeFormSchema = z.object({
 });
 
 type EmployeeFormValues = z.infer<typeof employeeFormSchema>;
+type EmployeeFormRole = EmployeeFormValues["role"];
 
 interface EmployeeFormProps {
   initialData?: Employee | null;
   employeeId?: string;
+}
+
+function normalizeEmployeeFormRole(role: EmployeeRole | undefined, currentEmployeeId?: string): EmployeeFormRole {
+  if (currentEmployeeId === "emp_manager_admin" || role === "admin") {
+    return "admin";
+  }
+
+  return "employee";
 }
 
 export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
@@ -83,7 +92,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
     if (initialData) {
       form.reset({
         ...initialData,
-        role: (initialData.role || (initialData.id === "emp_manager_admin" ? "admin" : "employee")) as EmployeeRole,
+        role: normalizeEmployeeFormRole(initialData.role, initialData.id),
         telegramChatId: initialData.telegramChatId || "",
         password: initialData.password || "", // pre-fill visible password
         username: initialData.username || "",
@@ -125,7 +134,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
 
   async function onSubmit(data: EmployeeFormValues) {
     const currentEmployeeId = employeeId || `emp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const enforcedRole: EmployeeRole = currentEmployeeId === "emp_manager_admin" ? "admin" : "employee";
+    const enforcedRole: EmployeeRole = normalizeEmployeeFormRole(data.role, currentEmployeeId);
 
     const employeeToSave: Employee = {
       id: currentEmployeeId,

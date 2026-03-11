@@ -12,6 +12,8 @@
 # --- Node / Next.js ---
 node_modules/
 .next/
+.next-runtime/
+.next-runtime-v2/
 dist/
 build/
 
@@ -31,6 +33,8 @@ __pycache__/
 
 # --- Build artifacts ---
 *.tsbuildinfo
+backend-go/server
+backend-go/server.exe
 
 # --- Logs ---
 *.log
