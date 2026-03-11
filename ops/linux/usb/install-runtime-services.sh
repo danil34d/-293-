@@ -34,6 +34,9 @@ install -d -m 0775 -o "$CARWASH_USER" -g "$CARWASH_USER" /var/lib/carwash
 install -m 0755 "$SCRIPT_DIR/storage-ensure.sh" /usr/local/bin/carwash-storage-ensure.sh
 install -m 0755 "$SCRIPT_DIR/provision-firstboot.sh" /usr/local/bin/carwash-firstboot-provision.sh
 install -m 0755 "$SCRIPT_DIR/session-bootstrap.sh" /usr/local/bin/carwash-session-bootstrap.sh
+install -m 0755 "$SCRIPT_DIR/session-stop.sh" /usr/local/bin/carwash-session-stop.sh
+install -m 0755 "$SCRIPT_DIR/firefox-webapp-launch.sh" /usr/local/bin/carwash-firefox-webapp-launch.sh
+install -m 0755 "$SCRIPT_DIR/install-desktop-apps.sh" /usr/local/bin/carwash-install-desktop-apps.sh
 install -m 0755 "$SCRIPT_DIR/configure-firewall.sh" /usr/local/bin/carwash-configure-firewall.sh
 install -m 0755 "$SCRIPT_DIR/backup-create.sh" /usr/local/bin/carwash-backup-create.sh
 install -m 0755 "$SCRIPT_DIR/health-check.sh" /usr/local/bin/carwash-health-check.sh
@@ -64,3 +67,4 @@ render_file "$SYSTEMD_DIR/carwash-health-check.timer.tpl" /etc/systemd/system/ca
 
 systemctl daemon-reload || true
 systemctl enable NetworkManager ssh carwash-storage-check.service carwash-provision.service carwash-web.service carwash-bot.service carwash-firewall.service carwash-backup.timer carwash-health-check.timer || true
+/usr/local/bin/carwash-install-desktop-apps.sh
