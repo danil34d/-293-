@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import type { Employee } from '@/types';
 import { usePathname, useRouter } from 'next/navigation';
 import { isEmployeeAdmin } from '@/lib/employee-role';
+import { isLoginPath, isPublicAppPath } from '@/lib/public-routes';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -22,33 +23,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
+    if (isPublicAppPath(pathname)) {
+      setIsLoading(false);
+      return;
+    }
+
+    if (employee) {
+      setIsLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+
     const checkUser = async () => {
+      setIsLoading(true);
       try {
         const response = await fetch('/api/auth/me', { method: 'GET', cache: 'no-store' });
         if (!response.ok) {
-          setEmployee(null);
+          if (!isCancelled) {
+            setEmployee(null);
+          }
           return;
         }
 
         const data = await response.json();
-        setEmployee(data.employee ?? null);
+        if (!isCancelled) {
+          setEmployee(data.employee ?? null);
+        }
       } catch (error) {
         console.error('Failed to check auth session', error);
-        setEmployee(null);
+        if (!isCancelled) {
+          setEmployee(null);
+        }
       } finally {
-        setIsLoading(false);
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
       }
     };
 
     checkUser();
-  }, []);
+    return () => {
+      isCancelled = true;
+    };
+  }, [employee, pathname]);
 
   useEffect(() => {
     if (isLoading) {
       return;
     }
 
-    const isAuthPage = pathname.startsWith('/login');
+    const isAuthPage = isLoginPath(pathname);
+    const isPublicPath = isPublicAppPath(pathname);
 
     if (employee && isAuthPage) {
       if (isEmployeeAdmin(employee)) {
@@ -56,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         router.push('/employee/workstation');
       }
-    } else if (!employee && !isAuthPage) {
+    } else if (!employee && !isPublicPath) {
       router.push('/login');
     }
   }, [employee, isLoading, pathname, router]);

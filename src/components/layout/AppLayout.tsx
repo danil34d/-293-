@@ -12,6 +12,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { isEmployeeAdmin } from '@/lib/employee-role';
+import { isLoginPath, isPublicAppPath } from '@/lib/public-routes';
 
 export function AppLayout({ children, newServicesCount = 0 }: { children: ReactNode, newServicesCount?: number }) {
   const { isAuthenticated, employee, isLoading, logout } = useAuth();
@@ -19,6 +20,7 @@ export function AppLayout({ children, newServicesCount = 0 }: { children: ReactN
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const isPublicPath = isPublicAppPath(pathname);
 
   // Handle mobile detection
   React.useEffect(() => {
@@ -35,7 +37,11 @@ export function AppLayout({ children, newServicesCount = 0 }: { children: ReactN
   }, []);
 
   const sidebarIsEffectivelyOpen = isSidebarOpen;
-  
+
+  if (isPublicPath) {
+    return <>{children}</>;
+  }
+
   if (isLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
@@ -45,7 +51,7 @@ export function AppLayout({ children, newServicesCount = 0 }: { children: ReactN
   }
 
   // If we are on the login page, render only the children (the login form itself)
-  if (pathname.startsWith('/login')) {
+  if (isLoginPath(pathname)) {
       return <>{children}</>;
   }
 
