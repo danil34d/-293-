@@ -10,6 +10,7 @@ Usage:
   python plate_reader.py <image_path>
 """
 
+import os
 import re
 import sys
 import time
@@ -60,6 +61,16 @@ LETTER_TO_DIGIT = {
 
 STANDARD_RE = re.compile(r"[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}\d{2,3}")
 TRAILER_RE = re.compile(r"[АВЕКМНОРСТУХ]{2}\d{4}\d{2,3}")
+
+ENGINE_ALIASES = {
+    "": "auto",
+    "auto": "auto",
+    "onnxruntime": "onnxruntime",
+    "ort": "onnxruntime",
+    "cpu": "onnxruntime",
+    "openvino": "openvino",
+    "ov": "openvino",
+}
 
 
 def normalize_text(text):
@@ -225,19 +236,72 @@ def try_build_plate(texts):
     return candidates
 
 
+def has_openvino():
+    try:
+        import openvino  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def resolve_engine_name():
+    raw_engine = os.getenv("PLATE_READER_ENGINE", "auto").strip().lower()
+    normalized = ENGINE_ALIASES.get(raw_engine)
+    if normalized is None:
+        print(
+            f"Unknown PLATE_READER_ENGINE={raw_engine!r}; using auto",
+            file=sys.stderr,
+        )
+        normalized = "auto"
+
+    if normalized == "openvino":
+        if has_openvino():
+            return EngineType.OPENVINO, "forced-openvino"
+        print(
+            "OpenVINO requested but module is not installed; falling back to ONNXRUNTIME",
+            file=sys.stderr,
+        )
+        return EngineType.ONNXRUNTIME, "fallback-onnxruntime"
+
+    if normalized == "onnxruntime":
+        return EngineType.ONNXRUNTIME, "forced-onnxruntime"
+
+    if has_openvino():
+        return EngineType.OPENVINO, "auto-openvino"
+
+    return EngineType.ONNXRUNTIME, "auto-onnxruntime"
+
+
+def build_reader_params(engine_type):
+    return {
+        "Det.engine_type": engine_type,
+        "Det.lang_type": LangDet.CH,
+        "Det.model_type": ModelType.MOBILE,
+        "Det.ocr_version": OCRVersion.PPOCRV5,
+        "Rec.engine_type": engine_type,
+        "Rec.lang_type": LangRec.CYRILLIC,
+        "Rec.model_type": ModelType.MOBILE,
+        "Rec.ocr_version": OCRVersion.PPOCRV5,
+    }
+
+
 def build_reader():
-    return RapidOCR(
-        params={
-            "Det.engine_type": EngineType.ONNXRUNTIME,
-            "Det.lang_type": LangDet.CH,
-            "Det.model_type": ModelType.MOBILE,
-            "Det.ocr_version": OCRVersion.PPOCRV5,
-            "Rec.engine_type": EngineType.ONNXRUNTIME,
-            "Rec.lang_type": LangRec.CYRILLIC,
-            "Rec.model_type": ModelType.MOBILE,
-            "Rec.ocr_version": OCRVersion.PPOCRV5,
-        }
-    )
+    engine_type, reason = resolve_engine_name()
+    params = build_reader_params(engine_type)
+    try:
+        return RapidOCR(params=params), engine_type, reason
+    except ImportError as error:
+        if engine_type == EngineType.OPENVINO:
+            print(
+                f"OpenVINO initialization failed ({error}); falling back to ONNXRUNTIME",
+                file=sys.stderr,
+            )
+            return (
+                RapidOCR(params=build_reader_params(EngineType.ONNXRUNTIME)),
+                EngineType.ONNXRUNTIME,
+                "fallback-onnxruntime",
+            )
+        raise
 
 
 def read_text_fast(reader, image):
@@ -309,7 +373,8 @@ def recognize_plate(image_path):
 
     start = time.time()
     print("Loading RapidOCR...", file=sys.stderr)
-    reader = build_reader()
+    reader, engine_type, engine_reason = build_reader()
+    print(f"OCR engine: {engine_type.value} ({engine_reason})", file=sys.stderr)
     print(f"RapidOCR loaded in {time.time() - start:.1f}s", file=sys.stderr)
 
     start = time.time()

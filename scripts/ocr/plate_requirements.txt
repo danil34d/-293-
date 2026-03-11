@@ -2,3 +2,4 @@ opencv-python-headless>=4.5.0
 numpy>=1.19.0
 onnxruntime==1.24.3
 rapidocr==3.7.0
+openvino==2026.0.0; platform_system == "Linux" and (platform_machine == "x86_64" or platform_machine == "AMD64")
