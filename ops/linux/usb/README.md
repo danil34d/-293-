@@ -23,7 +23,8 @@ Main entrypoints:
   - unpacks the seed archive, installs runtime dependencies, builds the app,
     sets up OCR, and starts services
 - `install-runtime-services.sh`
-  - installs USB-specific systemd services and `/etc/default/carwash`
+  - installs USB-specific systemd services, `/etc/default/carwash`, XDG autostart,
+    and the Xfce kiosk/session policy
 - `create-removable-rootfs.sh`
   - creates the actual bootable USB Linux rootfs onto a target disk from a
     Linux host

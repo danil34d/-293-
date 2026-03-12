@@ -28,6 +28,14 @@ fi
 
 install -d -m 0755 -o "$CARWASH_USER" -g "$CARWASH_USER" "$DESKTOP_DIR" "$APPLICATIONS_DIR"
 
+cleanup_legacy_shortcuts() {
+  rm -f \
+    "$DESKTOP_DIR/Carwash.desktop" \
+    "$DESKTOP_DIR/Logs.desktop" \
+    "$DESKTOP_DIR/Terminal.desktop" \
+    "$DESKTOP_DIR/Project.desktop"
+}
+
 write_desktop_file() {
   local path="$1"
   local name="$2"
@@ -80,3 +88,13 @@ chown "$CARWASH_USER:$CARWASH_USER" \
   "$APPLICATIONS_DIR/carwash-wallboard.desktop" \
   "$APPLICATIONS_DIR/carwash-admin.desktop" \
   "$APPLICATIONS_DIR/carwash-wallboard-close.desktop"
+
+cleanup_legacy_shortcuts
+
+CARWASH_UID="$(id -u "$CARWASH_USER")"
+if [[ -S "/run/user/$CARWASH_UID/bus" ]]; then
+  runuser -u "$CARWASH_USER" -- env \
+    DISPLAY=:0 \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$CARWASH_UID/bus" \
+    /usr/local/bin/carwash-xfce-kiosk-apply.sh desktop-only || true
+fi

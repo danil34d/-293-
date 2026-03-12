@@ -8,6 +8,9 @@ User=__CARWASH_USER__
 WorkingDirectory=__CARWASH_APP_ROOT__
 Environment=PATH=__CARWASH_NODE_BIN_DIR__:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NODE_ENV=production
+Environment=PLATE_READER_MODE=auto
+Environment=PLATE_WORKER_URL=http://127.0.0.1:3101
+Environment=PLATE_READER_PYTHON=__CARWASH_APP_ROOT__/.venv-ocr/bin/python
 ExecStart=__CARWASH_APP_ROOT__/node_modules/.bin/next start -H 0.0.0.0 -p 3000
 Restart=always
 RestartSec=5

@@ -25,7 +25,7 @@ Useful checks:
 bash ops/linux/build-only.sh
 bash ops/linux/bot-smoke.sh
 bash ops/linux/ocr-smoke.sh
-sudo systemctl status carwash-web.service carwash-bot.service --no-pager
+sudo systemctl status carwash-ocr-worker.service carwash-web.service carwash-bot.service --no-pager
 ```
 
 From the Windows host, stable access to the VM is provided by:

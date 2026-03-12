@@ -56,8 +56,10 @@ cat > "$PROFILE_PATH/chrome/userChrome.css" <<'EOF'
 }
 EOF
 
-pkill -9 -u "$CURRENT_UID" -f -- "--profile $PROFILE_PATH" || true
-pkill -9 -u "$CURRENT_UID" -f -- "$PROFILE_PATH" || true
+# Kill only Firefox processes using this profile. Matching the raw profile path
+# can kill this launcher itself because the path is present in the shell args.
+pkill -9 -u "$CURRENT_UID" -f -- "firefox.*--profile $PROFILE_PATH" || true
+pkill -9 -u "$CURRENT_UID" -f -- "firefox-bin.*$PROFILE_PATH" || true
 rm -f "$PROFILE_PATH/lock" "$PROFILE_PATH/.parentlock"
 find "$PROFILE_PATH" -maxdepth 1 -type s -name '.parentlock-*' -delete 2>/dev/null || true
 

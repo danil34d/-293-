@@ -230,11 +230,14 @@ const TEMP_DIR = process.platform === 'win32'
   ? join(process.env.TEMP || 'C:\\Temp', 'carwash-plate-temp')
   : join(process.cwd(), 'temp');
 const OCR_PROCESS_TIMEOUT_MS = Number(process.env.PLATE_READER_TIMEOUT_MS || '60000');
+const OCR_WORKER_TIMEOUT_MS = Number(process.env.PLATE_WORKER_TIMEOUT_MS || String(OCR_PROCESS_TIMEOUT_MS + 5000));
 
 type PythonRuntime = {
   command: string;
   baseArgs: string[];
 };
+
+type PlateReaderMode = 'auto' | 'direct' | 'worker';
 
 export interface PlateRecognitionResult {
   success: boolean;
@@ -249,6 +252,36 @@ async function ensureTempDir() {
   if (!existsSync(TEMP_DIR)) {
     await mkdir(TEMP_DIR, { recursive: true });
   }
+}
+
+function normalizePlateReaderMode(rawMode: string | undefined): PlateReaderMode {
+  const value = rawMode?.trim().toLowerCase();
+  if (value === 'direct' || value === 'worker') {
+    return value;
+  }
+  return 'auto';
+}
+
+function getPlateReaderMode(): PlateReaderMode {
+  return normalizePlateReaderMode(process.env.PLATE_READER_MODE);
+}
+
+function getPlateWorkerUrl(): string | null {
+  const rawUrl = process.env.PLATE_WORKER_URL?.trim();
+  if (!rawUrl) {
+    return null;
+  }
+
+  return rawUrl.replace(/\/+$/, '');
+}
+
+function getPlateReaderScriptPath(): string {
+  const preferredPath = join(process.cwd(), 'scripts', 'ocr', 'plate_reader.py');
+  if (existsSync(preferredPath)) {
+    return preferredPath;
+  }
+
+  return join(process.cwd(), 'scripts', 'plate_reader.py');
 }
 
 function getPythonCandidates(): PythonRuntime[] {
@@ -299,6 +332,22 @@ async function resolvePythonRuntime(): Promise<PythonRuntime> {
   throw new Error('Python runtime not found. Install Python or set PLATE_READER_PYTHON to a valid interpreter path.');
 }
 
+async function appendFailedFilename(
+  imageBuffer: Buffer,
+  result: PlateRecognitionResult,
+  reason: string,
+): Promise<PlateRecognitionResult> {
+  if (result.failedFilename) {
+    return result;
+  }
+
+  const failedFilename = (await saveOcrFailedPhoto(imageBuffer, reason).catch(() => null)) || undefined;
+  return {
+    ...result,
+    failedFilename,
+  };
+}
+
 function parsePlateFromOutput(outputRaw: string): string | null {
   const output = outputRaw.trim();
 
@@ -327,7 +376,7 @@ function parsePlateFromOutput(outputRaw: string): string | null {
   return null;
 }
 
-export async function recognizePlateFromBuffer(imageBuffer: Buffer): Promise<PlateRecognitionResult> {
+async function recognizePlateDirect(imageBuffer: Buffer): Promise<PlateRecognitionResult> {
   let tempFilePath: string | null = null;
   try {
     await ensureTempDir();
@@ -336,7 +385,7 @@ export async function recognizePlateFromBuffer(imageBuffer: Buffer): Promise<Pla
     tempFilePath = join(TEMP_DIR, `plate_${timestamp}_${randomStr}.jpg`);
     await writeFile(tempFilePath, imageBuffer);
 
-    const scriptPath = join(process.cwd(), 'scripts', 'plate_reader.py');
+    const scriptPath = getPlateReaderScriptPath();
     if (!existsSync(scriptPath)) {
       const failedFilename = (await saveOcrFailedPhoto(imageBuffer, 'error: Plate reader script not found').catch(() => null)) || undefined;
       return { success: false, error: 'Plate reader script not found', failedFilename };
@@ -399,4 +448,102 @@ export async function recognizePlateFromBuffer(imageBuffer: Buffer): Promise<Pla
       }
     }
   }
+}
+
+async function recognizePlateViaWorker(imageBuffer: Buffer): Promise<PlateRecognitionResult> {
+  const workerUrl = getPlateWorkerUrl();
+  if (!workerUrl) {
+    throw new Error('PLATE_WORKER_URL is not configured');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), OCR_WORKER_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${workerUrl}/recognize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        imageBase64: imageBuffer.toString('base64'),
+      }),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    let payload: PlateRecognitionResult | { error?: string } | null = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      const workerError = payload && typeof payload === 'object' && 'error' in payload
+        ? payload.error
+        : undefined;
+      throw new Error(workerError || `OCR worker HTTP ${response.status}`);
+    }
+
+    if (!payload || typeof payload !== 'object' || !('success' in payload)) {
+      throw new Error('OCR worker returned invalid payload');
+    }
+
+    return payload as PlateRecognitionResult;
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error(`OCR worker timeout after ${OCR_WORKER_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function recognizePlateFromBuffer(imageBuffer: Buffer): Promise<PlateRecognitionResult> {
+  const mode = getPlateReaderMode();
+  const canUseWorker = mode !== 'direct' && Boolean(getPlateWorkerUrl());
+
+  if (mode === 'worker' && !canUseWorker) {
+    return appendFailedFilename(
+      imageBuffer,
+      {
+        success: false,
+        error: 'PLATE_WORKER_URL is not configured',
+      },
+      'error: PLATE_WORKER_URL is not configured',
+    );
+  }
+
+  if (canUseWorker) {
+    try {
+      const workerResult = await recognizePlateViaWorker(imageBuffer);
+      if (workerResult.success) {
+        return workerResult;
+      }
+
+      const notRecognizedReason = `not_recognized: ${
+        workerResult.rawOutput?.trim().slice(0, 120)
+        || workerResult.stderr?.trim().slice(0, 120)
+        || 'empty output'
+      }`;
+
+      return appendFailedFilename(imageBuffer, workerResult, notRecognizedReason);
+    } catch (error: any) {
+      if (mode === 'worker') {
+        const errorMessage = error?.message || 'worker_unavailable';
+        return appendFailedFilename(
+          imageBuffer,
+          {
+            success: false,
+            error: errorMessage,
+          },
+          `error: ${errorMessage}`,
+        );
+      }
+    }
+  }
+
+  return recognizePlateDirect(imageBuffer);
 }

@@ -42,6 +42,8 @@ backend-go/server.exe
 # --- IDE ---
 .vscode/
 .idea/
+.gradle/
+local.properties
 
 # --- OS ---
 .DS_Store

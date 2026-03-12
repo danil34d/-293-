@@ -73,6 +73,9 @@ ENGINE_ALIASES = {
 }
 
 
+_CACHED_READER = None
+
+
 def normalize_text(text):
     text = text.upper().strip()
     text = re.sub(r"[^A-ZА-ЯЁ0-9]", "", text)
@@ -148,23 +151,25 @@ def format_plate(text, plate_type="standard"):
 
 def try_extract_standard(text):
     candidates = []
+    allow_position_fix = 6 <= len(text) <= 10
 
     match = STANDARD_RE.search(text)
     if match:
         candidates.append(match.group())
 
-    fixed = strict_position_fix_standard(text)
-    match = STANDARD_RE.search(fixed)
-    if match and match.group() not in candidates:
-        candidates.append(match.group())
+    if allow_position_fix:
+        fixed = strict_position_fix_standard(text)
+        match = STANDARD_RE.search(fixed)
+        if match and match.group() not in candidates:
+            candidates.append(match.group())
 
-    if text and text[0] == "0" and len(text) >= 4 and text[1].isdigit():
+    if allow_position_fix and text and text[0] == "0" and len(text) >= 4 and text[1].isdigit():
         fixed = strict_position_fix_standard("О" + text[1:])
         match = STANDARD_RE.search(fixed)
         if match and match.group() not in candidates:
             candidates.append(match.group())
 
-    if text and text[0].isdigit():
+    if allow_position_fix and text and text[0].isdigit():
         fixed = strict_position_fix_standard("О" + text)
         match = STANDARD_RE.search(fixed)
         if match and match.group() not in candidates:
@@ -175,17 +180,19 @@ def try_extract_standard(text):
 
 def try_extract_trailer(text):
     candidates = []
+    allow_position_fix = 6 <= len(text) <= 10
 
     match = TRAILER_RE.search(text)
     if match:
         candidates.append(match.group())
 
-    fixed = strict_position_fix_trailer(text)
-    match = TRAILER_RE.search(fixed)
-    if match and match.group() not in candidates:
-        candidates.append(match.group())
+    if allow_position_fix:
+        fixed = strict_position_fix_trailer(text)
+        match = TRAILER_RE.search(fixed)
+        if match and match.group() not in candidates:
+            candidates.append(match.group())
 
-    if text and len(text) >= 2:
+    if allow_position_fix and text and len(text) >= 2:
         prefix = list(text[:2])
         changed = False
         for index in range(2):
@@ -219,12 +226,17 @@ def try_build_plate(texts):
             if i == j:
                 continue
 
-            combined = texts[i][0] + texts[j][0]
+            left = texts[i][0]
+            right = texts[j][0]
+            if len(left) >= 6 and len(right) >= 5:
+                continue
+
+            combined = left + right
             for plate, plate_type in try_extract_all(combined):
                 avg_conf = (texts[i][1] + texts[j][1]) / 2.0
                 candidates.append((plate, plate_type, avg_conf))
 
-            if len(texts[i][0]) < 6 and len(texts[j][0]) < 6:
+            if len(left) < 6 and len(right) < 6:
                 for k in range(max_texts):
                     if k in (i, j):
                         continue
@@ -304,6 +316,31 @@ def build_reader():
         raise
 
 
+def get_cached_reader(log_loading=True):
+    global _CACHED_READER
+
+    if _CACHED_READER is not None:
+        return _CACHED_READER
+
+    started_at = time.time()
+    if log_loading:
+        print("Loading RapidOCR...", file=sys.stderr)
+
+    _CACHED_READER = build_reader()
+    _, engine_type, engine_reason = _CACHED_READER
+
+    if log_loading:
+        print(f"OCR engine: {engine_type.value} ({engine_reason})", file=sys.stderr)
+        print(f"RapidOCR loaded in {time.time() - started_at:.1f}s", file=sys.stderr)
+
+    return _CACHED_READER
+
+
+def get_cached_engine_info():
+    _, engine_type, engine_reason = get_cached_reader(log_loading=False)
+    return engine_type.value, engine_reason
+
+
 def read_text_fast(reader, image):
     output = reader(image)
     if output is None:
@@ -330,28 +367,24 @@ def build_plate_candidates(all_texts):
 
     for text, conf in all_texts:
         for plate, plate_type in try_extract_all(text):
-            candidates.append((plate, plate_type, conf + 1.0))
+            exact_match_bonus = 1.5 if text == plate else 1.0
+            candidates.append((plate, plate_type, conf + exact_match_bonus))
 
     combined = "".join(text for text, _ in all_texts)
     for plate, plate_type in try_extract_all(combined):
-        candidates.append((plate, plate_type, 2.0))
+        candidates.append((plate, plate_type, 0.75))
 
     short_texts = [text for text in all_texts if len(text[0]) < 8]
     if short_texts:
         combined_short = "".join(text for text, _ in short_texts)
         for plate, plate_type in try_extract_all(combined_short):
-            candidates.append((plate, plate_type, 1.5))
+            candidates.append((plate, plate_type, 0.6))
 
     candidates.extend(try_build_plate(all_texts))
     return candidates
 
 
-def recognize_plate(image_path):
-    image = cv2.imread(image_path)
-    if image is None:
-        print(f"Error: failed to load image {image_path}", file=sys.stderr)
-        return None
-
+def prepare_work_image(image):
     height, width = image.shape[:2]
     longest_side = max(height, width)
     work_image = image
@@ -371,11 +404,20 @@ def recognize_plate(image_path):
             file=sys.stderr,
         )
 
-    start = time.time()
-    print("Loading RapidOCR...", file=sys.stderr)
-    reader, engine_type, engine_reason = build_reader()
-    print(f"OCR engine: {engine_type.value} ({engine_reason})", file=sys.stderr)
-    print(f"RapidOCR loaded in {time.time() - start:.1f}s", file=sys.stderr)
+    return work_image
+
+
+def recognize_plate_from_image(image, reader_bundle=None, log_loading=True):
+    if image is None:
+        print("Error: failed to load image", file=sys.stderr)
+        return None
+
+    work_image = prepare_work_image(image)
+
+    if reader_bundle is None:
+        reader_bundle = get_cached_reader(log_loading=log_loading)
+
+    reader, _, _ = reader_bundle
 
     start = time.time()
     print("Running primary OCR...", file=sys.stderr)
@@ -415,6 +457,25 @@ def recognize_plate(image_path):
     return format_plate(best_plate, best_type)
 
 
+def recognize_plate_from_bytes(image_bytes, reader_bundle=None, log_loading=True):
+    image_array = np.frombuffer(image_bytes, dtype=np.uint8)
+    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+    if image is None:
+        print("Error: failed to decode image bytes", file=sys.stderr)
+        return None
+
+    return recognize_plate_from_image(image, reader_bundle=reader_bundle, log_loading=log_loading)
+
+
+def recognize_plate(image_path, reader_bundle=None, log_loading=True):
+    image = cv2.imread(image_path)
+    if image is None:
+        print(f"Error: failed to load image {image_path}", file=sys.stderr)
+        return None
+
+    return recognize_plate_from_image(image, reader_bundle=reader_bundle, log_loading=log_loading)
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python plate_reader.py <image_path>")
@@ -424,7 +485,7 @@ def main():
     print(f"Processing: {image_path}")
 
     started_at = time.time()
-    plate_number = recognize_plate(image_path)
+    plate_number = recognize_plate(image_path, log_loading=True)
     elapsed = time.time() - started_at
 
     if plate_number:

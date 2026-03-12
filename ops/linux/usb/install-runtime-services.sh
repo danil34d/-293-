@@ -37,6 +37,9 @@ install -m 0755 "$SCRIPT_DIR/session-bootstrap.sh" /usr/local/bin/carwash-sessio
 install -m 0755 "$SCRIPT_DIR/session-stop.sh" /usr/local/bin/carwash-session-stop.sh
 install -m 0755 "$SCRIPT_DIR/firefox-webapp-launch.sh" /usr/local/bin/carwash-firefox-webapp-launch.sh
 install -m 0755 "$SCRIPT_DIR/install-desktop-apps.sh" /usr/local/bin/carwash-install-desktop-apps.sh
+install -m 0755 "$SCRIPT_DIR/xfce-kiosk-apply.sh" /usr/local/bin/carwash-xfce-kiosk-apply.sh
+install -m 0755 "$SCRIPT_DIR/configure-xfce-kiosk.sh" /usr/local/bin/carwash-configure-xfce-kiosk.sh
+install -m 0755 "$SCRIPT_DIR/panel-status.sh" /usr/local/bin/carwash-panel-status.sh
 install -m 0755 "$SCRIPT_DIR/configure-firewall.sh" /usr/local/bin/carwash-configure-firewall.sh
 install -m 0755 "$SCRIPT_DIR/backup-create.sh" /usr/local/bin/carwash-backup-create.sh
 install -m 0755 "$SCRIPT_DIR/health-check.sh" /usr/local/bin/carwash-health-check.sh
@@ -44,7 +47,7 @@ install -m 0755 "$SCRIPT_DIR/pin-current-ip.sh" /usr/local/bin/carwash-pin-curre
 
 cat > /usr/local/bin/carwash-open-logs.sh <<'EOF'
 #!/usr/bin/env bash
-exec xfce4-terminal --title="Carwash Logs" --command "/bin/bash -lc 'journalctl -u carwash-storage-check.service -u carwash-provision.service -u carwash-web.service -u carwash-bot.service -f; exec bash'"
+exec xfce4-terminal --title="Carwash Logs" --command "/bin/bash -lc 'journalctl -u carwash-storage-check.service -u carwash-provision.service -u carwash-ocr-worker.service -u carwash-web.service -u carwash-bot.service -f; exec bash'"
 EOF
 chmod 0755 /usr/local/bin/carwash-open-logs.sh
 
@@ -57,6 +60,7 @@ chmod 0755 /usr/local/bin/carwash-open-project.sh
 render_file "$TEMPLATE_ENV" /etc/default/carwash
 render_file "$SYSTEMD_DIR/carwash-storage-check.service.tpl" /etc/systemd/system/carwash-storage-check.service
 render_file "$SYSTEMD_DIR/carwash-provision.service.tpl" /etc/systemd/system/carwash-provision.service
+render_file "$SYSTEMD_DIR/carwash-ocr-worker.service.tpl" /etc/systemd/system/carwash-ocr-worker.service
 render_file "$SYSTEMD_DIR/carwash-web.service.tpl" /etc/systemd/system/carwash-web.service
 render_file "$SYSTEMD_DIR/carwash-bot.service.tpl" /etc/systemd/system/carwash-bot.service
 render_file "$SYSTEMD_DIR/carwash-firewall.service.tpl" /etc/systemd/system/carwash-firewall.service
@@ -66,5 +70,6 @@ render_file "$SYSTEMD_DIR/carwash-health-check.service.tpl" /etc/systemd/system/
 render_file "$SYSTEMD_DIR/carwash-health-check.timer.tpl" /etc/systemd/system/carwash-health-check.timer
 
 systemctl daemon-reload || true
-systemctl enable NetworkManager ssh carwash-storage-check.service carwash-provision.service carwash-web.service carwash-bot.service carwash-firewall.service carwash-backup.timer carwash-health-check.timer || true
+systemctl enable NetworkManager ssh carwash-storage-check.service carwash-provision.service carwash-ocr-worker.service carwash-web.service carwash-bot.service carwash-firewall.service carwash-backup.timer carwash-health-check.timer || true
+/usr/local/bin/carwash-configure-xfce-kiosk.sh
 /usr/local/bin/carwash-install-desktop-apps.sh

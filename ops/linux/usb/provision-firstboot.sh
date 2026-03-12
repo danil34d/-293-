@@ -150,6 +150,10 @@ main() {
   chown -R "$CARWASH_USER:$CARWASH_USER" "$CARWASH_MOUNT_POINT"
   touch "$MARKER_FILE"
 
+  /usr/local/bin/carwash-configure-xfce-kiosk.sh || true
+  /usr/local/bin/carwash-install-desktop-apps.sh || true
+
+  systemctl restart carwash-ocr-worker.service || true
   systemctl restart carwash-web.service || true
   systemctl restart carwash-bot.service || true
 

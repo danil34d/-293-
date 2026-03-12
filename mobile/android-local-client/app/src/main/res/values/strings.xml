@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Автомойка</string>
+    <string name="retry_button">Повторить</string>
+    <string name="file_picker_title">Выберите фото</string>
+    <string name="file_picker_missing">На устройстве нет приложения для выбора файла.</string>
+    <string name="server_unavailable_title">Сервер недоступен</string>
+    <string name="server_unavailable_message_placeholder">Проверьте Wi-Fi и работу Linux-сервера.</string>
+    <string name="server_unavailable_message">Не удалось открыть %1$s. Проверьте Wi-Fi и сервер автомойки.</string>
+</resources>

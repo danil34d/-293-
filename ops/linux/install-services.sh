@@ -36,10 +36,12 @@ render_unit() {
 
 render_unit "$TEMPLATE_DIR/carwash-web.service.tpl" "$TMP_DIR/carwash-web.service"
 render_unit "$TEMPLATE_DIR/carwash-bot.service.tpl" "$TMP_DIR/carwash-bot.service"
+render_unit "$TEMPLATE_DIR/carwash-ocr-worker.service.tpl" "$TMP_DIR/carwash-ocr-worker.service"
 
 sudo install -m 0644 "$TMP_DIR/carwash-web.service" /etc/systemd/system/carwash-web.service
 sudo install -m 0644 "$TMP_DIR/carwash-bot.service" /etc/systemd/system/carwash-bot.service
+sudo install -m 0644 "$TMP_DIR/carwash-ocr-worker.service" /etc/systemd/system/carwash-ocr-worker.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now carwash-web.service carwash-bot.service
+sudo systemctl enable --now carwash-ocr-worker.service carwash-web.service carwash-bot.service
 sleep 5
-sudo systemctl --no-pager --full status carwash-web.service carwash-bot.service
+sudo systemctl --no-pager --full status carwash-ocr-worker.service carwash-web.service carwash-bot.service

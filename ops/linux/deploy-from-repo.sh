@@ -113,11 +113,13 @@ systemctl restart carwash-web.service  2>/dev/null || warn "carwash-web не п�
 systemctl restart carwash-bot.service  2>/dev/null || warn "carwash-bot не перезапущен"
 
 # Ждём 3 секунды и проверяем
+systemctl restart carwash-ocr-worker.service 2>/dev/null || warn "carwash-ocr-worker not restarted"
 sleep 3
+OCR_STATE=$(systemctl is-active carwash-ocr-worker.service 2>/dev/null || echo "unknown")
 WEB_STATE=$(systemctl is-active carwash-web.service 2>/dev/null || echo "unknown")
 BOT_STATE=$(systemctl is-active carwash-bot.service 2>/dev/null || echo "unknown")
 
-if [[ "$WEB_STATE" == "active" && "$BOT_STATE" == "active" ]]; then
+if [[ "$OCR_STATE" == "active" && "$WEB_STATE" == "active" && "$BOT_STATE" == "active" ]]; then
   log "Сервисы работают: web=${WEB_STATE}, bot=${BOT_STATE}"
 else
   warn "Проверь сервисы вручную: web=${WEB_STATE}, bot=${BOT_STATE}"
@@ -131,5 +133,6 @@ log ""
 log "Деплой завершён!"
 log "  Коммит:  ${DEPLOY_HASH} — ${DEPLOY_MSG}"
 log "  Бэкап:   ${BACKUP_PATH}"
+log "  OCR:     ${OCR_STATE}"
 log "  Web:     ${WEB_STATE}"
 log "  Bot:     ${BOT_STATE}"

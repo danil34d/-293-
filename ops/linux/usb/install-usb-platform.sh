@@ -57,6 +57,7 @@ apt-get install -y \
   libgomp1 \
   xorg \
   xfce4 \
+  xfce4-genmon-plugin \
   xfce4-terminal \
   lightdm \
   zram-tools \
@@ -126,47 +127,6 @@ autologin-user-timeout=0
 user-session=xfce
 EOF
 
-cat > /etc/xdg/autostart/carwash-browser.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Carwash Browser Bootstrap
-Exec=/usr/local/bin/carwash-session-bootstrap.sh
-X-GNOME-Autostart-enabled=true
-EOF
-
-cat > "/home/$CARWASH_USER/Desktop/Carwash.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Carwash
-Exec=firefox http://127.0.0.1:3000/login
-Terminal=false
-EOF
-
-cat > "/home/$CARWASH_USER/Desktop/Logs.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Logs
-Exec=/usr/local/bin/carwash-open-logs.sh
-Terminal=false
-EOF
-
-cat > "/home/$CARWASH_USER/Desktop/Terminal.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Terminal
-Exec=xfce4-terminal
-Terminal=false
-EOF
-
-cat > "/home/$CARWASH_USER/Desktop/Project.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Project
-Exec=/usr/local/bin/carwash-open-project.sh
-Terminal=false
-EOF
-
-chmod 0755 "/home/$CARWASH_USER/Desktop/"*.desktop
 chown -R "$CARWASH_USER:$CARWASH_USER" "/home/$CARWASH_USER"
 
 CARWASH_USER="$CARWASH_USER" /opt/carwash-seed/usb/install-runtime-services.sh

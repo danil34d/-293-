@@ -23,6 +23,7 @@ const CARWASH_BACKUP_ROOT = process.env.CARWASH_BACKUP_ROOT || '/srv/carwash/bac
 const WALLBOARD_SERVICES = [
   'carwash-web.service',
   'carwash-bot.service',
+  'carwash-ocr-worker.service',
   'carwash-backup.timer',
   'carwash-health-check.timer',
 ] as const;

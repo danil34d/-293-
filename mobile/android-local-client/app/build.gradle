@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+}
+
+def compileSdkVersionValue = providers.gradleProperty("carwashCompileSdk").orElse("36").get()
+def compileSdkMinorApiLevelValue = providers.gradleProperty("carwashCompileSdkMinorApiLevel").orElse("1").get()
+def targetSdkVersionValue = providers.gradleProperty("carwashTargetSdk").orElse(compileSdkVersionValue).get()
+def minSdkVersionValue = providers.gradleProperty("carwashMinSdk").orElse("26").get()
+def baseUrlValue = providers.gradleProperty("carwashBaseUrl").orElse("http://192.168.1.36:3000/login").get()
+
+android {
+    namespace 'ru.carwash.localclient'
+    compileSdk {
+        version = release(Integer.parseInt(compileSdkVersionValue)) {
+            it.minorApiLevel = Integer.parseInt(compileSdkMinorApiLevelValue)
+        }
+    }
+    buildToolsVersion "36.1.0"
+
+    defaultConfig {
+        applicationId "ru.carwash.localclient"
+        minSdk {
+            version = release(Integer.parseInt(minSdkVersionValue))
+        }
+        targetSdk {
+            version = release(Integer.parseInt(targetSdkVersionValue))
+        }
+        versionCode 1
+        versionName "0.1.0"
+        buildConfigField "String", "BASE_URL", "\"${baseUrlValue}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
