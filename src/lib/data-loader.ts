@@ -466,3 +466,48 @@ export async function getActiveSchedulePlan(month: string): Promise<SchedulePlan
     const plans = await getSchedulePlansData();
     return plans.find(p => p.month === month && p.isActive) || null;
 }
+
+// --- Violations ---
+
+export async function getViolationsData(): Promise<any[]> {
+    const items = await readDataFromDirectory('violations');
+    items.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return items;
+}
+
+export async function getShiftReportsData(): Promise<any[]> {
+    const items = await readDataFromDirectory('shift-reports');
+    items.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return items;
+}
+
+export async function saveViolation(data: any): Promise<void> {
+    const dirPath = path.join(process.cwd(), 'data', 'violations');
+    await fs.mkdir(dirPath, { recursive: true });
+    await fs.writeFile(path.join(dirPath, `${data.id}.json`), JSON.stringify(data, null, 2));
+}
+
+export async function deleteViolation(id: string): Promise<void> {
+    try {
+        await fs.unlink(path.join(process.cwd(), 'data', 'violations', `${id}.json`));
+    } catch {}
+}
+
+// --- Active Session ---
+
+export async function getActiveSession(): Promise<any> {
+    const dataFile = path.join(process.cwd(), 'data', 'active-session.json');
+    try {
+        const content = await fs.readFile(dataFile, 'utf-8');
+        return JSON.parse(content);
+    } catch {
+        return { updatedAt: new Date().toISOString(), boxes: [] };
+    }
+}
+
+export async function saveActiveSession(session: any): Promise<void> {
+    const dataFile = path.join(process.cwd(), 'data', 'active-session.json');
+    await fs.writeFile(dataFile, JSON.stringify(session, null, 2));
+}
+
+export async function invalidateActiveSessionCache(): Promise<void> {}

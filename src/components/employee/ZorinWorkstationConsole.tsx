@@ -137,6 +137,19 @@ export function ZorinWorkstationConsole() {
   // Чаевые
   const [tipsInput, setTipsInput] = useState('');
 
+  const [activeShiftId, setActiveShiftId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') return sessionStorage.getItem('activeShiftId');
+    return null;
+  });
+  const [selectedBoxNumber, setSelectedBoxNumber] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('selectedBoxNumber');
+      return saved ? parseInt(saved, 10) : 1;
+    }
+    return 1;
+  });
+  const [isShiftLoading, setIsShiftLoading] = useState(false);
+
   const [currentStep, setCurrentStep] = useState<CurrentStep>("idle");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -207,6 +220,11 @@ export function ZorinWorkstationConsole() {
 
   useEffect(() => {
     sessionStorage.setItem('isShiftActive', String(isShiftActive));
+    if (activeShiftId) {
+      sessionStorage.setItem('activeShiftId', activeShiftId);
+    } else {
+      sessionStorage.removeItem('activeShiftId');
+    }
     if (isShiftActive) {
       setCurrentStep("vehicleInput");
     } else {
@@ -214,7 +232,7 @@ export function ZorinWorkstationConsole() {
       sessionStorage.removeItem('selectedEmployees'); // Clear saved employees when shift ends
       resetForm();
     }
-  }, [isShiftActive]);
+  }, [isShiftActive, activeShiftId]);
 
   // ── Таймер мойки ──
   useEffect(() => {
@@ -652,6 +670,7 @@ export function ZorinWorkstationConsole() {
         driverComments: newWashComment ? [newWashComment] : undefined,
         tips: tipsInput ? parseFloat(tipsInput) || 0 : undefined,
         washDurationSeconds: washTimerElapsed > 0 ? washTimerElapsed : undefined,
+        shiftId: activeShiftId || undefined,
     };
 
     try {
@@ -814,6 +833,73 @@ export function ZorinWorkstationConsole() {
     return ranked;
   }, [serviceSearchQuery, sortedServices]);
 
+  const handleStartShift = async () => {
+    if (selectedEmployees.length === 0) {
+      toast({ title: "Ошибка", description: "Выберите хотя бы одного сотрудника", variant: "destructive" });
+      return;
+    }
+    setIsShiftLoading(true);
+    try {
+      const res = await fetch('/api/workstation/shift', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeIds: selectedEmployees.map(e => e.id),
+          boxNumber: selectedBoxNumber,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Не удалось начать смену');
+      }
+      const data = await res.json();
+      const shiftId = data.shift?.id;
+      if (shiftId) {
+        setActiveShiftId(shiftId);
+        sessionStorage.setItem('activeShiftId', shiftId);
+      }
+      setIsShiftActive(true);
+      sessionStorage.setItem('isShiftActive', 'true');
+    } catch (error: any) {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    } finally {
+      setIsShiftLoading(false);
+    }
+  };
+
+  const handleEndShift = async () => {
+    if (!activeShiftId) {
+      setIsShiftActive(false);
+      return;
+    }
+    setIsShiftLoading(true);
+    try {
+      const res = await fetch('/api/workstation/shift', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftId: activeShiftId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Не удалось завершить смену');
+      }
+      const data = await res.json();
+      const summary = data.summary || { totalWashes: 0, totalAmount: 0 };
+      toast({
+        title: "Смена завершена",
+        description: `Моек: ${summary.totalWashes}, Выручка: ${summary.totalAmount.toLocaleString('ru-RU')} ₽`,
+      });
+      setActiveShiftId(null);
+      setIsShiftActive(false);
+      sessionStorage.removeItem('activeShiftId');
+      sessionStorage.removeItem('isShiftActive');
+    } catch (error: any) {
+      toast({ title: "Ошибка", description: error.message, variant: "destructive" });
+    } finally {
+      setIsShiftLoading(false);
+    }
+  };
+
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
@@ -847,21 +933,39 @@ export function ZorinWorkstationConsole() {
       {/* Shift Control */}
       <div className="zorin-shift-card">
         <h2 className="zorin-shift-title">Управление сменой</h2>
+        {!isShiftActive && (
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-sm font-medium">Бокс:</span>
+            <button
+              className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              onClick={() => { setSelectedBoxNumber(1); sessionStorage.setItem('selectedBoxNumber', '1'); }}
+            >
+              Бокс 1
+            </button>
+            <button
+              className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              onClick={() => { setSelectedBoxNumber(2); sessionStorage.setItem('selectedBoxNumber', '2'); }}
+            >
+              Бокс 2
+            </button>
+          </div>
+        )}
         <div className="zorin-shift-controls">
           <button
-            onClick={() => setIsShiftActive(true)}
-            disabled={isShiftActive || isLoading}
+            onClick={handleStartShift}
+            disabled={isShiftActive || isLoading || isShiftLoading}
             className="zorin-shift-btn start"
           >
-            {isLoading && !isShiftActive ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+            {(isLoading || isShiftLoading) && !isShiftActive ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
             <CheckCircle size={20} />
             Начать смену
           </button>
           <button
-            onClick={() => setIsShiftActive(false)}
-            disabled={!isShiftActive}
+            onClick={handleEndShift}
+            disabled={!isShiftActive || isShiftLoading}
             className="zorin-shift-btn end"
           >
+            {isShiftLoading && isShiftActive ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
             Завершить смену
           </button>
           <span className={`zorin-shift-status ${isShiftActive ? 'active' : 'inactive'}`}>

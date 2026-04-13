@@ -1,0 +1,405 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Справочники ──────────────────────────────────────────────
+
+model SalaryScheme {
+  id             String  @id
+  name           String
+  type           String  // 'percentage' | 'rate'
+  percentage     Float?
+  fixedDeduction Float?
+  rateSource     Json?   // { type, id, priceListName }
+  rates          Json?   // [{ serviceName, rate, deduction }]
+
+  employees Employee[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Employee {
+  id                        String  @id
+  fullName                  String
+  phone                     String  @default("")
+  paymentDetails            String  @default("")
+  hasCar                    Boolean @default(false)
+  role                      String  @default("employee")
+  telegramChatId            String?
+  username                  String? @unique
+  password                  String?
+  salarySchemeId            String?
+  canSwapShifts             Boolean @default(true)
+  preferredShiftType        String?
+  weekdayPreferredShiftType String?
+  weekendPreferredShiftType String?
+  targetShiftsPerMonth      Int?
+  wantsMoreShifts           Boolean?
+
+  salaryScheme         SalaryScheme?        @relation(fields: [salarySchemeId], references: [id], onDelete: SetNull)
+  washEvents           WashEventEmployee[]
+  employeeTransactions EmployeeTransaction[]
+  shifts               ShiftEmployee[]
+  dayStatuses          EmployeeDayStatus[]
+  canisters            EmployeeCanister[]
+  stockMovements       StockMovement[]
+  violations           Violation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([salarySchemeId])
+}
+
+// ─── Клиенты ──────────────────────────────────────────────────
+
+model Aggregator {
+  id                  String @id
+  name                String
+  balance             Float  @default(0)
+  companies           Json   @default("[]")
+  cars                Json   @default("[]")
+  priceLists          Json   @default("[]")
+  activePriceListName String?
+
+  washEvents         WashEvent[]
+  clientTransactions ClientTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CounterAgent {
+  id                  String  @id
+  name                String
+  balance             Float   @default(0)
+  companies           Json    @default("[]")
+  cars                Json    @default("[]")
+  priceList           Json    @default("[]")
+  additionalPriceList Json    @default("[]")
+  allowCustomServices Boolean @default(false)
+  archived            Boolean @default(false)
+  archivedAt          String?
+
+  washEvents         WashEvent[]
+  clientTransactions ClientTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Мойки ────────────────────────────────────────────────────
+
+model WashEvent {
+  id                       String   @id
+  timestamp                DateTime
+  vehicleNumber            String
+  boxNumber                Int?
+  paymentMethod            String
+  aggregatorId             String?
+  counterAgentId           String?
+  sourceName               String?
+  priceListName            String?
+  totalAmount              Float
+  netAmount                Float?
+  acquiringFee             Float?
+  services                 Json     // { main, additional }
+  driverComments           Json?
+  editHistory              Json?
+  photos                   Json?
+  chemicalConsumptionGrams Float?
+  chemicalCostRub          Float?
+  status                   String?  // 'in_progress' | 'completed' | 'cancelled'
+  completedAt              String?
+  refundedAt               String?
+  refundReason             String?
+  tips                     Float?
+  shiftId                  String?
+
+  aggregator   Aggregator?   @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
+  counterAgent CounterAgent? @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
+  employees    WashEventEmployee[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([timestamp])
+  @@index([aggregatorId])
+  @@index([counterAgentId])
+  @@index([vehicleNumber])
+  @@index([status])
+  @@index([shiftId])
+}
+
+model WashEventEmployee {
+  washEventId String
+  employeeId  String
+
+  washEvent WashEvent @relation(fields: [washEventId], references: [id], onDelete: Cascade)
+  employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([washEventId, employeeId])
+  @@index([employeeId])
+}
+
+// ─── Финансы ──────────────────────────────────────────────────
+
+model EmployeeTransaction {
+  id          String   @id
+  employeeId  String
+  date        DateTime
+  type        String   // 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off'
+  amount      Float
+  description String   @default("")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([employeeId])
+  @@index([date])
+}
+
+model ClientTransaction {
+  id             String   @id
+  clientId       String   // backward compat: agg_xxx or agent_xxx
+  aggregatorId   String?
+  counterAgentId String?
+  date           DateTime
+  type           String   @default("payment")
+  amount         Float
+  description    String   @default("")
+
+  aggregator   Aggregator?   @relation(fields: [aggregatorId], references: [id], onDelete: Cascade)
+  counterAgent CounterAgent? @relation(fields: [counterAgentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([aggregatorId])
+  @@index([counterAgentId])
+  @@index([date])
+}
+
+model Expense {
+  id           String   @id
+  date         DateTime
+  category     String
+  description  String   @default("")
+  amount       Float
+  quantity     Float?
+  unit         String?
+  pricePerUnit Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([category])
+}
+
+// ─── Смены и расписание ───────────────────────────────────────
+
+model Shift {
+  id                 String    @id
+  date               String    // YYYY-MM-DD
+  boxNumber          Int
+  shiftType          String    // 'day' | 'night'
+  startTime          String    @default("08:00")
+  endTime            String    @default("20:00")
+  releasedEmployeeId String?
+  isAutoAssigned     Boolean   @default(false)
+  status             String    @default("scheduled") // 'scheduled' | 'active' | 'completed'
+  startedAt          DateTime?
+  closedAt           DateTime?
+
+  employees ShiftEmployee[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([date, boxNumber, shiftType])
+  @@index([status])
+}
+
+model ShiftEmployee {
+  shiftId    String
+  employeeId String
+
+  shift    Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([shiftId, employeeId])
+  @@index([employeeId])
+}
+
+model ShiftSwapRequest {
+  id               String    @id
+  type             String    // 'giveaway' | 'swap'
+  requesterId      String
+  requesterShiftId String
+  targetEmployeeId String?
+  targetShiftId    String?
+  status           String    // 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  resolvedAt       DateTime?
+
+  createdAt DateTime @default(now())
+}
+
+model ShiftAssignmentRequest {
+  id         String    @id
+  employeeId String
+  date       String    // YYYY-MM-DD
+  shiftType  String    // 'day' | 'night'
+  boxNumber  Int
+  status     String    // 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  resolvedAt DateTime?
+  resolvedBy String?
+  comment    String?
+
+  createdAt DateTime @default(now())
+}
+
+model EmployeeDayStatus {
+  id         String  @id
+  employeeId String
+  date       String  // YYYY-MM-DD
+  status     String  // 'free' | 'doesnt_want' | 'vacation_sick' | 'must_work' | 'auto_assigned'
+  shiftType  String?
+  boxNumber  Int?
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model SchedulePlan {
+  id                String   @id
+  name              String
+  month             String   // "2025-12"
+  createdBy         String
+  clonedFrom        String?
+  isActive          Boolean  @default(false)
+  washId            String?
+  employeeConfigs   Json     @default("[]")
+  dailyRequirements Json     @default("[]")
+  weeklyPattern     Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([month])
+}
+
+// ─── Склад ────────────────────────────────────────────────────
+
+model InventoryMaterial {
+  id           String  @id
+  name         String
+  category     String  // 'chemical' | 'consumable' | 'equipment' | 'other'
+  unit         String  // 'grams' | 'kg' | 'liters' | 'pieces' | 'sets'
+  currentStock Float   @default(0)
+  minStock     Float?
+  pricePerUnit Float?
+  description  String?
+  isActive     Boolean @default(true)
+
+  stockMovements StockMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StockMovement {
+  id                String   @id
+  materialId        String
+  type              String   // 'purchase' | 'consumption' | 'issue' | 'return' | 'adjustment' | 'write_off'
+  amount            Float
+  balanceAfter      Float
+  date              DateTime
+  description       String   @default("")
+  relatedEntityType String?
+  relatedEntityId   String?
+  employeeId        String?
+  createdBy         String?
+
+  material InventoryMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  employee Employee?         @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([materialId])
+  @@index([date])
+  @@index([employeeId])
+}
+
+model EmployeeCanister {
+  id                   String   @id
+  employeeId           String
+  issuedAt             DateTime
+  initialAmountGrams   Float
+  remainingAmountGrams Float
+  priceRub             Float
+  status               String   // 'active' | 'empty' | 'returned'
+  transactionId        String?
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+// ─── Конфигурация (синглтоны) ─────────────────────────────────
+
+model AppConfig {
+  key   String @id // 'inventory', 'chemicalConfig', 'retailPriceList', 'vehicleTypes', 'appVersion', 'deviceHeartbeats', 'activeSession', 'weatherCache', 'weatherPatterns'
+  value Json
+
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Отчёты по сменам ─────────────────────────────────────────
+
+model ShiftReport {
+  id        String   @id
+  date      String
+  shiftType String
+  boxNumber Int
+  shiftId   String?
+  data      Json
+
+  createdAt DateTime @default(now())
+
+  @@index([date])
+  @@index([shiftId])
+}
+
+// ─── Нарушения ───────────────────────────────────────────────
+
+model Violation {
+  id              String   @id
+  employeeId      String
+  date            String   // YYYY-MM-DD
+  type            String   // lateness | early_leave | no_show | equipment_damage | client_complaint | quality_issue | safety_violation | other
+  description     String   @default("")
+  penaltyAmount   Float?
+  shiftId         String?
+  createdBy       String
+  resolved        Boolean  @default(false)
+  resolvedComment String?
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([employeeId])
+  @@index([date])
+  @@index([type])
+}

@@ -248,6 +248,7 @@ export interface WashEvent {
   // Refund tracking
   refundedAt?: string; // ISO timestamp когда был оформлен возврат
   refundReason?: string; // Причина возврата
+  shiftId?: string;
 }
 
 export type EmployeeTransactionType = 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off';
@@ -339,6 +340,8 @@ export interface ChemicalCostType {
 export type ShiftType = 'day' | 'night'; // РґРµРЅСЊ: 08:00-20:00, РЅРѕС‡СЊ: 20:00-08:00
 export type WashId = 'wash_1' | 'wash_2';
 
+export type ShiftStatus = 'scheduled' | 'active' | 'completed';
+
 export interface Shift {
   id: string;
   washId: WashId;
@@ -350,6 +353,9 @@ export interface Shift {
   endTime: string; // "20:00" РёР»Рё "08:00"
   releasedEmployeeId?: string; // ID РѕС‚РїСѓС‰РµРЅРЅРѕРіРѕ РЅР°РїР°СЂРЅРёРєР° (РµСЃР»Рё РѕРґРёРЅ СЂР°Р±РѕС‚Р°РµС‚ СЃР°Рј)
   isAutoAssigned?: boolean; // Р¤Р»Р°Рі Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РЅР°Р·РЅР°С‡РµРЅРЅРѕР№ СЃРјРµРЅС‹
+  status?: ShiftStatus;
+  startedAt?: string;
+  closedAt?: string;
 }
 
 export type ShiftRequestType = 'giveaway' | 'swap';
@@ -580,3 +586,55 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   closed: 'Закрыт',
   cancelled: 'Отменён',
 };
+
+// --- Active Session ---
+
+export interface ActiveSessionBox {
+  boxNumber: number;
+  employeeIds: string[];
+  shiftId?: string;
+  isActive: boolean;
+  startedAt?: string;
+}
+
+export interface ActiveSession {
+  updatedAt: string;
+  boxes: ActiveSessionBox[];
+}
+
+// --- Violations ---
+
+export type ViolationType =
+  | 'lateness'
+  | 'early_leave'
+  | 'no_show'
+  | 'equipment_damage'
+  | 'client_complaint'
+  | 'quality_issue'
+  | 'safety_violation'
+  | 'other';
+
+export const VIOLATION_TYPE_LABELS: Record<ViolationType, string> = {
+  lateness: 'Опоздание',
+  early_leave: 'Ранний уход',
+  no_show: 'Неявка',
+  equipment_damage: 'Порча оборудования',
+  client_complaint: 'Жалоба клиента',
+  quality_issue: 'Нарушение качества',
+  safety_violation: 'Нарушение ТБ',
+  other: 'Прочее',
+};
+
+export interface Violation {
+  id: string;
+  employeeId: string;
+  date: string;
+  type: ViolationType;
+  description: string;
+  penaltyAmount?: number;
+  shiftId?: string;
+  createdBy: string;
+  createdAt: string;
+  resolved?: boolean;
+  resolvedComment?: string;
+}
