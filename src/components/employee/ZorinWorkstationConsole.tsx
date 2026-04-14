@@ -80,6 +80,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
   const [isShiftActive, setIsShiftActive] = useState(() => {
     // Kiosk mode: shift is always active
     if (isKioskMode) return true;
+    // Admin coming from operations with pre-selected box: auto-activate
+    if (initialBoxNumber && scheduleByBox) {
+      const box = initialBoxNumber === 2 ? scheduleByBox.box2 : scheduleByBox.box1;
+      if (box.length > 0) return true;
+    }
     // Initialize from sessionStorage if available
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('isShiftActive');
@@ -96,9 +101,10 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [employeeMap, setEmployeeMap] = useState<Map<string, string>>(new Map());
   const [selectedEmployees, setSelectedEmployees] = useState<Employee[]>(() => {
-    // Kiosk mode: initialize from schedule for selected box
-    if (isKioskMode && scheduleByBox) {
-      return scheduleByBox.box1;
+    // Kiosk mode or admin with schedule: initialize from schedule for selected box
+    if (scheduleByBox) {
+      const box = initialBoxNumber === 2 ? scheduleByBox.box2 : scheduleByBox.box1;
+      if (box.length > 0) return box;
     }
     // Initialize from sessionStorage if available
     if (typeof window !== 'undefined') {
