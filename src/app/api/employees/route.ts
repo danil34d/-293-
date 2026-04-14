@@ -22,9 +22,10 @@ async function ensureDataDirectory() {
   }
 }
 
-function normalizeEmployeeRole(id: string, requestedRole?: EmployeeRole): EmployeeRole {
-  if (id === 'emp_manager_admin') return 'admin';
-  if (requestedRole === 'admin') return 'employee';
+const VALID_ROLES: EmployeeRole[] = ['admin', 'manager', 'operator', 'cashier', 'employee'];
+
+function normalizeEmployeeRole(requestedRole?: EmployeeRole): EmployeeRole {
+  if (requestedRole && VALID_ROLES.includes(requestedRole)) return requestedRole;
   return 'employee';
 }
 
@@ -53,10 +54,7 @@ export async function POST(request: Request) {
     if (!newEmployee.id) {
        return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
     }
-    if (newEmployee.role === 'admin' && newEmployee.id !== 'emp_manager_admin') {
-      return NextResponse.json({ error: 'Роль admin разрешена только для Менеджер Про' }, { status: 400 });
-    }
-    newEmployee.role = normalizeEmployeeRole(newEmployee.id, newEmployee.role);
+    newEmployee.role = normalizeEmployeeRole(newEmployee.role);
     const filePath = path.join(dataDir, `${newEmployee.id}.json`);
     await fs.writeFile(filePath, JSON.stringify(newEmployee, null, 2), 'utf-8');
     invalidateEmployeesCache();

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Save, X, UserCog, KeyRound, WalletCards, Loader2, ShieldCheck } from "lucide-react";
 import type { Employee, EmployeeRole, SalaryScheme } from "@/types";
+import { ROLE_LABELS } from "@/types";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,7 +25,7 @@ const employeeFormSchema = z.object({
   paymentDetails: z.string().min(10, "Платежные реквизиты должны содержать не менее 10 символов."),
   hasCar: z.boolean(),
   canSwapShifts: z.boolean(),
-  role: z.enum(["employee", "admin"]).default("employee"),
+  role: z.enum(["admin", "manager", "operator", "cashier", "employee"]).default("employee"),
   telegramChatId: z.string().regex(/^-?\d+$/, "Telegram ID должен содержать только цифры.").optional().or(z.literal('')),
   username: z.string().min(3, "Логин должен быть не менее 3 символов.").regex(/^[a-z0-9_]+$/i, "Логин может содержать только латинские буквы, цифры и нижнее подчеркивание.").optional().or(z.literal('')),
   password: z.string().min(6, "Пароль должен быть не менее 6 символов.").optional().or(z.literal('')),
@@ -39,11 +40,10 @@ interface EmployeeFormProps {
   employeeId?: string;
 }
 
-function normalizeEmployeeFormRole(role: EmployeeRole | undefined, currentEmployeeId?: string): EmployeeFormRole {
-  if (currentEmployeeId === "emp_manager_admin" || role === "admin") {
-    return "admin";
+function normalizeEmployeeFormRole(role: EmployeeRole | undefined): EmployeeFormRole {
+  if (role && ["admin", "manager", "operator", "cashier", "employee"].includes(role)) {
+    return role as EmployeeFormRole;
   }
-
   return "employee";
 }
 
@@ -92,7 +92,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
     if (initialData) {
       form.reset({
         ...initialData,
-        role: normalizeEmployeeFormRole(initialData.role, initialData.id),
+        role: normalizeEmployeeFormRole(initialData.role),
         telegramChatId: initialData.telegramChatId || "",
         password: initialData.password || "", // pre-fill visible password
         username: initialData.username || "",
@@ -134,7 +134,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
 
   async function onSubmit(data: EmployeeFormValues) {
     const currentEmployeeId = employeeId || `emp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const enforcedRole: EmployeeRole = normalizeEmployeeFormRole(data.role, currentEmployeeId);
+    const enforcedRole: EmployeeRole = normalizeEmployeeFormRole(data.role);
 
     const employeeToSave: Employee = {
       id: currentEmployeeId,
@@ -378,8 +378,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
                   <FormLabel className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" />Роль</FormLabel>
                   <Select
                     onValueChange={(value) => field.onChange(value as EmployeeRole)}
-                    value={(employeeId === "emp_manager_admin" ? "admin" : "employee")}
-                    disabled
+                    value={field.value}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -387,12 +386,13 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="employee">Сотрудник</SelectItem>
-                      <SelectItem value="admin">Администратор</SelectItem>
+                      {(Object.entries(ROLE_LABELS) as [EmployeeRole, string][]).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    Роль назначается автоматически: «Менеджер Про» — администратор, остальные — сотрудники.
+                    Администратор и Руководитель имеют доступ к панели управления. Остальные роли — к рабочей станции.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

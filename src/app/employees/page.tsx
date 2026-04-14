@@ -5,9 +5,9 @@ import "@/styles/employees.css";
 import Link from 'next/link';
 import { PlusCircle, Edit, UserCog, Check, XIcon, Wallet, WalletCards, AlertTriangle } from 'lucide-react';
 import type { Employee, SalaryScheme } from '@/types';
+import { ROLE_LABELS } from '@/types';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
 import { getEmployeesData, getSalarySchemesData } from '@/lib/data-loader';
-import { isEmployeeAdmin } from '@/lib/employee-role';
 
 
 export default async function EmployeesPage() {
@@ -77,7 +77,7 @@ export default async function EmployeesPage() {
                     <div className="employee-name">{employee.fullName}</div>
                   </td>
                   <td className="employees-table-cell">
-                    <div className="employee-username">{isEmployeeAdmin(employee) ? 'Администратор' : 'Сотрудник'}</div>
+                    <div className="employee-username">{ROLE_LABELS[employee.role || 'employee'] || 'Сотрудник'}</div>
                   </td>
                   <td className="employees-table-cell">
                     <div className="employee-username">{employee.username || '-'}</div>

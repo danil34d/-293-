@@ -22,9 +22,10 @@ async function ensureDataDirectory() {
   }
 }
 
-function normalizeEmployeeRole(id: string, requestedRole?: EmployeeRole): EmployeeRole {
-  if (id === 'emp_manager_admin') return 'admin';
-  if (requestedRole === 'admin') return 'employee';
+const VALID_ROLES: EmployeeRole[] = ['admin', 'manager', 'operator', 'cashier', 'employee'];
+
+function normalizeEmployeeRole(requestedRole?: EmployeeRole): EmployeeRole {
+  if (requestedRole && VALID_ROLES.includes(requestedRole)) return requestedRole;
   return 'employee';
 }
 
@@ -66,10 +67,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (!updatedData.id || updatedData.id !== id) {
         updatedData.id = id;
     }
-    if (updatedData.role === 'admin' && id !== 'emp_manager_admin') {
-      return NextResponse.json({ error: 'Роль admin разрешена только для Менеджер Про' }, { status: 400 });
-    }
-    updatedData.role = normalizeEmployeeRole(id, updatedData.role);
+    updatedData.role = normalizeEmployeeRole(updatedData.role);
 
     await fs.writeFile(filePath, JSON.stringify(updatedData, null, 2), 'utf-8');
     invalidateEmployeesCache();
