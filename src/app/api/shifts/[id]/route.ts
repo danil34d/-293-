@@ -151,9 +151,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const mergedEmployeeIds = Array.from(
       new Set([...requestedEmployeeIds, ...siblingSlotShifts.flatMap((shift) => normalizeEmployeeIds(shift.employeeIds))])
     );
-    if (mergedEmployeeIds.length > 2) {
+    if (mergedEmployeeIds.length > 5) {
       return NextResponse.json(
-        { error: `Бокс ${boxNumber} переполнен: максимум 2 сотрудника на один бокс` },
+        { error: `Бокс ${boxNumber} переполнен: максимум 5 сотрудников на один бокс` },
         { status: 409 }
       );
     }

@@ -170,9 +170,9 @@ export async function POST(request: Request) {
       new Set([...slotShifts.flatMap((shift) => normalizeEmployeeIds(shift.employeeIds)), ...employeeIds])
     );
 
-    if (mergedEmployeeIds.length > 2) {
+    if (mergedEmployeeIds.length > 5) {
       return NextResponse.json(
-        { error: `Бокс ${boxNumber} переполнен: максимум 2 сотрудника на один бокс` },
+        { error: `Бокс ${boxNumber} переполнен: максимум 5 сотрудников на один бокс` },
         { status: 409 }
       );
     }

@@ -159,8 +159,8 @@ export async function resolveAssignmentRequest(input: ResolveAssignmentInput): P
         throw new ServiceError('Сотрудник уже назначен на эту смену', 409);
       }
 
-      if (targetShift.employeeIds.length >= 2) {
-        throw new ServiceError('Смена уже заполнена (максимум 2 сотрудника)', 400);
+      if (targetShift.employeeIds.length >= 5) {
+        throw new ServiceError('Смена уже заполнена (максимум 5 сотрудников)', 400);
       }
 
       targetShift = { ...targetShift, employeeIds: [...targetShift.employeeIds, request.employeeId] };
