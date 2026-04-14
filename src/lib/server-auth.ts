@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import type { Employee } from '@/types';
-import { isEmployeeAdmin } from '@/lib/employee-role';
+import { hasAdminAccess } from '@/lib/employee-role';
 import { verifyCookieValue } from '@/lib/employee-auth-cookie';
 
 function parseEmployeeFromCookie(): Employee | null {
@@ -42,7 +42,7 @@ export function requireAuth(): Employee | NextResponse {
 export function requireAdmin(): Employee | NextResponse {
   const auth = requireAuth();
   if (auth instanceof NextResponse) return auth;
-  if (!isEmployeeAdmin(auth)) {
+  if (!hasAdminAccess(auth)) {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
   return auth;

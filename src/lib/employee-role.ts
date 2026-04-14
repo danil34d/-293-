@@ -26,10 +26,10 @@ export function isEmployeeManager(employee: Partial<Employee> | null | undefined
   return resolveEmployeeRole(employee) === 'manager';
 }
 
-/** Проверяет, имеет ли сотрудник доступ к админ-панели (admin или manager в режиме просмотра) */
+/** Проверяет, имеет ли сотрудник доступ к админ-панели (admin или manager) */
 export function hasAdminAccess(employee: Partial<Employee> | null | undefined): boolean {
   const role = resolveEmployeeRole(employee);
-  return role === 'admin';
+  return role === 'admin' || role === 'manager';
 }
 
 /** Проверяет, является ли роль "рабочей" (оператор, кассир, обычный сотрудник) */
@@ -43,9 +43,9 @@ export function getDefaultRouteForRole(employee: Partial<Employee> | null | unde
   const role = resolveEmployeeRole(employee);
   switch (role) {
     case 'admin': return '/dashboard';
+    case 'manager': return '/dashboard';
     case 'operator': return '/employee/operator';
     case 'cashier': return '/employee/cashier';
-    case 'manager': return '/employee/manager-view';
     case 'employee': return '/employee/workstation';
     default: return '/employee/workstation';
   }
