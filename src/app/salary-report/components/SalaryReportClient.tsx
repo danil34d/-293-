@@ -7,15 +7,16 @@ import { startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns";
 import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, EmployeeTransactionType, SalaryReportData } from '@/types';
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, FilePieChart, TrendingUp, Wallet, AlertTriangle, Trophy, EyeOff, Eye } from 'lucide-react';
+import { Loader2, FilePieChart, TrendingUp, Wallet, AlertTriangle, Trophy, EyeOff, Eye, Car } from 'lucide-react';
 import { getEmployeesData, getWashEventsData, getSalarySchemesData, getAllEmployeeTransactions, getViolationsData } from "@/lib/data-loader";
 import { SalaryReportRow } from "./SalaryReportRow";
 import { generateSalaryReport } from "@/services/salary-calculator";
 import { Table, TableBody, TableHeader, TableHead, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { isEmployeeAdmin } from "@/lib/employee-role";
+import { isEmployeeAdmin, isKiosk } from "@/lib/employee-role";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { TableCell, TableRow as TableRowUI, TableFooter } from "@/components/ui/table";
 
 
 interface FullEmployeeData {
@@ -34,6 +35,7 @@ export function SalaryReportClient() {
     });
 
     const [allEmployeeData, setAllEmployeeData] = useState<FullEmployeeData[]>([]);
+    const [periodWashEvents, setPeriodWashEvents] = useState<WashEvent[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showInactive, setShowInactive] = useState(false);
 
@@ -50,7 +52,7 @@ export function SalaryReportClient() {
         setIsLoading(true);
         try {
             const [employees, allWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
-                (await getEmployeesData()).filter((e) => !isEmployeeAdmin(e)),
+                (await getEmployeesData()).filter((e) => !isEmployeeAdmin(e) && !isKiosk(e)),
                 await getWashEventsData(),
                 await getSalarySchemesData(),
                 await getAllEmployeeTransactions(),
@@ -59,6 +61,14 @@ export function SalaryReportClient() {
 
             const periodStart = dateRange?.from ? startOfDay(dateRange.from) : null;
             const periodEnd = dateRange?.from ? endOfDay(dateRange.to || dateRange.from) : null;
+
+            // Save all period wash events for stats
+            const allPeriodWashes = allWashEvents.filter(event =>
+                periodStart && periodEnd &&
+                new Date(event.timestamp) >= periodStart &&
+                new Date(event.timestamp) <= periodEnd
+            );
+            setPeriodWashEvents(allPeriodWashes);
 
             const employeeDataPromises = employees.map(async (emp) => {
                 const employeeTransactions = allTransactions.filter(t => t.employeeId === emp.id);
@@ -183,7 +193,28 @@ export function SalaryReportClient() {
         return stats;
     }, [allEmployeeData, isLoading]);
 
+    const washStats = useMemo(() => {
+        const total = periodWashEvents.length;
+        const box1 = periodWashEvents.filter(e => e.boxNumber === 1).length;
+        const box2 = periodWashEvents.filter(e => e.boxNumber === 2).length;
+        const totalRevenue = periodWashEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+        return { total, box1, box2, totalRevenue };
+    }, [periodWashEvents]);
+
     const displayedEmployees = showInactive ? [...activeEmployees, ...inactiveEmployees] : activeEmployees;
+
+    // Totals for table footer
+    const tableTotals = useMemo(() => {
+        const totals = { balanceAtStart: 0, earnings: 0, payments: 0, other: 0, payable: 0 };
+        activeEmployees.forEach(d => {
+            totals.balanceAtStart += d.balanceAtStart;
+            totals.earnings += d.earningsForPeriod;
+            totals.payments += d.paymentsForPeriod;
+            totals.other += d.otherOperationsTotal;
+            totals.payable += (d.balanceAtStart + d.earningsForPeriod + d.otherOperationsTotal - d.paymentsForPeriod);
+        });
+        return totals;
+    }, [activeEmployees]);
 
     return (
         <div className="space-y-4">
@@ -194,7 +225,7 @@ export function SalaryReportClient() {
 
             {/* Summary stats strip */}
             {!isLoading && allEmployeeData.length > 0 && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     <Card className="border-0 shadow-sm bg-gradient-to-br from-blue-50 to-white">
                         <CardContent className="p-4">
                             <div className="flex items-center gap-2 text-xs font-medium text-blue-600 mb-1">
@@ -242,6 +273,19 @@ export function SalaryReportClient() {
                             </CardContent>
                         </Card>
                     )}
+                    <Card className="border-0 shadow-sm bg-gradient-to-br from-slate-50 to-white">
+                        <CardContent className="p-4">
+                            <div className="flex items-center gap-2 text-xs font-medium text-slate-600 mb-1">
+                                <Car className="h-3.5 w-3.5" />
+                                Моек за период
+                            </div>
+                            <p className="text-xl font-bold text-gray-900">{washStats.total}</p>
+                            <div className="flex items-center gap-3 mt-0.5">
+                                <span className="text-xs text-gray-500">Бокс 1: <span className="font-semibold text-gray-700">{washStats.box1}</span></span>
+                                <span className="text-xs text-gray-500">Бокс 2: <span className="font-semibold text-gray-700">{washStats.box2}</span></span>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </div>
             )}
 
@@ -287,6 +331,27 @@ export function SalaryReportClient() {
                                             );
                                         })}
                                     </TableBody>
+                                    <TableFooter className="bg-gray-50/80 border-t-2 sticky bottom-0">
+                                        <TableRowUI className="hover:bg-transparent font-semibold">
+                                            <TableCell className="pl-4 text-xs uppercase tracking-wider text-gray-500">Итого</TableCell>
+                                            <TableCell className="text-right text-sm tabular-nums text-gray-700">
+                                                {tableTotals.balanceAtStart !== 0 ? tableTotals.balanceAtStart.toLocaleString('ru-RU') : '—'}
+                                            </TableCell>
+                                            <TableCell className="text-right text-sm tabular-nums font-bold text-green-600">
+                                                +{tableTotals.earnings.toLocaleString('ru-RU')}
+                                            </TableCell>
+                                            <TableCell className="text-right text-sm tabular-nums text-red-500">
+                                                {tableTotals.payments > 0 ? `-${tableTotals.payments.toLocaleString('ru-RU')}` : '—'}
+                                            </TableCell>
+                                            <TableCell className="text-right text-sm tabular-nums text-gray-500">
+                                                {tableTotals.other !== 0 ? tableTotals.other.toLocaleString('ru-RU') : '—'}
+                                            </TableCell>
+                                            <TableCell className="text-right pr-4 text-base tabular-nums font-bold text-gray-900">
+                                                {tableTotals.payable.toLocaleString('ru-RU')}
+                                            </TableCell>
+                                            <TableCell></TableCell>
+                                        </TableRowUI>
+                                    </TableFooter>
                                 </Table>
                             </ScrollArea>
                             {inactiveEmployees.length > 0 && (
