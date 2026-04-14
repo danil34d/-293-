@@ -16,10 +16,13 @@ export default async function EmployeesPage() {
   let fetchError: string | null = null;
 
   try {
-    [employees, salarySchemes] = await Promise.all([
+    const [allEmployees, schemes] = await Promise.all([
         getEmployeesData(),
         getSalarySchemesData()
     ]);
+    // Киоск — не сотрудник, не показываем в списке
+    employees = allEmployees.filter(e => e.role !== 'kiosk');
+    salarySchemes = schemes;
   } catch (error: any) {
     fetchError = error.message || "Не удалось загрузить список сотрудников.";
   }

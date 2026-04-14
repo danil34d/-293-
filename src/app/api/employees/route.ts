@@ -35,8 +35,10 @@ export async function GET() {
 
   try {
     const employees = await getEmployeesData();
-    // Убираем пароли из ответа
-    const safeEmployees = employees.map(({ password, ...emp }) => emp);
+    // Убираем пароли и киоск-аккаунты из ответа
+    const safeEmployees = employees
+      .filter(emp => emp.role !== 'kiosk')
+      .map(({ password, ...emp }) => emp);
     return NextResponse.json(safeEmployees);
   } catch (error) {
     console.error('Error reading employees directory:', error);
