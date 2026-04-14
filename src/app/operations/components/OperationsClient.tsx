@@ -96,6 +96,14 @@ function BoxCard({
           </div>
         </div>
 
+        {/* Quick action */}
+        <Button className="w-full" asChild>
+          <Link href={`/workstation?box=${boxNumber}`}>
+            <ClipboardList className="h-4 w-4 mr-2" />
+            Оформить заказ — Бокс {boxNumber}
+          </Link>
+        </Button>
+
         {/* Recent orders */}
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">

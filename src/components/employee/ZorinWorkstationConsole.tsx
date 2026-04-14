@@ -70,9 +70,11 @@ interface WorkstationProps {
   scheduleByBox?: { box1: Employee[]; box2: Employee[] };
   /** Is this running in kiosk mode */
   isKioskMode?: boolean;
+  /** Pre-select box number (from URL param) */
+  initialBoxNumber?: number;
 }
 
-export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode }: WorkstationProps = {}) {
+export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBoxNumber }: WorkstationProps = {}) {
   const { employee: loggedInEmployee } = useAuth();
   const router = useRouter();
   const [isShiftActive, setIsShiftActive] = useState(() => {
@@ -143,6 +145,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode }: Workstat
     return null;
   });
   const [selectedBoxNumber, setSelectedBoxNumber] = useState<number>(() => {
+    if (initialBoxNumber) return initialBoxNumber;
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('selectedBoxNumber');
       return saved ? parseInt(saved, 10) : 1;
