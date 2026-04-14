@@ -35,14 +35,7 @@ import { normalizeLicensePlate } from "@/lib/utils";
 import { cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  getActiveCounterAgentsData,
-  getAggregatorsData,
-  getRetailPriceConfig,
-  getEmployeesData,
-  invalidateAggregatorsCache,
-  getWashEventsData
-} from '@/lib/data-loader';
+// Data loaded via API fetch instead of server-only data-loader
 import { useAuth } from '@/contexts/AuthContext';
 import { Textarea } from '../ui/textarea';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -188,19 +181,34 @@ export function ZorinWorkstationConsole() {
       if (isShiftActive) {
         setIsLoading(true);
         try {
-          const [agentsData, aggregatorsData, retailData, employeesData, washEventsData] = await Promise.all([
-            getActiveCounterAgentsData(),
-            getAggregatorsData(),
-            getRetailPriceConfig(),
-            getEmployeesData(),
-            getWashEventsData()
+          const [agentsRes, aggregatorsRes, retailRes, employeesRes, washEventsRes] = await Promise.all([
+            fetch('/api/counter-agents'),
+            fetch('/api/aggregators'),
+            fetch('/api/retail-price-config'),
+            fetch('/api/employees'),
+            fetch('/api/wash-events'),
           ]);
-          setAllCounterAgents(agentsData);
+
+          if (!agentsRes.ok || !aggregatorsRes.ok || !retailRes.ok || !employeesRes.ok || !washEventsRes.ok) {
+            throw new Error('API error');
+          }
+
+          const [agentsData, aggregatorsData, retailData, employeesData, washEventsData] = await Promise.all([
+            agentsRes.json(),
+            aggregatorsRes.json(),
+            retailRes.json(),
+            employeesRes.json(),
+            washEventsRes.json(),
+          ]);
+
+          // Filter active counter agents
+          const activeAgents = (agentsData as any[]).filter((a: any) => !a.isArchived);
+          setAllCounterAgents(activeAgents);
           setAllAggregators(aggregatorsData);
           setRetailPriceConfig(retailData);
-          const activeEmployees = employeesData.filter((e) => !isEmployeeAdmin(e));
+          const activeEmployees = (employeesData as any[]).filter((e: any) => e.role !== 'admin' && e.role !== 'kiosk');
           setAllEmployees(activeEmployees);
-          setEmployeeMap(new Map(activeEmployees.map(e => [e.id, e.fullName])));
+          setEmployeeMap(new Map(activeEmployees.map((e: any) => [e.id, e.fullName])));
           setAllWashEvents(washEventsData);
         } catch (error) {
           console.error("Error fetching data for workstation:", error);
@@ -611,7 +619,7 @@ export function ZorinWorkstationConsole() {
                     console.error(`Не удалось добавить машину ${normalizedVehicleNumber} в автопарк агрегатора.`);
                 } else {
                     setAllAggregators(prev => prev.map(a => a.id === updatedAggregator.id ? updatedAggregator : a));
-                    await invalidateAggregatorsCache();
+                    // Cache invalidated by API PUT
                 }
             } catch (error) {
                  console.error(`Сетевая ошибка при сохранении машины в автопарк агрегатора.`);
