@@ -65,7 +65,14 @@ const priorityServiceKeywords = [
   'цистерна'
 ];
 
-export function ZorinWorkstationConsole() {
+interface WorkstationProps {
+  /** Pre-loaded schedule employees per box (for kiosk mode) */
+  scheduleByBox?: { box1: Employee[]; box2: Employee[] };
+  /** Is this running in kiosk mode */
+  isKioskMode?: boolean;
+}
+
+export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode }: WorkstationProps = {}) {
   const { employee: loggedInEmployee } = useAuth();
   const router = useRouter();
   const [isShiftActive, setIsShiftActive] = useState(() => {
@@ -89,6 +96,10 @@ export function ZorinWorkstationConsole() {
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [employeeMap, setEmployeeMap] = useState<Map<string, string>>(new Map());
   const [selectedEmployees, setSelectedEmployees] = useState<Employee[]>(() => {
+    // Kiosk mode: initialize from schedule for selected box
+    if (isKioskMode && scheduleByBox) {
+      return scheduleByBox.box1;
+    }
     // Initialize from sessionStorage if available
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('selectedEmployees');
@@ -96,7 +107,6 @@ export function ZorinWorkstationConsole() {
         try {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            console.log('[INIT] Initializing selectedEmployees from sessionStorage:', parsed);
             return parsed;
           }
         } catch (error) {
@@ -152,20 +162,17 @@ export function ZorinWorkstationConsole() {
   const [retailPriceConfig, setRetailPriceConfig] = useState<RetailPriceConfig>({ mainPriceList: [], additionalPriceList: [], allowCustomRetailServices: true, cardAcquiringPercentage: 1.2 });
 
   useEffect(() => {
-    console.log('[LOGGED_IN] loggedInEmployee:', loggedInEmployee);
-    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee)) {
+    // Don't auto-add kiosk account as employee
+    if (isKioskMode) return;
+    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') {
       setSelectedEmployees(prev => {
-        console.log('[LOGGED_IN] Current selectedEmployees:', prev);
-        // Only add if not already in the list
         if (!prev.some(e => e.id === loggedInEmployee.id)) {
-          console.log('[LOGGED_IN] Adding logged in employee to list');
           return [...prev, loggedInEmployee];
         }
-        console.log('[LOGGED_IN] Employee already in list, not adding');
         return prev;
       });
     }
-  }, [loggedInEmployee]);
+  }, [loggedInEmployee, isKioskMode]);
 
   // Save selectedEmployees to sessionStorage whenever they change
   useEffect(() => {
@@ -719,8 +726,12 @@ export function ZorinWorkstationConsole() {
       setVehicleNumberInput('');
       setNormalizedVehicleNumber('');
       if (!keepEmployees) {
-        console.log('[RESET_FORM] Resetting selectedEmployees to only logged in employee');
-        setSelectedEmployees((loggedInEmployee && !isEmployeeAdmin(loggedInEmployee)) ? [loggedInEmployee] : []);
+        if (isKioskMode && scheduleByBox) {
+          const boxEmps = selectedBoxNumber === 2 ? scheduleByBox.box2 : scheduleByBox.box1;
+          setSelectedEmployees(boxEmps);
+        } else {
+          setSelectedEmployees((loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') ? [loggedInEmployee] : []);
+        }
       }
     }
     setFoundCounterAgent(null);
@@ -946,13 +957,21 @@ export function ZorinWorkstationConsole() {
             <span className="text-sm font-medium">Бокс:</span>
             <button
               className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-              onClick={() => { setSelectedBoxNumber(1); sessionStorage.setItem('selectedBoxNumber', '1'); }}
+              onClick={() => {
+                setSelectedBoxNumber(1);
+                sessionStorage.setItem('selectedBoxNumber', '1');
+                if (isKioskMode && scheduleByBox) setSelectedEmployees(scheduleByBox.box1);
+              }}
             >
               Бокс 1
             </button>
             <button
               className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-              onClick={() => { setSelectedBoxNumber(2); sessionStorage.setItem('selectedBoxNumber', '2'); }}
+              onClick={() => {
+                setSelectedBoxNumber(2);
+                sessionStorage.setItem('selectedBoxNumber', '2');
+                if (isKioskMode && scheduleByBox) setSelectedEmployees(scheduleByBox.box2);
+              }}
             >
               Бокс 2
             </button>
