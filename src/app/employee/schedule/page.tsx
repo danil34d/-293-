@@ -1,6 +1,7 @@
 import { getShiftsData, getEmployeesData, getShiftSwapRequestsData, getShiftAssignmentRequestsData } from '@/lib/data-loader';
 import { EmployeeScheduleClient } from './components/EmployeeScheduleClient';
 import { cookies } from 'next/headers';
+import { verifyCookieValue } from '@/lib/employee-auth-cookie';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,9 @@ export default async function EmployeeSchedulePage() {
 
   if (authCookie?.value) {
     try {
-      const authData = JSON.parse(authCookie.value);
+      let rawPayload = verifyCookieValue(authCookie.value);
+      if (!rawPayload) rawPayload = authCookie.value;
+      const authData = JSON.parse(rawPayload);
       currentEmployeeId = authData.id;
     } catch (e) {}
   }

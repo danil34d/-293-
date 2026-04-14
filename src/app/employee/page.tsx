@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { cookies } from 'next/headers';
 import { getShiftsData, getEmployeesData } from '@/lib/data-loader';
 import { EmployeeCabinetClient } from './components/EmployeeCabinetClient';
+import { verifyCookieValue } from '@/lib/employee-auth-cookie';
 
 export default async function EmployeeCabinetPage() {
   const cookieStore = cookies();
@@ -11,8 +12,12 @@ export default async function EmployeeCabinetPage() {
 
   if (authCookie?.value) {
     try {
-      const decoded = decodeURIComponent(authCookie.value);
-      const authData = JSON.parse(decoded);
+      // Try signed cookie first, then fall back to unsigned (backward compat)
+      let rawPayload = verifyCookieValue(authCookie.value);
+      if (!rawPayload) {
+        rawPayload = decodeURIComponent(authCookie.value);
+      }
+      const authData = JSON.parse(rawPayload);
       currentEmployeeId = authData.id;
     } catch (e) {}
   }

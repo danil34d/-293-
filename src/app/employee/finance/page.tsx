@@ -8,6 +8,7 @@ import { AlertTriangle, Loader2 } from 'lucide-react';
 import type { Employee } from '@/types';
 import { FinanceDashboard } from '@/app/employees/[id]/finance/components/FinanceDashboard';
 import { Suspense } from 'react';
+import { verifyCookieValue } from '@/lib/employee-auth-cookie';
 
 async function getCurrentEmployee(): Promise<Employee | null> {
     const cookieStore = cookies();
@@ -16,8 +17,9 @@ async function getCurrentEmployee(): Promise<Employee | null> {
         return null;
     }
     try {
-        const decodedValue = decodeURIComponent(employeeCookie.value);
-        return JSON.parse(decodedValue);
+        let rawPayload = verifyCookieValue(employeeCookie.value);
+        if (!rawPayload) rawPayload = decodeURIComponent(employeeCookie.value);
+        return JSON.parse(rawPayload);
     } catch (e) {
         console.error("Failed to parse employee cookie:", e);
         return null;
