@@ -1,6 +1,6 @@
 'use client';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePathname } from 'next/navigation';
 import { LogOut, Monitor, Home, ClipboardList, XCircle } from 'lucide-react';
@@ -13,27 +13,33 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { toast } = useToast();
   const [isEndingShift, setIsEndingShift] = useState(false);
+  const [endingBox, setEndingBox] = useState<number | null>(null);
 
   const isHome = pathname === '/kiosk';
   const isOrder = pathname.includes('/order');
 
-  const handleEndShift = async () => {
+  const handleEndBoxShift = async (boxNumber: number) => {
     setIsEndingShift(true);
+    setEndingBox(boxNumber);
     try {
-      // Clear kiosk session data
       if (typeof window !== 'undefined') {
+        // Clear only the data for this specific box
         sessionStorage.removeItem('isShiftActive');
         sessionStorage.removeItem('activeShiftId');
         sessionStorage.removeItem('selectedEmployees');
-        sessionStorage.removeItem('selectedBoxNumber');
+        // Keep selectedBoxNumber — don't clear it
       }
-      toast({ title: 'Смена завершена', description: 'Данные смены очищены.' });
+      toast({
+        title: `Бокс ${boxNumber} — смена завершена`,
+        description: 'Данные смены очищены. Следующая команда загрузится из графика.',
+      });
       // Redirect to kiosk home
       window.location.href = '/kiosk';
     } catch (error) {
       toast({ title: 'Ошибка', description: 'Не удалось завершить смену.', variant: 'destructive' });
     } finally {
       setIsEndingShift(false);
+      setEndingBox(null);
     }
   };
 
@@ -45,21 +51,32 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
           <Monitor className="h-5 w-5 text-blue-600" />
           <h1 className="text-base font-bold text-gray-800">Терминал — Мойка 1</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {/* End shift per box */}
           <button
-            onClick={handleEndShift}
+            onClick={() => handleEndBoxShift(1)}
             disabled={isEndingShift}
-            className="flex items-center gap-1.5 text-sm text-orange-600 hover:text-orange-800 transition-colors font-medium"
+            className="flex items-center gap-1 text-xs text-orange-600 hover:text-orange-800 transition-colors font-medium px-1.5 py-1 rounded hover:bg-orange-50"
           >
-            <XCircle className="h-4 w-4" />
-            <span className="hidden sm:inline">Завершить смену</span>
+            <XCircle className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Бокс 1</span>
+            <span className="sm:hidden">Б1</span>
           </button>
-          <span className="text-gray-300">|</span>
+          <button
+            onClick={() => handleEndBoxShift(2)}
+            disabled={isEndingShift}
+            className="flex items-center gap-1 text-xs text-orange-600 hover:text-orange-800 transition-colors font-medium px-1.5 py-1 rounded hover:bg-orange-50"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Бокс 2</span>
+            <span className="sm:hidden">Б2</span>
+          </button>
+          <span className="text-gray-300 mx-0.5">|</span>
           <button
             onClick={logout}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-red-600 transition-colors"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-600 transition-colors px-1.5 py-1"
           >
-            <LogOut className="h-4 w-4" />
+            <LogOut className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Выход</span>
           </button>
         </div>

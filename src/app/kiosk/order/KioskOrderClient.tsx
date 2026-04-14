@@ -45,7 +45,6 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
 
   const box1Events = todayEvents.filter(e => e.boxNumber === 1);
   const box2Events = todayEvents.filter(e => e.boxNumber === 2);
-  const unassignedEvents = todayEvents.filter(e => !e.boxNumber);
 
   const totalAmount = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
   const box1Total = box1Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
@@ -128,21 +127,6 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
               </CardContent>
             </Card>
 
-            {/* Old events without box number */}
-            {unassignedEvents.length > 0 && (
-              <Card>
-                <CardHeader className="pb-1 px-4 pt-3">
-                  <CardTitle className="text-xs text-muted-foreground">Без бокса ({unassignedEvents.length})</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="max-h-[150px] overflow-y-auto">
-                    {sortByTime(unassignedEvents).map(event => (
-                      <EventRow key={event.id} event={event} employees={allEmployees} />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </div>
         )}
       </div>

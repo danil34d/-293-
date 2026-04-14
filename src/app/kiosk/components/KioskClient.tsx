@@ -110,11 +110,9 @@ export function KioskClient({
 
   const box1Events = todayEvents.filter(e => e.boxNumber === 1);
   const box2Events = todayEvents.filter(e => e.boxNumber === 2);
-  const unassignedEvents = todayEvents.filter(e => !e.boxNumber);
 
   const box1Total = box1Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
   const box2Total = box2Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
-  const unassignedTotal = unassignedEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
   const todayTotal = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
   return (
@@ -187,15 +185,6 @@ export function KioskClient({
               employees={employees}
             />
 
-            {/* Old events without box */}
-            {unassignedEvents.length > 0 && (
-              <BoxHistory
-                boxNumber={0}
-                events={sortByTime(unassignedEvents)}
-                total={unassignedTotal}
-                employees={employees}
-              />
-            )}
           </div>
         </TabsContent>
 
