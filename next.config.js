@@ -6,6 +6,9 @@ const nextConfig = {
   distDir: runtimeDistDir,
   experimental: {
     instrumentationHook: false,
+    serverActions: {
+      allowedOrigins: ['localhost:3000', 'localhost:3100', '192.168.1.150:3000'],
+    },
   },
   typescript: {
     ignoreBuildErrors: true,
