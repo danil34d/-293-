@@ -76,15 +76,13 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode }: Workstat
   const { employee: loggedInEmployee } = useAuth();
   const router = useRouter();
   const [isShiftActive, setIsShiftActive] = useState(() => {
+    // Kiosk mode: shift is always active
+    if (isKioskMode) return true;
     // Initialize from sessionStorage if available
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('isShiftActive');
-      if (saved === 'true') {
-        console.log('[INIT] Initializing isShiftActive from sessionStorage: true');
-        return true;
-      }
+      if (saved === 'true') return true;
     }
-    console.log('[INIT] Initializing isShiftActive: false');
     return false;
   });
   const [vehicleNumberInput, setVehicleNumberInput] = useState('');
@@ -927,79 +925,102 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode }: Workstat
   return (
     <div className="zorin-workstation">
       {/* Navigation Header */}
-      <div className="bg-white border-b px-4 py-3 flex items-center justify-between mb-6 -mx-4 -mt-4 md:-mx-6 md:-mt-6">
-        <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold">Рабочая станция</h1>
-          {loggedInEmployee && (
-            <span className="text-sm text-gray-600">
-              • {loggedInEmployee.fullName}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href="/employee/schedule">
-            <Button variant="outline" size="sm">
-              <Calendar className="h-4 w-4 mr-1" />
-              Мой график
+      {/* Header — hide in kiosk mode (kiosk has its own layout) */}
+      {!isKioskMode && (
+        <div className="bg-white border-b px-4 py-3 flex items-center justify-between mb-6 -mx-4 -mt-4 md:-mx-6 md:-mt-6">
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold">Рабочая станция</h1>
+            {loggedInEmployee && (
+              <span className="text-sm text-gray-600">
+                • {loggedInEmployee.fullName}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/employee/schedule">
+              <Button variant="outline" size="sm">
+                <Calendar className="h-4 w-4 mr-1" />
+                Мой график
+              </Button>
+            </Link>
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
+              <LogOut className="h-4 w-4" />
             </Button>
-          </Link>
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
-            <LogOut className="h-4 w-4" />
-          </Button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Shift Control */}
-      <div className="zorin-shift-card">
-        <h2 className="zorin-shift-title">Управление сменой</h2>
-        {!isShiftActive && (
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-sm font-medium">Бокс:</span>
+      {/* Shift Control — kiosk mode: just box selector, no shift start/end */}
+      {isKioskMode ? (
+        <div className="zorin-shift-card">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold">Бокс:</span>
             <button
-              className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${selectedBoxNumber === 1 ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
               onClick={() => {
                 setSelectedBoxNumber(1);
                 sessionStorage.setItem('selectedBoxNumber', '1');
-                if (isKioskMode && scheduleByBox) setSelectedEmployees(scheduleByBox.box1);
+                if (scheduleByBox) setSelectedEmployees(scheduleByBox.box1);
               }}
             >
-              Бокс 1
+              Бокс 1 {scheduleByBox && scheduleByBox.box1.length > 0 ? `(${scheduleByBox.box1.length})` : ''}
             </button>
             <button
-              className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${selectedBoxNumber === 2 ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
               onClick={() => {
                 setSelectedBoxNumber(2);
                 sessionStorage.setItem('selectedBoxNumber', '2');
-                if (isKioskMode && scheduleByBox) setSelectedEmployees(scheduleByBox.box2);
+                if (scheduleByBox) setSelectedEmployees(scheduleByBox.box2);
               }}
             >
-              Бокс 2
+              Бокс 2 {scheduleByBox && scheduleByBox.box2.length > 0 ? `(${scheduleByBox.box2.length})` : ''}
             </button>
           </div>
-        )}
-        <div className="zorin-shift-controls">
-          <button
-            onClick={handleStartShift}
-            disabled={isShiftActive || isLoading || isShiftLoading}
-            className="zorin-shift-btn start"
-          >
-            {(isLoading || isShiftLoading) && !isShiftActive ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-            <CheckCircle size={20} />
-            Начать смену
-          </button>
-          <button
-            onClick={handleEndShift}
-            disabled={!isShiftActive || isShiftLoading}
-            className="zorin-shift-btn end"
-          >
-            {isShiftLoading && isShiftActive ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-            Завершить смену
-          </button>
-          <span className={`zorin-shift-status ${isShiftActive ? 'active' : 'inactive'}`}>
-            {isShiftActive ? "Смена активна" : "Смена закрыта"}
-          </span>
         </div>
-      </div>
+      ) : (
+        <div className="zorin-shift-card">
+          <h2 className="zorin-shift-title">Управление сменой</h2>
+          {!isShiftActive && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm font-medium">Бокс:</span>
+              <button
+                className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                onClick={() => { setSelectedBoxNumber(1); sessionStorage.setItem('selectedBoxNumber', '1'); }}
+              >
+                Бокс 1
+              </button>
+              <button
+                className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                onClick={() => { setSelectedBoxNumber(2); sessionStorage.setItem('selectedBoxNumber', '2'); }}
+              >
+                Бокс 2
+              </button>
+            </div>
+          )}
+          <div className="zorin-shift-controls">
+            <button
+              onClick={handleStartShift}
+              disabled={isShiftActive || isLoading || isShiftLoading}
+              className="zorin-shift-btn start"
+            >
+              {(isLoading || isShiftLoading) && !isShiftActive ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+              <CheckCircle size={20} />
+              Начать смену
+            </button>
+            <button
+              onClick={handleEndShift}
+              disabled={!isShiftActive || isShiftLoading}
+              className="zorin-shift-btn end"
+            >
+              {isShiftLoading && isShiftActive ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+              Завершить смену
+            </button>
+            <span className={`zorin-shift-status ${isShiftActive ? 'active' : 'inactive'}`}>
+              {isShiftActive ? "Смена активна" : "Смена закрыта"}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Wash Registration */}
       {isShiftActive && (
