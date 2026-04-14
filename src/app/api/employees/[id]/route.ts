@@ -7,6 +7,7 @@ import path from 'path';
 import type { Employee, EmployeeRole } from '@/types';
 import { invalidateEmployeesCache } from '@/lib/data-loader';
 import { requireAdmin } from '@/lib/server-auth';
+import { hashPassword } from '@/lib/password-hash';
 
 const dataDir = path.join(process.cwd(), 'data', 'employees');
 
@@ -63,11 +64,22 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   try {
     await ensureDataDirectory();
     const updatedData: Employee = await request.json();
-    
+
     if (!updatedData.id || updatedData.id !== id) {
         updatedData.id = id;
     }
     updatedData.role = normalizeEmployeeRole(updatedData.role);
+
+    // Password handling: if empty — keep old, if provided — hash it
+    if (!updatedData.password) {
+      try {
+        const oldContent = await fs.readFile(filePath, 'utf-8');
+        const oldData = JSON.parse(oldContent) as Employee;
+        updatedData.password = oldData.password;
+      } catch { /* new employee or file not found — leave empty */ }
+    } else {
+      updatedData.password = await hashPassword(updatedData.password);
+    }
 
     await fs.writeFile(filePath, JSON.stringify(updatedData, null, 2), 'utf-8');
     invalidateEmployeesCache();

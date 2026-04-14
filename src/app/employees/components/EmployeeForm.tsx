@@ -94,7 +94,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
         ...initialData,
         role: normalizeEmployeeFormRole(initialData.role),
         telegramChatId: initialData.telegramChatId || "",
-        password: initialData.password || "", // pre-fill visible password
+        password: "", // never pre-fill — admin enters new password or leaves empty
         username: initialData.username || "",
         salarySchemeId: initialData.salarySchemeId || "unassigned",
         canSwapShifts: initialData.canSwapShifts !== false, // По умолчанию true
@@ -146,7 +146,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
       role: enforcedRole,
       telegramChatId: data.telegramChatId?.trim() ? data.telegramChatId.trim() : undefined,
       username: data.username,
-      password: data.password ? data.password : (initialData?.password || ""),
+      password: data.password || "", // empty = keep old (API handles it)
       salarySchemeId: (data.salarySchemeId === 'unassigned' || !data.salarySchemeId) ? undefined : data.salarySchemeId,
     };
     
@@ -421,10 +421,10 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
                 <FormItem>
                   <FormLabel>Пароль</FormLabel>
                   <FormControl>
-                    <Input type="text" placeholder="Задайте пароль" {...field} value={field.value || ''}/>
+                    <Input type="text" placeholder={employeeId ? "Новый пароль (не меняется, если пусто)" : "Задайте пароль"} {...field} value={field.value || ''} autoComplete="off" />
                   </FormControl>
                   <FormDescription>
-                    Пароль будет виден в этом поле. Оставьте пустым, чтобы не изменять.
+                    {employeeId ? "Введите новый пароль или оставьте пустым, чтобы сохранить текущий." : "Задайте пароль для входа сотрудника."}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

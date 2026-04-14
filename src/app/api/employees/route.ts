@@ -7,6 +7,7 @@ import path from 'path';
 import type { Employee, EmployeeRole } from '@/types';
 import { getEmployeesData, invalidateEmployeesCache } from '@/lib/data-loader';
 import { requireAuth, requireAdmin } from '@/lib/server-auth';
+import { hashPassword } from '@/lib/password-hash';
 
 const dataDir = path.join(process.cwd(), 'data', 'employees');
 
@@ -57,6 +58,10 @@ export async function POST(request: Request) {
        return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
     }
     newEmployee.role = normalizeEmployeeRole(newEmployee.role);
+    // Hash password if provided
+    if (newEmployee.password) {
+      newEmployee.password = await hashPassword(newEmployee.password);
+    }
     const filePath = path.join(dataDir, `${newEmployee.id}.json`);
     await fs.writeFile(filePath, JSON.stringify(newEmployee, null, 2), 'utf-8');
     invalidateEmployeesCache();
