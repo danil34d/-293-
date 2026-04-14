@@ -1,0 +1,222 @@
+'use client';
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  Users, Car, Camera, Sun, Moon, Box, TrendingUp,
+  ClipboardList, BookCheck, ExternalLink
+} from 'lucide-react';
+import type { Employee, WashEvent } from '@/types';
+import Link from 'next/link';
+
+interface OperationsClientProps {
+  box1Employees: Employee[];
+  box2Employees: Employee[];
+  todayEvents: WashEvent[];
+  allEmployees: Employee[];
+  currentShiftType: string;
+}
+
+function BoxCard({
+  boxNumber,
+  employees,
+  events,
+  allEmployees,
+  color,
+}: {
+  boxNumber: number;
+  employees: Employee[];
+  events: WashEvent[];
+  allEmployees: Employee[];
+  color: string;
+}) {
+  const total = events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  const recentEvents = [...events]
+    .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
+    .slice(0, 5);
+
+  return (
+    <Card className="flex-1">
+      <CardHeader className="pb-3">
+        <CardTitle className={`flex items-center gap-2 text-lg ${color}`}>
+          <Box className="h-5 w-5" />
+          Бокс {boxNumber}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Team */}
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            <Users className="h-3 w-3 inline mr-1" />
+            Команда
+          </h4>
+          {employees.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Нет сотрудников</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {employees.map(emp => (
+                <span
+                  key={emp.id}
+                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                    boxNumber === 1
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-emerald-100 text-emerald-800'
+                  }`}
+                >
+                  {emp.fullName.split(' ').slice(0, 2).join(' ')}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Camera placeholder */}
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            <Camera className="h-3 w-3 inline mr-1" />
+            Камера
+          </h4>
+          <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
+            <div className="text-center text-gray-500">
+              <Camera className="h-8 w-8 mx-auto mb-1 opacity-50" />
+              <p className="text-xs">Камера не подключена</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold">{events.length}</p>
+            <p className="text-xs text-muted-foreground">Заказов</p>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-green-700">{total.toLocaleString('ru-RU')}</p>
+            <p className="text-xs text-muted-foreground">Выручка ₽</p>
+          </div>
+        </div>
+
+        {/* Recent orders */}
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            Последние заказы
+          </h4>
+          {recentEvents.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-3">Нет заказов</p>
+          ) : (
+            <div className="space-y-1">
+              {recentEvents.map(event => {
+                const time = event.timestamp
+                  ? new Date(event.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+                  : '';
+                const names = (event.employeeIds || [])
+                  .map(id => allEmployees.find(e => e.id === id)?.fullName?.split(' ')[0] || '')
+                  .filter(Boolean)
+                  .join(', ');
+
+                return (
+                  <div key={event.id} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Car className="h-3 w-3 text-muted-foreground" />
+                      <span className="font-medium">{event.vehicleNumber || '—'}</span>
+                      {names && <span className="text-xs text-muted-foreground">{names}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-medium">{event.totalAmount ? `${event.totalAmount} ₽` : ''}</span>
+                      <span className="text-muted-foreground">{time}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function OperationsClient({
+  box1Employees,
+  box2Employees,
+  todayEvents,
+  allEmployees,
+  currentShiftType,
+}: OperationsClientProps) {
+  const box1Events = todayEvents.filter(e => e.boxNumber === 1);
+  const box2Events = todayEvents.filter(e => e.boxNumber === 2);
+  const totalRevenue = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Центр управления</h1>
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-1">
+            Мойка 1 •
+            {currentShiftType === 'day' ? (
+              <><Sun className="h-3.5 w-3.5 text-amber-500" /> Дневная смена</>
+            ) : (
+              <><Moon className="h-3.5 w-3.5 text-indigo-500" /> Ночная смена</>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" asChild>
+            <Link href="/wash-log">
+              <BookCheck className="h-4 w-4 mr-2" />
+              Журнал
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href="/workstation">
+              <ClipboardList className="h-4 w-4 mr-2" />
+              Оформить заказ
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      {/* Summary bar */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-4 pb-4 text-center">
+            <p className="text-3xl font-bold">{todayEvents.length}</p>
+            <p className="text-xs text-muted-foreground mt-1">Заказов сегодня</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4 text-center">
+            <p className="text-3xl font-bold text-green-700">{totalRevenue.toLocaleString('ru-RU')} ₽</p>
+            <p className="text-xs text-muted-foreground mt-1">Выручка</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4 text-center">
+            <p className="text-3xl font-bold">{box1Employees.length + box2Employees.length}</p>
+            <p className="text-xs text-muted-foreground mt-1">Сотрудников на смене</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Two boxes side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <BoxCard
+          boxNumber={1}
+          employees={box1Employees}
+          events={box1Events}
+          allEmployees={allEmployees}
+          color="text-blue-600"
+        />
+        <BoxCard
+          boxNumber={2}
+          employees={box2Employees}
+          events={box2Events}
+          allEmployees={allEmployees}
+          color="text-emerald-600"
+        />
+      </div>
+    </div>
+  );
+}

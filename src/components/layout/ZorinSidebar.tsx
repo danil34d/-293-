@@ -55,7 +55,7 @@ const navGroups: NavGroup[] = [
     title: 'Главное',
     items: [
       { href: '/dashboard', label: 'Дашборд', icon: Home },
-      { href: '/workstation', label: 'Рабочая станция', icon: Clipboard },
+      { href: '/operations', label: 'Центр управления', icon: Clipboard },
       { href: '/wash-log', label: 'Журнал моек', icon: BookCheck },
     ],
   },
