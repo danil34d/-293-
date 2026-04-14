@@ -22,7 +22,7 @@ async function ensureDataDirectory() {
   }
 }
 
-const VALID_ROLES: EmployeeRole[] = ['admin', 'manager', 'operator', 'cashier', 'employee'];
+const VALID_ROLES: EmployeeRole[] = ['admin', 'employee', 'kiosk'];
 
 function normalizeEmployeeRole(requestedRole?: EmployeeRole): EmployeeRole {
   if (requestedRole && VALID_ROLES.includes(requestedRole)) return requestedRole;

@@ -25,7 +25,7 @@ const employeeFormSchema = z.object({
   paymentDetails: z.string().min(10, "Платежные реквизиты должны содержать не менее 10 символов."),
   hasCar: z.boolean(),
   canSwapShifts: z.boolean(),
-  role: z.enum(["admin", "manager", "operator", "cashier", "employee"]).default("employee"),
+  role: z.enum(["admin", "employee", "kiosk"]).default("employee"),
   telegramChatId: z.string().regex(/^-?\d+$/, "Telegram ID должен содержать только цифры.").optional().or(z.literal('')),
   username: z.string().min(3, "Логин должен быть не менее 3 символов.").regex(/^[a-z0-9_]+$/i, "Логин может содержать только латинские буквы, цифры и нижнее подчеркивание.").optional().or(z.literal('')),
   password: z.string().min(6, "Пароль должен быть не менее 6 символов.").optional().or(z.literal('')),
@@ -41,7 +41,7 @@ interface EmployeeFormProps {
 }
 
 function normalizeEmployeeFormRole(role: EmployeeRole | undefined): EmployeeFormRole {
-  if (role && ["admin", "manager", "operator", "cashier", "employee"].includes(role)) {
+  if (role && ["admin", "employee", "kiosk"].includes(role)) {
     return role as EmployeeFormRole;
   }
   return "employee";
@@ -392,7 +392,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    Администратор и Руководитель имеют доступ к панели управления. Остальные роли — к рабочей станции.
+                    Администратор — полный доступ. Сотрудник — заказы, график, зарплата. Киоск — общий терминал.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

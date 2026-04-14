@@ -125,24 +125,20 @@ export interface CashPayment {
   paymentMethod: 'cash' | 'card' | 'transfer';
 }
 
-export type EmployeeRole = 'admin' | 'operator' | 'cashier' | 'manager' | 'employee';
+export type EmployeeRole = 'admin' | 'employee' | 'kiosk';
 
 // Человекочитаемые названия ролей
 export const ROLE_LABELS: Record<EmployeeRole, string> = {
   admin: 'Администратор',
-  operator: 'Оператор мойки',
-  cashier: 'Кассир',
-  manager: 'Руководитель',
   employee: 'Сотрудник',
+  kiosk: 'Киоск (терминал)',
 };
 
 // Маршруты по умолчанию для каждой роли
 export const ROLE_DEFAULT_ROUTES: Record<EmployeeRole, string> = {
   admin: '/dashboard',
-  operator: '/employee/operator',
-  cashier: '/employee/cashier',
-  manager: '/employee/manager-view',
   employee: '/employee/workstation',
+  kiosk: '/employee/workstation',
 };
 
 export interface Employee {

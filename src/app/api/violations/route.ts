@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import type { Violation, ViolationType } from '@/types';
 import { getViolationsData } from '@/lib/data';
 import { saveEntity } from '@/lib/data/write-helpers';
-import { requireAuth, requireManager } from '@/lib/server-auth';
+import { requireAuth, requireAdmin } from '@/lib/server-auth';
 
 const VALID_TYPES: ViolationType[] = [
   'lateness', 'early_leave', 'no_show', 'equipment_damage',
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = requireManager();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const auth = requireManager();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {
