@@ -1,15 +1,15 @@
 export const dynamic = 'force-dynamic';
 
-import { cookies } from 'next/headers';
-import { getShiftsData, getEmployeesData } from '@/lib/data-loader';
+import { getShiftsData, getEmployeesData, getWashEventsData } from '@/lib/data-loader';
 import { KioskOrderClient } from './KioskOrderClient';
 
 export default async function KioskOrderPage() {
   const today = new Date().toISOString().slice(0, 10);
 
-  const [shifts, employees] = await Promise.all([
+  const [shifts, employees, washEvents] = await Promise.all([
     getShiftsData(),
     getEmployeesData(),
+    getWashEventsData(),
   ]);
 
   // Today's shifts at wash_1
@@ -37,10 +37,15 @@ export default async function KioskOrderPage() {
     .map(id => realEmployees.find(e => e.id === id))
     .filter(Boolean) as typeof realEmployees;
 
+  // Today's wash events
+  const todayEvents = washEvents.filter(e => e.timestamp?.startsWith(today));
+
   return (
     <KioskOrderClient
       box1Employees={box1Employees}
       box2Employees={box2Employees}
+      todayEvents={todayEvents}
+      allEmployees={realEmployees}
     />
   );
 }
