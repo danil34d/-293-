@@ -24,6 +24,11 @@ export function hasAdminAccess(employee: Partial<Employee> | null | undefined): 
   return resolveEmployeeRole(employee) === 'admin';
 }
 
+/** Проверяет, является ли сотрудник менеджером или выше (для управления нарушениями и т.д.) */
+export function isManagerOrAbove(employee: Partial<Employee> | null | undefined): boolean {
+  return resolveEmployeeRole(employee) === 'admin';
+}
+
 /** Проверяет, является ли роль "рабочей" (сотрудник или киоск) */
 export function isFieldRole(employee: Partial<Employee> | null | undefined): boolean {
   const role = resolveEmployeeRole(employee);
