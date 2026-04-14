@@ -68,7 +68,7 @@ export function ViolationsTab({ initialViolations, employees }: ViolationsTabPro
 
   const filteredViolations = useMemo(() => {
     return violations.filter(v => {
-      if (!v.date.startsWith(selectedMonth)) return false;
+      if (!v.date?.startsWith(selectedMonth)) return false;
       if (filterEmployee !== 'all' && v.employeeId !== filterEmployee) return false;
       if (filterType !== 'all' && v.type !== filterType) return false;
       return true;

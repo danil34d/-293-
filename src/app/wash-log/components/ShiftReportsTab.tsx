@@ -42,7 +42,7 @@ export function ShiftReportsTab({ reports, employees }: ShiftReportsTabProps) {
   }, [employees]);
 
   const filteredReports = useMemo(() => {
-    return reports.filter(r => r.date.startsWith(selectedMonth));
+    return reports.filter(r => r.date?.startsWith(selectedMonth));
   }, [reports, selectedMonth]);
 
   const summary = useMemo(() => {
