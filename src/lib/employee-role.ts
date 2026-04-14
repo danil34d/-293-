@@ -35,8 +35,8 @@ export function getDefaultRouteForRole(employee: Partial<Employee> | null | unde
   const role = resolveEmployeeRole(employee);
   switch (role) {
     case 'admin': return '/dashboard';
-    case 'employee': return '/employee/workstation';
-    case 'kiosk': return '/employee/workstation';
-    default: return '/employee/workstation';
+    case 'employee': return '/employee';
+    case 'kiosk': return '/kiosk';
+    default: return '/employee';
   }
 }

@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import type { Employee } from '@/types';
 import { usePathname, useRouter } from 'next/navigation';
-import { hasAdminAccess } from '@/lib/employee-role';
+import { getDefaultRouteForRole } from '@/lib/employee-role';
 import { isLoginPath, isPublicAppPath } from '@/lib/public-routes';
 
 interface AuthContextType {
@@ -77,11 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isPublicPath = isPublicAppPath(pathname);
 
     if (employee && isAuthPage) {
-      if (hasAdminAccess(employee)) {
-        router.push('/dashboard');
-      } else {
-        router.push('/employee/workstation');
-      }
+      router.push(getDefaultRouteForRole(employee));
     } else if (!employee && !isPublicPath) {
       router.push('/login');
     }

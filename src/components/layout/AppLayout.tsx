@@ -11,7 +11,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { hasAdminAccess } from '@/lib/employee-role';
+import { hasAdminAccess, getDefaultRouteForRole } from '@/lib/employee-role';
 import { isLoginPath, isPublicAppPath } from '@/lib/public-routes';
 
 export function AppLayout({ children, newServicesCount = 0 }: { children: ReactNode, newServicesCount?: number }) {
@@ -65,16 +65,16 @@ export function AppLayout({ children, newServicesCount = 0 }: { children: ReactN
     );
   }
 
-  // For regular employees on their dedicated layout
-  const isEmployeeOnlyPage = pathname.startsWith('/employee') && !hasAdminAccess(employee);
-  if (isEmployeeOnlyPage) {
+  // For regular employees/kiosk on their dedicated layout
+  const isNonAdminPage = (pathname.startsWith('/employee') || pathname.startsWith('/kiosk')) && !hasAdminAccess(employee);
+  if (isNonAdminPage) {
     return <>{children}</>;
   }
 
-  // Redirect non-admin/manager employees to their workstation if they try to access admin pages
-  const isAdminPage = !pathname.startsWith('/employee') && !pathname.startsWith('/login');
+  // Redirect non-admin employees to their default route if they try to access admin pages
+  const isAdminPage = !pathname.startsWith('/employee') && !pathname.startsWith('/kiosk') && !pathname.startsWith('/login');
   if (isAdminPage && !hasAdminAccess(employee)) {
-    router.push('/employee/workstation');
+    router.push(getDefaultRouteForRole(employee));
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
