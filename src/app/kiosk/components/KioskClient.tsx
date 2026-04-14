@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ClipboardList, History, CalendarDays, Sun, Moon, MapPin, Users, Car } from 'lucide-react';
+import { ClipboardList, History, CalendarDays, Sun, Moon, MapPin, Users, Car, Box } from 'lucide-react';
 import type { Employee, Shift, WashEvent } from '@/types';
 import Link from 'next/link';
 
@@ -66,6 +66,37 @@ function EventRow({ event, employees }: { event: WashEvent; employees: Employee[
   );
 }
 
+function BoxHistory({ boxNumber, events, total, employees }: { boxNumber: number; events: WashEvent[]; total: number; employees: Employee[] }) {
+  const label = boxNumber === 0 ? 'Без бокса' : `Бокс ${boxNumber}`;
+  const color = boxNumber === 1 ? 'text-blue-600' : boxNumber === 2 ? 'text-emerald-600' : 'text-gray-500';
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 px-4 pt-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className={`text-sm font-semibold flex items-center gap-1.5 ${color}`}>
+            <Box className="h-3.5 w-3.5" />
+            {label}
+            <span className="text-muted-foreground font-normal ml-1">({events.length})</span>
+          </CardTitle>
+          <span className="text-sm font-semibold text-green-700">{total.toLocaleString('ru-RU')} ₽</span>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {events.length === 0 ? (
+          <p className="text-sm text-muted-foreground px-4 py-4 text-center">Заказов нет</p>
+        ) : (
+          <div className="max-h-[250px] overflow-y-auto">
+            {events.map(event => (
+              <EventRow key={event.id} event={event} employees={employees} />
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function KioskClient({
   todayShifts,
   tomorrowShifts,
@@ -74,12 +105,16 @@ export function KioskClient({
   todayEvents,
 }: KioskClientProps) {
   const todayEmployees = employees.filter(e => todayEmployeeIds.includes(e.id));
-  const sortedEvents = [...todayEvents].sort((a, b) => {
-    const ta = a.timestamp || '';
-    const tb = b.timestamp || '';
-    return tb.localeCompare(ta); // newest first
-  });
 
+  const sortByTime = (events: WashEvent[]) => [...events].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+
+  const box1Events = todayEvents.filter(e => e.boxNumber === 1);
+  const box2Events = todayEvents.filter(e => e.boxNumber === 2);
+  const unassignedEvents = todayEvents.filter(e => !e.boxNumber);
+
+  const box1Total = box1Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  const box2Total = box2Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  const unassignedTotal = unassignedEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
   const todayTotal = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
   return (
@@ -129,26 +164,39 @@ export function KioskClient({
         </TabsList>
 
         <TabsContent value="history">
-          <Card>
-            <CardHeader className="pb-2 px-4 pt-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Заказы сегодня</CardTitle>
-                <span className="text-sm font-semibold text-green-700">{todayTotal.toLocaleString('ru-RU')} ₽</span>
-              </div>
-              <p className="text-xs text-muted-foreground">Всего: {todayEvents.length} заказов</p>
-            </CardHeader>
-            <CardContent className="p-0">
-              {sortedEvents.length === 0 ? (
-                <p className="text-sm text-muted-foreground px-4 py-6 text-center">Заказов пока нет</p>
-              ) : (
-                <div className="max-h-[400px] overflow-y-auto">
-                  {sortedEvents.map(event => (
-                    <EventRow key={event.id} event={event} employees={employees} />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Summary */}
+          <div className="flex items-center justify-between px-1 mb-3">
+            <span className="text-sm text-muted-foreground">Итого: {todayEvents.length} заказов</span>
+            <span className="text-sm font-semibold text-green-700">{todayTotal.toLocaleString('ru-RU')} ₽</span>
+          </div>
+
+          <div className="space-y-3">
+            {/* Box 1 */}
+            <BoxHistory
+              boxNumber={1}
+              events={sortByTime(box1Events)}
+              total={box1Total}
+              employees={employees}
+            />
+
+            {/* Box 2 */}
+            <BoxHistory
+              boxNumber={2}
+              events={sortByTime(box2Events)}
+              total={box2Total}
+              employees={employees}
+            />
+
+            {/* Old events without box */}
+            {unassignedEvents.length > 0 && (
+              <BoxHistory
+                boxNumber={0}
+                events={sortByTime(unassignedEvents)}
+                total={unassignedTotal}
+                employees={employees}
+              />
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="schedule">

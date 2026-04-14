@@ -684,6 +684,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode }: Workstat
         tips: tipsInput ? parseFloat(tipsInput) || 0 : undefined,
         washDurationSeconds: washTimerElapsed > 0 ? washTimerElapsed : undefined,
         shiftId: activeShiftId || undefined,
+        boxNumber: selectedBoxNumber as 1 | 2,
     };
 
     try {

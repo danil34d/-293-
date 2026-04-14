@@ -245,6 +245,7 @@ export interface WashEvent {
   refundedAt?: string; // ISO timestamp когда был оформлен возврат
   refundReason?: string; // Причина возврата
   shiftId?: string;
+  boxNumber?: 1 | 2; // Номер бокса, в котором выполнялась мойка
 }
 
 export type EmployeeTransactionType = 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off';

@@ -5,7 +5,7 @@ import type { Employee, WashEvent } from '@/types';
 import { ZorinWorkstationConsole } from '@/components/employee/ZorinWorkstationConsole';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Car, History, ChevronDown, ChevronUp } from 'lucide-react';
+import { Car, History, ChevronDown, ChevronUp, Box } from 'lucide-react';
 
 interface KioskOrderClientProps {
   box1Employees: Employee[];
@@ -41,8 +41,15 @@ function EventRow({ event, employees }: { event: WashEvent; employees: Employee[
 export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, allEmployees }: KioskOrderClientProps) {
   const [showHistory, setShowHistory] = useState(false);
 
-  const sorted = [...todayEvents].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+  const sortByTime = (events: WashEvent[]) => [...events].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+
+  const box1Events = todayEvents.filter(e => e.boxNumber === 1);
+  const box2Events = todayEvents.filter(e => e.boxNumber === 2);
+  const unassignedEvents = todayEvents.filter(e => !e.boxNumber);
+
   const totalAmount = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  const box1Total = box1Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  const box2Total = box2Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
   return (
     <div className="space-y-4">
@@ -70,19 +77,73 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
         </Button>
 
         {showHistory && (
-          <Card className="mt-2">
-            <CardContent className="p-0">
-              {sorted.length === 0 ? (
-                <p className="text-sm text-muted-foreground px-4 py-6 text-center">Заказов пока нет</p>
-              ) : (
-                <div className="max-h-[350px] overflow-y-auto">
-                  {sorted.map(event => (
-                    <EventRow key={event.id} event={event} employees={allEmployees} />
-                  ))}
+          <div className="mt-2 space-y-2">
+            {/* Box 1 */}
+            <Card>
+              <CardHeader className="pb-1 px-4 pt-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-1.5 text-blue-600">
+                    <Box className="h-3.5 w-3.5" />
+                    Бокс 1
+                    <span className="text-muted-foreground font-normal ml-1">({box1Events.length})</span>
+                  </CardTitle>
+                  <span className="text-sm font-semibold text-green-700">{box1Total.toLocaleString('ru-RU')} ₽</span>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent className="p-0">
+                {box1Events.length === 0 ? (
+                  <p className="text-xs text-muted-foreground px-4 py-3 text-center">Нет заказов</p>
+                ) : (
+                  <div className="max-h-[200px] overflow-y-auto">
+                    {sortByTime(box1Events).map(event => (
+                      <EventRow key={event.id} event={event} employees={allEmployees} />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Box 2 */}
+            <Card>
+              <CardHeader className="pb-1 px-4 pt-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-1.5 text-emerald-600">
+                    <Box className="h-3.5 w-3.5" />
+                    Бокс 2
+                    <span className="text-muted-foreground font-normal ml-1">({box2Events.length})</span>
+                  </CardTitle>
+                  <span className="text-sm font-semibold text-green-700">{box2Total.toLocaleString('ru-RU')} ₽</span>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {box2Events.length === 0 ? (
+                  <p className="text-xs text-muted-foreground px-4 py-3 text-center">Нет заказов</p>
+                ) : (
+                  <div className="max-h-[200px] overflow-y-auto">
+                    {sortByTime(box2Events).map(event => (
+                      <EventRow key={event.id} event={event} employees={allEmployees} />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Old events without box number */}
+            {unassignedEvents.length > 0 && (
+              <Card>
+                <CardHeader className="pb-1 px-4 pt-3">
+                  <CardTitle className="text-xs text-muted-foreground">Без бокса ({unassignedEvents.length})</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="max-h-[150px] overflow-y-auto">
+                    {sortByTime(unassignedEvents).map(event => (
+                      <EventRow key={event.id} event={event} employees={allEmployees} />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         )}
       </div>
     </div>
