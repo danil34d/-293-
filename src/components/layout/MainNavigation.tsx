@@ -17,7 +17,7 @@ const navGroups = [
     title: 'Главное',
     items: [
       { href: '/dashboard', label: 'Панель управления', icon: Home },
-      { href: '/employee/workstation', label: 'Рабочая станция', icon: Clipboard },
+      { href: '/workstation', label: 'Рабочая станция', icon: Clipboard },
       { href: '/wash-log', label: 'Журнал моек', icon: BookCheck },
     ],
   },
