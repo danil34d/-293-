@@ -41,9 +41,20 @@ export function ShiftReportsTab({ reports, employees }: ShiftReportsTabProps) {
     return map;
   }, [employees]);
 
+  // Normalize: old reports may not have 'date', derive from closedAt
+  const normalizedReports = useMemo(() => {
+    return reports.map(r => {
+      if (r.date) return r;
+      // Derive date from closedAt or createdAt
+      const fallback = r.data?.closedAt || r.createdAt || '';
+      const derived = fallback ? fallback.slice(0, 10) : '';
+      return { ...r, date: derived };
+    });
+  }, [reports]);
+
   const filteredReports = useMemo(() => {
-    return reports.filter(r => r.date?.startsWith(selectedMonth));
-  }, [reports, selectedMonth]);
+    return normalizedReports.filter(r => r.date?.startsWith(selectedMonth));
+  }, [normalizedReports, selectedMonth]);
 
   const summary = useMemo(() => {
     let totalWashes = 0;
