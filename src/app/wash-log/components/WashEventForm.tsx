@@ -6,7 +6,7 @@ import { useForm, useFieldArray, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { format, parseISO, setHours, setMinutes, setSeconds, startOfMinute } from "date-fns";
 import type { WashEvent, Employee, CounterAgent, Aggregator, RetailPriceConfig, PriceListItem, PaymentType, WashEventEditHistory } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -106,11 +106,25 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
   };
 
 
+  // Track whether payment/source have changed from initial values
+  const isInitialRender = useRef(true);
+  const prevPaymentMethod = useRef(paymentMethod);
+  const prevSourceId = useRef(sourceId);
+
   useEffect(() => {
-    // Reset service selection when payment method or source changes
-    form.setValue("services.main", { serviceName: '', price: 0, chemicalConsumption: 0 });
-    form.setValue("services.additional", []);
-  }, [paymentMethod, sourceId, form.setValue]);
+    // Skip initial render to preserve pre-loaded services
+    if (isInitialRender.current) {
+      isInitialRender.current = false;
+      return;
+    }
+    // Only reset if payment method or source actually changed (not on mount)
+    if (prevPaymentMethod.current !== paymentMethod || prevSourceId.current !== sourceId) {
+      form.setValue("services.main", { serviceName: '', price: 0, chemicalConsumption: 0 });
+      form.setValue("services.additional", []);
+      prevPaymentMethod.current = paymentMethod;
+      prevSourceId.current = sourceId;
+    }
+  }, [paymentMethod, sourceId, form]);
   
 
   const currentServiceSource = useMemo(() => {
@@ -167,19 +181,24 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
     
     let newSourceName = initialData.sourceName;
     let newSourceId = data.sourceId;
+    let newPriceListName = initialData.priceListName;
 
-    // Logic to update sourceName only when sourceId or paymentMethod changes it.
+    // Logic to update sourceName/priceListName when sourceId or paymentMethod changes
     if (data.sourceId !== initialData.sourceId || data.paymentMethod !== initialData.paymentMethod) {
         if (data.paymentMethod === 'aggregator') {
             const source = aggregators.find(a => a.id === data.sourceId);
             newSourceName = source?.name;
+            // Sync priceListName with aggregator's active price list
+            newPriceListName = source?.activePriceListName;
         } else if (data.paymentMethod === 'counterAgentContract') {
             const source = counterAgents.find(c => c.id === data.sourceId);
             newSourceName = source?.name;
+            newPriceListName = undefined;
         } else {
             // It's a retail payment, so clear the source info
             newSourceName = undefined;
             newSourceId = undefined;
+            newPriceListName = undefined;
         }
     }
     
@@ -194,6 +213,29 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
     const updatedEditHistory = [...(initialData.editHistory || []), newHistoryEntry];
 
 
+    // Recalculate employeeConsumptions for each service when employees change
+    const newEmployeeIds = data.employeeIds;
+    const recalcService = (service: typeof data.services.main) => {
+      const consumption = service.chemicalConsumption || 0;
+      if (consumption > 0 && newEmployeeIds.length > 0) {
+        const perEmployee = Math.round(consumption / newEmployeeIds.length);
+        return {
+          ...service,
+          employeeConsumptions: newEmployeeIds.map(id => ({ employeeId: id, amount: perEmployee })),
+        };
+      }
+      // If no consumption defined, still sync employee list
+      return {
+        ...service,
+        employeeConsumptions: newEmployeeIds.map(id => ({ employeeId: id, amount: 0 })),
+      };
+    };
+
+    const updatedServices = {
+      main: recalcService(data.services.main),
+      additional: data.services.additional.map(s => recalcService(s)),
+    };
+
     const eventToSave: WashEvent = {
       ...initialData,
       vehicleNumber: normalizeLicensePlate(data.vehicleNumber),
@@ -202,7 +244,8 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
       paymentMethod: data.paymentMethod,
       sourceId: newSourceId,
       sourceName: newSourceName,
-      services: data.services,
+      priceListName: newPriceListName,
+      services: updatedServices,
       totalAmount: totalAmount,
       acquiringFee: acquiringFee,
       netAmount: netAmount,
