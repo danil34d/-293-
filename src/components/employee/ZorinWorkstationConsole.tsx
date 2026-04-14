@@ -25,7 +25,9 @@ import {
   LogOut,
   Upload,
   Timer,
-  Coins
+  Coins,
+  ArrowLeft,
+  Box
 } from 'lucide-react';
 import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment } from '@/types';
 import { Badge } from '@/components/ui/badge';
@@ -77,6 +79,8 @@ interface WorkstationProps {
 export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBoxNumber }: WorkstationProps = {}) {
   const { employee: loggedInEmployee } = useAuth();
   const router = useRouter();
+  // Admin mode: admin came from /operations with ?box=N — simplified UI
+  const isAdminMode = !isKioskMode && !!initialBoxNumber;
   const [isShiftActive, setIsShiftActive] = useState(() => {
     // Kiosk mode: shift is always active
     if (isKioskMode) return true;
@@ -937,31 +941,55 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
       {/* Navigation Header */}
       {/* Header — hide in kiosk mode (kiosk has its own layout) */}
       {!isKioskMode && (
-        <div className="bg-white border-b px-4 py-3 flex items-center justify-between mb-6 -mx-4 -mt-4 md:-mx-6 md:-mt-6">
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold">Рабочая станция</h1>
+        isAdminMode ? (
+          /* Admin header: back to operations + box indicator */
+          <div className="bg-white border-b px-4 py-3 flex items-center justify-between mb-6 -mx-4 -mt-4 md:-mx-6 md:-mt-6">
+            <div className="flex items-center gap-3">
+              <Link href="/operations">
+                <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
+                  <ArrowLeft className="h-4 w-4" />
+                  Центр управления
+                </Button>
+              </Link>
+              <span className="text-gray-300">|</span>
+              <div className="flex items-center gap-2">
+                <Box className="h-4 w-4 text-blue-600" />
+                <h1 className="text-lg font-semibold">Оформление заказа — Бокс {selectedBoxNumber}</h1>
+              </div>
+            </div>
             {loggedInEmployee && (
-              <span className="text-sm text-gray-600">
-                • {loggedInEmployee.fullName}
-              </span>
+              <span className="text-sm text-gray-500">{loggedInEmployee.fullName}</span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <Link href="/employee/schedule">
-              <Button variant="outline" size="sm">
-                <Calendar className="h-4 w-4 mr-1" />
-                Мой график
+        ) : (
+          /* Employee header: workstation + schedule link */
+          <div className="bg-white border-b px-4 py-3 flex items-center justify-between mb-6 -mx-4 -mt-4 md:-mx-6 md:-mt-6">
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold">Рабочая станция</h1>
+              {loggedInEmployee && (
+                <span className="text-sm text-gray-600">
+                  • {loggedInEmployee.fullName}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Link href="/employee/schedule">
+                <Button variant="outline" size="sm">
+                  <Calendar className="h-4 w-4 mr-1" />
+                  Мой график
+                </Button>
+              </Link>
+              <Button variant="ghost" size="sm" onClick={handleLogout}>
+                <LogOut className="h-4 w-4" />
               </Button>
-            </Link>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4" />
-            </Button>
+            </div>
           </div>
-        </div>
+        )
       )}
 
-      {/* Shift Control — kiosk mode: just box selector, no shift start/end */}
+      {/* Shift Control */}
       {isKioskMode ? (
+        /* Kiosk: just box selector, no shift start/end */
         <div className="zorin-shift-card">
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold">Бокс:</span>
@@ -987,7 +1015,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
             </button>
           </div>
         </div>
-      ) : (
+      ) : isAdminMode ? null : (
+        /* Employee: full shift management */
         <div className="zorin-shift-card">
           <h2 className="zorin-shift-title">Управление сменой</h2>
           {!isShiftActive && (
