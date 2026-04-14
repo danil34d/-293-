@@ -280,10 +280,20 @@ export interface SalaryBreakdownItem {
   formula?: string; // e.g. "(3 900 СЂСѓР±. Г— 45%) / 2 С‡РµР»."
 }
 
+export interface SalaryPenaltyItem {
+  violationId: string;
+  date: string;
+  type: ViolationType;
+  description: string;
+  amount: number;
+}
+
 export interface SalaryReportData {
   employeeId: string;
   employeeName: string;
   totalEarnings: number;
+  totalPenalties: number;
+  penalties: SalaryPenaltyItem[];
   breakdown: SalaryBreakdownItem[];
 }
 

@@ -8,7 +8,7 @@ import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, EmployeeTr
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Loader2, FilePieChart, Trophy, Sigma, WalletCards, User, Gift, MinusCircle } from 'lucide-react';
-import { getEmployeesData, getWashEventsData, getSalarySchemesData, getAllEmployeeTransactions } from "@/lib/data-loader";
+import { getEmployeesData, getWashEventsData, getSalarySchemesData, getAllEmployeeTransactions, getViolationsData } from "@/lib/data-loader";
 import { SalaryReportRow } from "./SalaryReportRow";
 import { generateSalaryReport } from "@/services/salary-calculator";
 import { Table, TableBody, TableHeader, TableHead, TableRow } from "@/components/ui/table";
@@ -46,11 +46,12 @@ export function SalaryReportClient() {
     const fetchAndProcessData = async () => {
         setIsLoading(true);
         try {
-            const [employees, allWashEvents, allSchemes, allTransactions] = await Promise.all([
+            const [employees, allWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
                 (await getEmployeesData()).filter((e) => !isEmployeeAdmin(e)),
                 await getWashEventsData(),
                 await getSalarySchemesData(),
                 await getAllEmployeeTransactions(),
+                await getViolationsData(),
             ]);
 
             const periodStart = dateRange?.from ? startOfDay(dateRange.from) : null;
@@ -69,8 +70,9 @@ export function SalaryReportClient() {
                         new Date(we.timestamp) < periodStart &&
                         we.employeeIds.includes(emp.id)
                     );
-                    const previousReport = await generateSalaryReport(previousWashEvents, [emp], allSchemes);
-                    balance += previousReport[0]?.totalEarnings ?? 0;
+                    const previousViolations = allViolations.filter((v: any) => v.employeeId === emp.id && v.date && new Date(v.date + 'T00:00:00') < periodStart);
+                    const previousReport = await generateSalaryReport(previousWashEvents, [emp], allSchemes, previousViolations);
+                    balance += (previousReport[0]?.totalEarnings ?? 0) - (previousReport[0]?.totalPenalties ?? 0);
 
                     // 2. Apply all transactions (payments, bonuses, etc.) before the period
                     const previousTransactions = employeeTransactions.filter(t => new Date(t.date) < periodStart);
@@ -92,8 +94,13 @@ export function SalaryReportClient() {
                     new Date(event.timestamp) <= periodEnd
                 );
                 
-                const periodReport = (await generateSalaryReport(periodWashEvents, [emp], allSchemes))[0];
-                const earningsForPeriod = periodReport?.totalEarnings ?? 0;
+                const periodViolations = allViolations.filter((v: any) =>
+                    v.employeeId === emp.id && v.date && periodStart && periodEnd &&
+                    new Date(v.date + 'T00:00:00') >= periodStart &&
+                    new Date(v.date + 'T00:00:00') <= periodEnd
+                );
+                const periodReport = (await generateSalaryReport(periodWashEvents, [emp], allSchemes, periodViolations))[0];
+                const earningsForPeriod = (periodReport?.totalEarnings ?? 0) - (periodReport?.totalPenalties ?? 0);
                 
                 const periodTransactions = employeeTransactions.filter(t =>
                     periodStart && periodEnd &&

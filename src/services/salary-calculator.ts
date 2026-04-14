@@ -1,7 +1,7 @@
 
 'use server';
 
-import type { WashEvent, Employee, SalaryScheme, SalaryRate, SalaryReportData, SalaryBreakdownItem } from '@/types';
+import type { WashEvent, Employee, SalaryScheme, SalaryRate, SalaryReportData, SalaryBreakdownItem, Violation, SalaryPenaltyItem } from '@/types';
 
 // Helper to determine the source type from a wash event
 function getWashSourceType(washEvent: WashEvent): 'retail' | 'aggregator' | 'counterAgent' | null {
@@ -138,7 +138,8 @@ function calculateIndividualShare(
 export async function generateSalaryReport(
   washEvents: WashEvent[],
   employees: Employee[],
-  salarySchemes: SalaryScheme[]
+  salarySchemes: SalaryScheme[],
+  violations?: Violation[]
 ): Promise<SalaryReportData[]> {
   const schemeMap = new Map(salarySchemes.map(s => [s.id, s]));
   const salaryData: Record<string, SalaryReportData> = {};
@@ -149,6 +150,8 @@ export async function generateSalaryReport(
       employeeId: emp.id,
       employeeName: emp.fullName,
       totalEarnings: 0,
+      totalPenalties: 0,
+      penalties: [],
       breakdown: [],
     };
   }
@@ -184,6 +187,23 @@ export async function generateSalaryReport(
     }
   }
   
+  // Apply violations/penalties
+  if (violations && violations.length > 0) {
+    for (const v of violations) {
+      if (!v.penaltyAmount || v.penaltyAmount <= 0) continue;
+      const data = salaryData[v.employeeId];
+      if (!data) continue;
+      data.totalPenalties += v.penaltyAmount;
+      data.penalties.push({
+        violationId: v.id,
+        date: v.date,
+        type: v.type,
+        description: v.description || '',
+        amount: v.penaltyAmount,
+      });
+    }
+  }
+
   // Return sorted by total earnings descending
   return Object.values(salaryData).sort((a, b) => b.totalEarnings - a.totalEarnings);
 }

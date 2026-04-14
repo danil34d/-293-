@@ -363,13 +363,15 @@ export async function getActiveCanisterForEmployee(employeeId: string): Promise<
 }
 
 export async function getAllFinanceDataForEmployee(employeeId: string) {
-    const [allWashEvents, allSchemes, initialTransactions, allEmployees] = await Promise.all([
+    const [allWashEvents, allSchemes, initialTransactions, allEmployees, allViolations] = await Promise.all([
         getWashEventsData(),
         getSalarySchemesData(),
         getEmployeeTransactions(employeeId),
-        getEmployeesData()
+        getEmployeesData(),
+        getViolationsData()
     ]);
-    return { allWashEvents, allSchemes, initialTransactions, allEmployees };
+    const employeeViolations = allViolations.filter((v: any) => v.employeeId === employeeId);
+    return { allWashEvents, allSchemes, initialTransactions, allEmployees, employeeViolations };
 }
 
 // --- Shift Management Data Loaders ---

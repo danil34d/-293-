@@ -44,6 +44,7 @@ interface AllData {
     allSchemes: SalaryScheme[];
     initialTransactions: EmployeeTransaction[];
     allEmployees: Employee[];
+    employeeViolations?: any[];
 }
 
 interface FinanceDashboardProps {
@@ -567,7 +568,7 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [employee.id, initialData]);
 
-    const { allWashEvents, allSchemes, allEmployees } = allData || { allWashEvents: [], allSchemes: [], allEmployees: []};
+    const { allWashEvents, allSchemes, allEmployees, employeeViolations } = allData || { allWashEvents: [], allSchemes: [], allEmployees: [], employeeViolations: [] };
 
     const employeeMap = useMemo(() => new Map(allEmployees.map(e => [e.id, e.fullName])), [allEmployees]);
     
@@ -594,16 +595,24 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
                 })
             );
             
+            // Filter violations for the selected period
+            const filteredViolations = (employeeViolations || []).filter((v: any) =>
+                v.date && dateRange.from && isWithinInterval(new Date(v.date + 'T00:00:00'), {
+                    start: dateRange.from!,
+                    end: dateRange.to || dateRange.from!,
+                })
+            );
+
             try {
-                const reportResult = await generateSalaryReport(filteredEvents, [employee], allSchemes);
+                const reportResult = await generateSalaryReport(filteredEvents, [employee], allSchemes, filteredViolations);
                 setSalaryData(reportResult[0]);
             } catch (error) {
                 console.error("Failed to generate salary report:", error);
             }
         }
-        
+
         calculateAndSetReport();
-    }, [dateRange, allWashEvents, allSchemes, employee, allData]);
+    }, [dateRange, allWashEvents, allSchemes, employee, allData, employeeViolations]);
 
     const filteredTransactions = useMemo(() => {
         if (!dateRange?.from) return [];
@@ -617,6 +626,7 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
     const periodSummary = useMemo(() => {
         const summary = {
             totalEarned: salaryData?.totalEarnings ?? 0,
+            totalPenalties: salaryData?.totalPenalties ?? 0,
             payments: 0,
             bonuses: 0,
             loansAndPurchases: 0,
@@ -645,12 +655,12 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
             }
         });
 
-        // debt_write_off увеличивает баланс (компенсирует ранее выданный долг)
-        summary.balance = summary.totalEarned + summary.bonuses + summary.debtWriteOffs - summary.payments - summary.loansAndPurchases;
+        // debt_write_off увеличивает баланс, штрафы уменьшают
+        summary.balance = summary.totalEarned + summary.bonuses + summary.debtWriteOffs - summary.payments - summary.loansAndPurchases - summary.totalPenalties;
         return summary;
     }, [salaryData, filteredTransactions, employeeWashEvents]);
 
-    const [timeReportData, setTimeReportData] = useState({ today: 0, month: 0});
+    const [timeReportData, setTimeReportData] = useState({ today: 0, month: 0, todayPenalties: 0, monthPenalties: 0 });
     useEffect(() => {
         const calculateReports = async () => {
             if (!allData) return { today: 0, month: 0 };
@@ -669,17 +679,27 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
                 isWithinInterval(new Date(event.timestamp), { start: monthStart, end: todayEnd })
             );
 
-            const todayReport = await generateSalaryReport(todayEvents, [employee], allSchemes);
-            const monthReport = await generateSalaryReport(monthEvents, [employee], allSchemes);
-            
+            // Filter violations for today and month
+            const todayViolations = (employeeViolations || []).filter((v: any) =>
+                v.date && isWithinInterval(new Date(v.date + 'T00:00:00'), { start: todayStart, end: todayEnd })
+            );
+            const monthViolations = (employeeViolations || []).filter((v: any) =>
+                v.date && isWithinInterval(new Date(v.date + 'T00:00:00'), { start: monthStart, end: todayEnd })
+            );
+
+            const todayReport = await generateSalaryReport(todayEvents, [employee], allSchemes, todayViolations);
+            const monthReport = await generateSalaryReport(monthEvents, [employee], allSchemes, monthViolations);
+
             return {
                 today: todayReport[0]?.totalEarnings ?? 0,
                 month: monthReport[0]?.totalEarnings ?? 0,
+                todayPenalties: todayReport[0]?.totalPenalties ?? 0,
+                monthPenalties: monthReport[0]?.totalPenalties ?? 0,
             };
         };
         
         calculateReports().then(setTimeReportData);
-    }, [allWashEvents, employee, allSchemes, allData]);
+    }, [allWashEvents, employee, allSchemes, allData, employeeViolations]);
     
 
     const chemicalConsumption = useMemo(() => {
@@ -982,6 +1002,7 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
                             <div className="flex justify-between"><span className="text-muted-foreground">Премии:</span><span>{periodSummary.bonuses.toLocaleString('ru-RU')} руб.</span></div>
                             <div className="flex justify-between"><span className="text-muted-foreground">Выплаты ЗП:</span><span>{periodSummary.payments.toLocaleString('ru-RU')} руб.</span></div>
                             <div className="flex justify-between"><span className="text-muted-foreground">Долги/Покупки:</span><span>{periodSummary.loansAndPurchases.toLocaleString('ru-RU')} руб.</span></div>
+                            {periodSummary.totalPenalties > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Штрафы:</span><span className="text-red-600">-{periodSummary.totalPenalties.toLocaleString('ru-RU')} руб.</span></div>}
                             {periodSummary.debtWriteOffs > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Списание долгов:</span><span className="text-green-600">+{periodSummary.debtWriteOffs.toLocaleString('ru-RU')} руб.</span></div>}
                             {periodSummary.tips > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Чаевые:</span><span className="text-amber-600">+{Math.round(periodSummary.tips).toLocaleString('ru-RU')} руб.</span></div>}
                             <Separator />
@@ -990,7 +1011,9 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
                         </div>
                         <div className="space-y-2">
                             <div className="flex justify-between font-semibold"><span className="text-muted-foreground">Начислено за сегодня:</span><span>{timeReportData.today.toLocaleString('ru-RU')} руб.</span></div>
+                            {timeReportData.todayPenalties > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">  Штрафы за сегодня:</span><span className="text-red-600">-{timeReportData.todayPenalties.toLocaleString('ru-RU')} руб.</span></div>}
                             <div className="flex justify-between font-semibold"><span className="text-muted-foreground">Начислено за месяц:</span><span>{timeReportData.month.toLocaleString('ru-RU')} руб.</span></div>
+                            {timeReportData.monthPenalties > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">  Штрафы за месяц:</span><span className="text-red-600">-{timeReportData.monthPenalties.toLocaleString('ru-RU')} руб.</span></div>}
                         </div>
                     </CardContent>
                 </Card>
