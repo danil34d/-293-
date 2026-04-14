@@ -109,7 +109,7 @@ export function KioskClient({
 
       {/* Main action — go to workstation */}
       <Button className="w-full h-16 text-lg font-semibold" asChild>
-        <Link href="/employee/workstation">
+        <Link href="/kiosk/order">
           <ClipboardList className="mr-3 h-6 w-6" />
           Оформить заказ
         </Link>

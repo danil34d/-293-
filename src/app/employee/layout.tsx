@@ -2,16 +2,24 @@
 import type { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { LogOut, Home, CalendarDays, Wallet, ClipboardList } from 'lucide-react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { isKiosk } from '@/lib/employee-role';
 
 export default function EmployeeLayout({ children }: { children: ReactNode }) {
   const { logout, employee } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
 
   if (pathname === '/login') {
     return <>{children}</>;
+  }
+
+  // Kiosk should not see employee layout — redirect to /kiosk
+  if (isKiosk(employee)) {
+    router.push('/kiosk');
+    return null;
   }
 
   const isHome = pathname === '/employee';
