@@ -4,8 +4,8 @@ import { requireAuth } from '@/lib/server-auth';
 const CAMERA_DASHBOARD_BASE_URL =
   process.env.CAMERA_DASHBOARD_BASE_URL?.trim() || 'http://192.168.1.59:8050';
 
-function getCameraSessionAssetUrl(box: number, dirName: string, kind: 'plate' | 'thumbnail') {
-  const filename = kind === 'plate' ? 'plate.jpg' : 'thumbnail.jpg';
+function getCameraSessionAssetUrl(box: number, dirName: string, kind: 'plate' | 'plate_crop' | 'thumbnail') {
+  const filename = kind === 'plate_crop' ? 'plate_crop.jpg' : kind === 'plate' ? 'plate.jpg' : 'thumbnail.jpg';
   return `${CAMERA_DASHBOARD_BASE_URL}/media/box${box}/${encodeURIComponent(dirName)}/${filename}`;
 }
 
@@ -27,7 +27,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'box must be 1 or 2' }, { status: 400 });
   }
 
-  const kind = kindParam === 'plate' ? 'plate' : 'thumbnail';
+  const kind: 'plate' | 'plate_crop' | 'thumbnail' =
+    kindParam === 'plate_crop' ? 'plate_crop' : kindParam === 'plate' ? 'plate' : 'thumbnail';
 
   try {
     const response = await fetch(getCameraSessionAssetUrl(box, dirName, kind), {

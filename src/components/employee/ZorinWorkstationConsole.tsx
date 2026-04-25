@@ -308,7 +308,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   }, [initialBoxNumber, searchParams]);
 
   const buildCameraSessionMediaUrl = useCallback(
-    (context: CameraSessionContext, kind: 'plate' | 'thumbnail') => {
+    (context: CameraSessionContext, kind: 'plate' | 'plate_crop' | 'thumbnail') => {
       const params = new URLSearchParams({
         box: String(context.boxNumber),
         dirName: context.dirName,
@@ -1519,14 +1519,22 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />
                 </div>
-                {/* Plate — close-up frame with license plate */}
-                <div className="overflow-hidden rounded-lg border-2 border-blue-300 bg-black">
+                {/* Plate crop — cropped license plate region */}
+                <div className="overflow-hidden rounded-lg border-2 border-blue-300 bg-black flex items-center justify-center">
                   <img
-                    src={buildCameraSessionMediaUrl(cameraSessionContext, 'plate')}
-                    alt="Кадр с номером"
-                    className="aspect-video w-full object-cover"
+                    src={buildCameraSessionMediaUrl(cameraSessionContext, 'plate_crop')}
+                    alt="Кроп номера"
+                    className="w-full object-contain"
                     loading="lazy"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    onError={(e) => {
+                      const img = e.target as HTMLImageElement;
+                      const fallbackUrl = buildCameraSessionMediaUrl(cameraSessionContext, 'plate');
+                      if (img.src !== fallbackUrl) {
+                        img.src = fallbackUrl;
+                      } else {
+                        img.style.display = 'none';
+                      }
+                    }}
                   />
                 </div>
               </div>
