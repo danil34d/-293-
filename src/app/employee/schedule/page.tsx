@@ -1,4 +1,4 @@
-import { getShiftsData, getEmployeesData, getShiftSwapRequestsData, getShiftAssignmentRequestsData } from '@/lib/data-loader';
+import { getShiftsData, getEmployeesData, getShiftSwapRequestsData, getShiftAssignmentRequestsData } from '@/lib/data';
 import { EmployeeScheduleClient } from './components/EmployeeScheduleClient';
 import { cookies } from 'next/headers';
 import { verifyCookieValue } from '@/lib/employee-auth-cookie';

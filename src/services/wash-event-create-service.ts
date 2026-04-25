@@ -8,6 +8,7 @@ import {
   invalidateWashEventsCache,
 } from '@/lib/data-loader';
 import { updateClientBalanceById } from '@/lib/client-balance';
+import { isCompletedWashEvent } from '@/lib/wash-event-status';
 
 const WASH_EVENTS_DIR = path.join(process.cwd(), 'data', 'wash-events');
 const INVENTORY_PATH = path.join(process.cwd(), 'data', 'inventory.json');
@@ -18,6 +19,10 @@ async function ensureDataDirectory(): Promise<void> {
 }
 
 function calculateTotalChemicalConsumption(washEvent: WashEvent, inventory: Inventory): number {
+  if (!isCompletedWashEvent(washEvent)) {
+    return 0;
+  }
+
   let total = 0;
 
   if (washEvent.services.main.chemicalConsumption) {

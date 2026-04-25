@@ -318,6 +318,29 @@ export function CounterAgentForm({
     });
   }
 
+  function collectCarsForSubmit(sourceText: string) {
+    const parsedCars = sourceText
+      .split("\n")
+      .map((plate) => normalizeLicensePlate(plate.trim()))
+      .filter(Boolean);
+    const pendingQuickRaw = quickCarInput.trim();
+    const pendingQuickPlate = pendingQuickRaw ? normalizeLicensePlate(pendingQuickRaw) : "";
+    const pendingBulk = parseCarLines(bulkCarsInput);
+    const mergedCars = Array.from(new Set([
+      ...parsedCars,
+      ...(pendingQuickPlate ? [pendingQuickPlate] : []),
+      ...pendingBulk.uniqueNormalized,
+    ]));
+
+    return {
+      parsedCars,
+      mergedCars,
+      pendingQuickRaw,
+      pendingQuickPlate,
+      pendingBulk,
+    };
+  }
+
   function applyBalance(direction: "increase" | "decrease") {
     const amount = Number(balanceAdjustment);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -353,14 +376,31 @@ export function CounterAgentForm({
 
   async function onSubmit(data: Values) {
     const currentAgentId = agentId || `agent_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const parsedCars = (data.cars || "").split("\n").map((plate) => normalizeLicensePlate(plate.trim())).filter(Boolean);
+    const {
+      parsedCars,
+      mergedCars,
+      pendingQuickRaw,
+      pendingQuickPlate,
+      pendingBulk,
+    } = collectCarsForSubmit(data.cars || "");
+
+    if (pendingQuickRaw && !pendingQuickPlate) {
+      setActiveTab("cars");
+      toast({
+        title: "Проверьте быстрый ввод",
+        description: "В поле быстрого добавления остался номер, который не удалось распознать. Исправьте его или очистите поле.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const agentToSave: CounterAgent = {
       id: currentAgentId,
       name: data.name,
       archived: initialData?.archived,
       archivedAt: initialData?.archivedAt,
       companies: data.companies || [],
-      cars: parsedCars.map((plate, index) => {
+      cars: mergedCars.map((plate, index) => {
         const existingCar = initialData?.cars.find((car) => car.licensePlate === plate);
         return { id: existingCar?.id || `car_${currentAgentId}_${index + 1}_${plate}`, licensePlate: plate };
       }),
@@ -380,11 +420,20 @@ export function CounterAgentForm({
         const errorData = await response.json();
         throw new Error(errorData.error || `Failed to save agent: ${response.statusText}`);
       }
-      form.reset(data);
+      const normalizedCarsText = mergedCars.join("\n");
+      form.reset({ ...data, cars: normalizedCarsText });
+      setQuickCarInput("");
+      setBulkCarsInput("");
       router.refresh();
       toast({
         title: agentId ? "Агент обновлен" : "Агент создан",
-        description: <span>Контрагент <strong>{agentToSave.name}</strong> успешно сохранен.</span>,
+        description: (
+          <span>
+            Контрагент <strong>{agentToSave.name}</strong> успешно сохранен.
+            {mergedCars.length > parsedCars.length ? ` Автоматически добавлено номеров: ${mergedCars.length - parsedCars.length}.` : ""}
+            {pendingBulk.invalidLines.length > 0 ? ` Пропущено невалидных строк: ${pendingBulk.invalidLines.length}.` : ""}
+          </span>
+        ),
       });
       if (!agentId) router.push("/counter-agents");
     } catch (error: any) {
@@ -490,6 +539,12 @@ export function CounterAgentForm({
                       <Input
                         value={quickCarInput}
                         onChange={(event) => setQuickCarInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            addSingleCar();
+                          }
+                        }}
                         placeholder="Например, А123ВС777"
                         className="sm:flex-1"
                       />

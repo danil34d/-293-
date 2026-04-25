@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { cookies } from 'next/headers';
-import { getShiftsData, getEmployeesData } from '@/lib/data-loader';
+import { getShiftsData, getEmployeesData } from '@/lib/data';
 import { EmployeeCabinetClient } from './components/EmployeeCabinetClient';
 import { verifyCookieValue } from '@/lib/employee-auth-cookie';
 

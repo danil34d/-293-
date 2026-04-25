@@ -8,6 +8,7 @@ import type { WashEvent, Inventory } from '@/types';
 import { invalidateWashEventsCache, getInventory, invalidateInventoryCache } from '@/lib/data-loader';
 import { updateClientBalanceById } from '@/lib/client-balance';
 import { requireAuth } from '@/lib/server-auth';
+import { isCompletedWashEvent } from '@/lib/wash-event-status';
 
 const dataDir = path.join(process.cwd(), 'data', 'wash-events');
 const inventoryPath = path.join(process.cwd(), 'data', 'inventory.json');
@@ -34,6 +35,10 @@ function calculateExplicitChemicalConsumption(washEvent: WashEvent): number {
 }
 
 function calculateConsumptionWithDefaults(washEvent: WashEvent, inventory: Inventory): number {
+  if (!isCompletedWashEvent(washEvent)) {
+    return 0;
+  }
+
   const explicit = calculateExplicitChemicalConsumption(washEvent);
   if (explicit > 0) return explicit;
   if (inventory.settings?.autoDeductChemical === false) return 0;

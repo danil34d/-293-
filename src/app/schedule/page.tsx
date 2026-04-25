@@ -1,4 +1,4 @@
-import { getShiftsData, getEmployeesData, getShiftSwapRequestsData, getShiftAssignmentRequestsData, getSchedulePlansData } from '@/lib/data-loader';
+import { getShiftsData, getEmployeesData, getShiftSwapRequestsData, getShiftAssignmentRequestsData, getSchedulePlansData } from '@/lib/data';
 import { ScheduleHub } from './components/ScheduleHub';
 import '@/styles/schedule-print.css';
 import { normalizeWashId } from '@/lib/wash';
