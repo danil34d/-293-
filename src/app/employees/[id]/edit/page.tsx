@@ -6,7 +6,7 @@ import { EmployeeForm } from '../../components/EmployeeForm';
 import type { Employee } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getEmployeeById } from '@/lib/data-loader';
+import { getEmployeeById } from '@/lib/data';
 
 export default async function EditEmployeePage({ params }: { params: { id: string } }) {
   const employeeId = params.id;

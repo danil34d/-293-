@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { PlusCircle, Edit, Star, Briefcase, WalletCards, Scale, AlertTriangle } from 'lucide-react';
 import type { Aggregator, NamedPriceList } from '@/types';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
-import { getAggregatorsData } from '@/lib/data-loader';
+import { getAggregatorsData } from '@/lib/data';
 import { SetActivePriceButton } from './components/SetActivePriceButton';
 
 

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import { getShiftSwapRequestsData } from '@/lib/data-loader';
+import { getShiftSwapRequestsData } from '@/lib/data';
 import { requireAuth } from '@/lib/server-auth';
 import { createSwapRequest } from '@/services/shift-swap-service';
 import { ServiceError } from '@/services/service-error';

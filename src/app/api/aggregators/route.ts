@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 
 import { NextResponse } from 'next/server';
-import { getAggregatorsData } from '@/lib/data-loader';
+import { getAggregatorsData } from '@/lib/data';
 
 export async function GET() {
   try {

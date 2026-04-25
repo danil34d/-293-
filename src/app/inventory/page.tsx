@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import "@/styles/inventory.css";
 import { AlertTriangle } from 'lucide-react';
-import { getWashEventsData, getExpensesData, getInventory, getAllEmployeeTransactions, getEmployeesData } from '@/lib/data-loader';
+import { getWashEventsData, getExpensesData, getInventory, getAllEmployeeTransactions, getEmployeesData } from '@/lib/data';
 import { InventoryDashboard } from './components/InventoryDashboard';
 
 async function fetchData() {

@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { Suspense } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import { getWashEventsData, getAggregatorsData, getCounterAgentsData, getEmployeesData, getExpensesData, getInventory, getAllEmployeeTransactions } from '@/lib/data-loader';
+import { getWashEventsData, getAggregatorsData, getCounterAgentsData, getEmployeesData, getExpensesData, getInventory, getAllEmployeeTransactions } from '@/lib/data';
 import { ZorinDashboardClient } from './components/ZorinDashboardClient';
 
 async function fetchData() {

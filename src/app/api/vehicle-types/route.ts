@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { VehicleType } from '@/types';
 import { requireAdmin } from '@/lib/server-auth';
-
-const VEHICLE_TYPES_FILE = path.join(process.cwd(), 'data', 'vehicle-types.json');
+import { getVehicleTypes } from '@/lib/data';
+import { saveVehicleTypesData } from '@/lib/data/write-helpers';
 
 export async function GET() {
   try {
-    const data = await fs.readFile(VEHICLE_TYPES_FILE, 'utf-8');
-    const vehicleTypes: VehicleType[] = JSON.parse(data);
+    const vehicleTypes = await getVehicleTypes();
     return NextResponse.json(vehicleTypes);
   } catch (error) {
     console.error('Error reading vehicle types:', error);
@@ -42,8 +39,7 @@ export async function POST(req: NextRequest) {
     // Read existing vehicles
     let vehicles: VehicleType[] = [];
     try {
-      const data = await fs.readFile(VEHICLE_TYPES_FILE, 'utf-8');
-      vehicles = JSON.parse(data);
+      vehicles = await getVehicleTypes();
     } catch {
       vehicles = [];
     }
@@ -63,7 +59,7 @@ export async function POST(req: NextRequest) {
     };
 
     vehicles.push(vehicleToAdd);
-    await fs.writeFile(VEHICLE_TYPES_FILE, JSON.stringify(vehicles, null, 2), 'utf-8');
+    await saveVehicleTypesData(vehicles);
 
     return NextResponse.json(vehicleToAdd);
   } catch (error) {
@@ -90,8 +86,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const data = await fs.readFile(VEHICLE_TYPES_FILE, 'utf-8');
-    let vehicles: VehicleType[] = JSON.parse(data);
+    let vehicles: VehicleType[] = await getVehicleTypes();
 
     // Don't allow deleting default vehicles
     const vehicle = vehicles.find(v => v.id === id);
@@ -103,7 +98,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     vehicles = vehicles.filter(v => v.id !== id);
-    await fs.writeFile(VEHICLE_TYPES_FILE, JSON.stringify(vehicles, null, 2), 'utf-8');
+    await saveVehicleTypesData(vehicles);
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,26 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { Shift } from '@/types';
-import { getShiftsData, invalidateShiftsCache } from '@/lib/data-loader';
+import { getShiftsData, invalidateShiftsCache } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { isWashId, normalizeWashId } from '@/lib/wash';
-
-const dataDir = path.join(process.cwd(), 'data', 'shifts');
-
-async function ensureDataDirectory() {
-  try {
-    await fs.access(dataDir);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      await fs.mkdir(dataDir, { recursive: true });
-    } else {
-      throw error;
-    }
-  }
-}
+import { saveEntity, deleteEntity } from '@/lib/data/write-helpers';
 
 function isValidShiftType(value: unknown): value is Shift['shiftType'] {
   return value === 'day' || value === 'night';
@@ -92,7 +77,6 @@ export async function POST(request: Request) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    await ensureDataDirectory();
     const payload = await request.json() as Partial<Shift>;
 
     const date = isValidYmdDate(payload.date) ? payload.date.trim() : '';
@@ -193,7 +177,7 @@ export async function POST(request: Request) {
         employeeIds: mergedEmployeeIds,
       };
 
-      await fs.writeFile(path.join(dataDir, `${primaryShift.id}.json`), JSON.stringify(updatedShift, null, 2), 'utf-8');
+      await saveEntity('shift', updatedShift);
 
       const duplicateIds = slotShifts
         .filter((shift) => shift.id !== primaryShift.id)
@@ -202,9 +186,9 @@ export async function POST(request: Request) {
       await Promise.all(
         duplicateIds.map(async (duplicateId) => {
           try {
-            await fs.unlink(path.join(dataDir, `${duplicateId}.json`));
-          } catch (unlinkError: any) {
-            if (unlinkError?.code !== 'ENOENT') throw unlinkError;
+            await deleteEntity('shift', duplicateId);
+          } catch (err: any) {
+            // Ignore not-found errors during duplicate cleanup
           }
         })
       );
@@ -237,8 +221,7 @@ export async function POST(request: Request) {
       endTime,
     };
 
-    const filePath = path.join(dataDir, `${newShift.id}.json`);
-    await fs.writeFile(filePath, JSON.stringify(newShift, null, 2), 'utf-8');
+    await saveEntity('shift', newShift);
     await invalidateShiftsCache();
 
     return NextResponse.json({ message: 'Shift created successfully', shift: newShift }, { status: 201 });

@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import type { WashEvent } from '@/types';
-import { getWashEventsData } from '@/lib/data-loader';
+import { getWashEventsData } from '@/lib/data';
 import { requireAuth } from '@/lib/server-auth';
 import { createWashEvent } from '@/services/wash-event-create-service';
 

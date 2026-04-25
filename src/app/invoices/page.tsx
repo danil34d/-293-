@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import "@/styles/invoices.css";
 import { AlertTriangle } from 'lucide-react';
-import { getCounterAgentsData, getWashEventsData, getAggregatorsData } from '@/lib/data-loader';
+import { getCounterAgentsData, getWashEventsData, getAggregatorsData } from '@/lib/data';
 import { InvoiceGenerator } from './components/InvoiceGenerator';
 
 async function fetchData() {

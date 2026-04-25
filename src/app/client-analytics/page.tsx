@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import "@/styles/client-analytics.css";
 import { AlertTriangle } from 'lucide-react';
-import { getWashEventsData, getAggregatorsData, getCounterAgentsData } from '@/lib/data-loader';
+import { getWashEventsData, getAggregatorsData, getCounterAgentsData } from '@/lib/data';
 import { ClientAnalyticsDashboard } from './components/ClientAnalyticsDashboard';
 
 async function fetchData() {

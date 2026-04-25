@@ -5,7 +5,7 @@ import { WashLogPageWrapper } from './components/WashLogPageWrapper';
 import { ShiftReportsTab } from './components/ShiftReportsTab';
 import { ViolationsTab } from './components/ViolationsTab';
 import { WashLogTabs } from './components/WashLogTabs';
-import { getWashEventsData, getEmployeesData, getViolationsData, getShiftReportsData } from '@/lib/data-loader';
+import { getWashEventsData, getEmployeesData, getViolationsData, getShiftReportsData } from '@/lib/data';
 import { enrichWashEventsForLog } from '@/lib/wash-log-timeline';
 
 export default async function WashLogPage() {

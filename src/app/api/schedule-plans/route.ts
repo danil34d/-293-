@@ -1,26 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { SchedulePlan } from '@/types';
-import { getSchedulePlansData, invalidateSchedulePlansCache } from '@/lib/data-loader';
+import { getSchedulePlansData, invalidateSchedulePlansCache } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { isWashId, normalizeWashId } from '@/lib/wash';
-
-const dataDir = path.join(process.cwd(), 'data', 'schedule-plans');
-
-async function ensureDataDirectory() {
-  try {
-    await fs.access(dataDir);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      await fs.mkdir(dataDir, { recursive: true });
-    } else {
-      throw error;
-    }
-  }
-}
+import { saveEntity } from '@/lib/data/write-helpers';
 
 export async function GET(request: Request) {
   try {
@@ -58,7 +43,6 @@ export async function POST(request: Request) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    await ensureDataDirectory();
     const newPlan: SchedulePlan = await request.json();
 
     if (!newPlan.id) {
@@ -72,8 +56,7 @@ export async function POST(request: Request) {
     if (!newPlan.dailyRequirements) newPlan.dailyRequirements = [];
     newPlan.washId = normalizeWashId(newPlan.washId);
 
-    const filePath = path.join(dataDir, `${newPlan.id}.json`);
-    await fs.writeFile(filePath, JSON.stringify(newPlan, null, 2), 'utf-8');
+    await saveEntity('schedulePlan', newPlan);
     invalidateSchedulePlansCache();
 
     return NextResponse.json({ message: 'Schedule plan created successfully', plan: newPlan }, { status: 201 });

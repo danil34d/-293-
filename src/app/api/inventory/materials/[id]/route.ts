@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
-import { getInventory, invalidateInventoryCache } from '@/lib/data-loader';
+import { getInventory, invalidateInventoryCache } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
-
-const INVENTORY_FILE = path.join(process.cwd(), 'data', 'inventory.json');
+import { saveInventoryData } from '@/lib/data/write-helpers';
 
 // GET /api/inventory/materials/[id] - Get single material
 export async function GET(
@@ -61,7 +58,7 @@ export async function PUT(
             inventory.chemicalStockGrams = body.currentStock;
         }
 
-        await fs.writeFile(INVENTORY_FILE, JSON.stringify(inventory, null, 2), 'utf-8');
+        await saveInventoryData(inventory);
         await invalidateInventoryCache();
 
         return NextResponse.json(updatedMaterial);
@@ -92,7 +89,7 @@ export async function DELETE(
         inventory.materials![materialIndex].isActive = false;
         inventory.materials![materialIndex].updatedAt = new Date().toISOString();
 
-        await fs.writeFile(INVENTORY_FILE, JSON.stringify(inventory, null, 2), 'utf-8');
+        await saveInventoryData(inventory);
         await invalidateInventoryCache();
 
         return NextResponse.json({ success: true, message: 'Material deactivated' });

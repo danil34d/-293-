@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { getEmployeesData } from '@/lib/data-loader';
+import { getEmployeesData } from '@/lib/data';
 import { requireTelegramInternalAuth } from '@/lib/telegram-internal-auth';
 import { createTelegramWebAppSession } from '@/services/telegram-webapp-session-service';
 import type {

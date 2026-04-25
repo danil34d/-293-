@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { ChemicalConfig } from '@/types';
 import { requireAdmin } from '@/lib/server-auth';
-
-const CHEMICAL_CONFIG_FILE = path.join(process.cwd(), 'data', 'chemical-config.json');
+import { getChemicalConfig } from '@/lib/data';
+import { saveChemicalConfigData } from '@/lib/data/write-helpers';
 
 export async function GET() {
   try {
-    const data = await fs.readFile(CHEMICAL_CONFIG_FILE, 'utf-8');
-    const config: ChemicalConfig = JSON.parse(data);
+    const config = await getChemicalConfig();
     return NextResponse.json(config);
   } catch (error) {
     console.error('Error reading chemical config:', error);
-    // Return default config if file doesn't exist
+    // Return default config if not found
     const defaultConfig: ChemicalConfig = {
       concentratePricePer22kg: 3000,
       volumeWeightKg: 5.79,
@@ -52,7 +49,7 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    await fs.writeFile(CHEMICAL_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    await saveChemicalConfigData(config);
     return NextResponse.json(config);
   } catch (error) {
     console.error('Error saving chemical config:', error);

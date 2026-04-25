@@ -1,25 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { EmployeeDayStatusEntry } from '@/types';
-import { getEmployeeDayStatusesData, invalidateEmployeeDayStatusesCache } from '@/lib/data-loader';
+import { getEmployeeDayStatusesData, invalidateEmployeeDayStatusesCache } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
-
-const dataDir = path.join(process.cwd(), 'data', 'employee-day-statuses');
-
-async function ensureDataDirectory() {
-  try {
-    await fs.access(dataDir);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      await fs.mkdir(dataDir, { recursive: true });
-    } else {
-      throw error;
-    }
-  }
-}
+import { saveEntity } from '@/lib/data/write-helpers';
 
 export async function GET(request: Request) {
   try {
@@ -54,7 +39,6 @@ export async function POST(request: Request) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    await ensureDataDirectory();
     const newStatus: EmployeeDayStatusEntry = await request.json();
 
     if (!newStatus.id) {
@@ -70,8 +54,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Status value is required' }, { status: 400 });
     }
 
-    const filePath = path.join(dataDir, `${newStatus.id}.json`);
-    await fs.writeFile(filePath, JSON.stringify(newStatus, null, 2), 'utf-8');
+    await saveEntity('employeeDayStatus', newStatus);
     invalidateEmployeeDayStatusesCache();
 
     return NextResponse.json({ message: 'Employee day status created successfully', status: newStatus }, { status: 201 });

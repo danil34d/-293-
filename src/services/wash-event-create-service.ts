@@ -1,22 +1,12 @@
-import fs from 'fs/promises';
-import path from 'path';
 import type { Inventory, StockMovement, WashComment, WashEvent } from '@/types';
 import {
   getInventory,
   invalidateInventoryCache,
   invalidateStockMovementsCache,
   invalidateWashEventsCache,
-} from '@/lib/data-loader';
-import { updateClientBalanceById } from '@/lib/client-balance';
+} from '@/lib/data';
+import { createWashEventAtomic, readEntity } from '@/lib/data/write-helpers';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
-
-const WASH_EVENTS_DIR = path.join(process.cwd(), 'data', 'wash-events');
-const INVENTORY_PATH = path.join(process.cwd(), 'data', 'inventory.json');
-const STOCK_MOVEMENTS_DIR = path.join(process.cwd(), 'data', 'stock-movements');
-
-async function ensureDataDirectory(): Promise<void> {
-  await fs.mkdir(WASH_EVENTS_DIR, { recursive: true });
-}
 
 function calculateTotalChemicalConsumption(washEvent: WashEvent, inventory: Inventory): number {
   if (!isCompletedWashEvent(washEvent)) {
@@ -65,67 +55,6 @@ function calculateChemicalCost(consumedGrams: number, inventory: Inventory): num
   return 0;
 }
 
-async function createStockMovementRecord(params: {
-  consumedGrams: number;
-  balanceAfter: number;
-  washEventId: string;
-  employeeIds: string[];
-}): Promise<void> {
-  await fs.mkdir(STOCK_MOVEMENTS_DIR, { recursive: true });
-
-  const movement: StockMovement = {
-    id: `mov_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-    materialId: 'mat_chemical_main',
-    type: 'consumption',
-    amount: -params.consumedGrams,
-    balanceAfter: params.balanceAfter,
-    date: new Date().toISOString(),
-    description: `Автосписание при мойке #${params.washEventId}`,
-    relatedEntityType: 'wash_event',
-    relatedEntityId: params.washEventId,
-    employeeId: params.employeeIds[0],
-  };
-
-  const movementPath = path.join(STOCK_MOVEMENTS_DIR, `${movement.id}.json`);
-  await fs.writeFile(movementPath, JSON.stringify(movement, null, 2), 'utf-8');
-  invalidateStockMovementsCache();
-}
-
-async function updateInventoryAfterWash(params: {
-  consumedGrams: number;
-  washEventId: string;
-  employeeIds: string[];
-}): Promise<void> {
-  if (params.consumedGrams <= 0) return;
-
-  const inventory = await getInventory();
-  if (inventory.settings?.autoDeductChemical === false) return;
-
-  const newBalance = inventory.chemicalStockGrams - params.consumedGrams;
-  inventory.chemicalStockGrams = newBalance;
-
-  const materials = inventory.materials ?? [];
-  const chemicalMaterial = materials.find((item) => item.category === 'chemical' && item.isActive);
-  if (chemicalMaterial) {
-    const idx = materials.findIndex((item) => item.id === chemicalMaterial.id);
-    if (idx >= 0) {
-      materials[idx].currentStock = newBalance;
-      materials[idx].updatedAt = new Date().toISOString();
-    }
-  }
-  inventory.materials = materials;
-
-  await fs.writeFile(INVENTORY_PATH, JSON.stringify(inventory, null, 2), 'utf-8');
-  invalidateInventoryCache();
-
-  await createStockMovementRecord({
-    consumedGrams: params.consumedGrams,
-    balanceAfter: newBalance,
-    washEventId: params.washEventId,
-    employeeIds: params.employeeIds,
-  });
-}
-
 function normalizeLegacyComments(washEvent: WashEvent): void {
   const legacyDriverComment = (washEvent as WashEvent & { driverComment?: WashComment }).driverComment;
   if (legacyDriverComment) {
@@ -139,17 +68,10 @@ export async function createWashEvent(washEvent: WashEvent): Promise<WashEvent> 
     throw new Error('Wash event ID is required');
   }
 
-  await ensureDataDirectory();
-  const filePath = path.join(WASH_EVENTS_DIR, `${washEvent.id}.json`);
-
-  try {
-    const existingRaw = await fs.readFile(filePath, 'utf-8');
-    const existing = JSON.parse(existingRaw) as WashEvent;
+  // Check for duplicate via data adapter (PG or JSON)
+  const existing = await readEntity<WashEvent>('washEvent', washEvent.id);
+  if (existing) {
     return existing;
-  } catch (error: any) {
-    if (error?.code !== 'ENOENT') {
-      throw error;
-    }
   }
 
   normalizeLegacyComments(washEvent);
@@ -161,17 +83,60 @@ export async function createWashEvent(washEvent: WashEvent): Promise<WashEvent> 
     washEvent.chemicalCostRub = calculateChemicalCost(consumedChemicals, inventory);
   }
 
-  await fs.writeFile(filePath, JSON.stringify(washEvent, null, 2), 'utf-8');
-  invalidateWashEventsCache();
+  // Prepare stock movement and inventory update
+  let stockMovement: StockMovement | null = null;
+  let updatedInventory: Inventory | null = null;
 
-  await updateInventoryAfterWash({
-    consumedGrams: consumedChemicals,
-    washEventId: washEvent.id,
-    employeeIds: washEvent.employeeIds,
+  if (consumedChemicals > 0 && inventory.settings?.autoDeductChemical !== false) {
+    const newBalance = inventory.chemicalStockGrams - consumedChemicals;
+
+    stockMovement = {
+      id: `mov_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+      materialId: 'mat_chemical_main',
+      type: 'consumption',
+      amount: -consumedChemicals,
+      balanceAfter: newBalance,
+      date: new Date().toISOString(),
+      description: `Автосписание при мойке #${washEvent.id}`,
+      relatedEntityType: 'wash_event',
+      relatedEntityId: washEvent.id,
+      employeeId: washEvent.employeeIds[0],
+    };
+
+    inventory.chemicalStockGrams = newBalance;
+    const materials = inventory.materials ?? [];
+    const chemicalMaterial = materials.find((item) => item.category === 'chemical' && item.isActive);
+    if (chemicalMaterial) {
+      const idx = materials.findIndex((item) => item.id === chemicalMaterial.id);
+      if (idx >= 0) {
+        materials[idx].currentStock = newBalance;
+        materials[idx].updatedAt = new Date().toISOString();
+      }
+    }
+    inventory.materials = materials;
+    updatedInventory = inventory;
+  }
+
+  // Prepare client balance change
+  const clientBalanceChange = (washEvent.sourceId && washEvent.totalAmount > 0)
+    ? { sourceId: washEvent.sourceId, amount: -washEvent.totalAmount }
+    : null;
+
+  // Atomic write: wash event + stock movement + inventory + client balance
+  // For PG: single transaction (all-or-nothing)
+  // For JSON: sequential writes (backward compatible)
+  await createWashEventAtomic({
+    washEvent,
+    stockMovement,
+    inventory: updatedInventory,
+    clientBalanceChange,
   });
 
-  if (washEvent.sourceId && washEvent.totalAmount > 0) {
-    await updateClientBalanceById(washEvent.sourceId, -washEvent.totalAmount);
+  // Invalidate caches (no-op for PG, real for JSON)
+  invalidateWashEventsCache();
+  if (updatedInventory) {
+    invalidateInventoryCache();
+    invalidateStockMovementsCache();
   }
 
   return washEvent;

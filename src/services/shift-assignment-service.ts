@@ -1,12 +1,8 @@
-import fs from 'fs/promises';
-import path from 'path';
 import type { Shift, ShiftAssignmentRequest, ShiftRequestStatus, ShiftType, WashId } from '@/types';
-import { getShiftAssignmentRequestsData, getShiftsData, invalidateShiftAssignmentRequestsCache, invalidateShiftsCache } from '@/lib/data-loader';
+import { getShiftAssignmentRequestsData, getShiftsData, invalidateShiftAssignmentRequestsCache, invalidateShiftsCache } from '@/lib/data';
+import { saveEntity } from '@/lib/data/write-helpers';
 import { ServiceError } from './service-error';
 import { normalizeWashId } from '@/lib/wash';
-
-const ASSIGNMENT_DIR = path.join(process.cwd(), 'data', 'shift-assignment-requests');
-const SHIFTS_DIR = path.join(process.cwd(), 'data', 'shifts');
 
 type AssignmentResolveStatus = Extract<ShiftRequestStatus, 'accepted' | 'rejected' | 'cancelled'>;
 
@@ -27,10 +23,6 @@ interface CreateAssignmentInput {
 interface ResolveAssignmentInput extends AssignmentPermissionContext {
   requestId: string;
   status: AssignmentResolveStatus;
-}
-
-async function ensureDirectory(dirPath: string) {
-  await fs.mkdir(dirPath, { recursive: true });
 }
 
 function normalizeDate(input: string): string {
@@ -99,21 +91,18 @@ export async function createAssignmentRequest(input: CreateAssignmentInput, ctx:
     comment: comment || undefined,
   };
 
-  await ensureDirectory(ASSIGNMENT_DIR);
-  await fs.writeFile(path.join(ASSIGNMENT_DIR, `${created.id}.json`), JSON.stringify(created, null, 2), 'utf-8');
+  await saveEntity('shiftAssignmentRequest', created);
   await invalidateShiftAssignmentRequestsCache();
   return created;
 }
 
 async function saveAssignmentRequest(updatedRequest: ShiftAssignmentRequest): Promise<void> {
-  await ensureDirectory(ASSIGNMENT_DIR);
-  await fs.writeFile(path.join(ASSIGNMENT_DIR, `${updatedRequest.id}.json`), JSON.stringify(updatedRequest, null, 2), 'utf-8');
+  await saveEntity('shiftAssignmentRequest', updatedRequest);
   await invalidateShiftAssignmentRequestsCache();
 }
 
 async function saveShift(shift: Shift): Promise<void> {
-  await ensureDirectory(SHIFTS_DIR);
-  await fs.writeFile(path.join(SHIFTS_DIR, `${shift.id}.json`), JSON.stringify(shift, null, 2), 'utf-8');
+  await saveEntity('shift', shift);
 }
 
 export async function resolveAssignmentRequest(input: ResolveAssignmentInput): Promise<ShiftAssignmentRequest> {

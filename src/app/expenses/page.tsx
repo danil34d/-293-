@@ -7,7 +7,7 @@ import type { Expense, WashEvent } from '@/types';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
-import { getExpensesData, getWashEventsData, getInventory } from '@/lib/data-loader';
+import { getExpensesData, getWashEventsData, getInventory } from '@/lib/data';
 
 export default async function ExpensesPage() {
   let expenses: Expense[] = [];

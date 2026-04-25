@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 
 import { NextResponse } from 'next/server';
-import { getActiveCounterAgentsData, getCounterAgentsData } from '@/lib/data-loader';
+import { getActiveCounterAgentsData, getCounterAgentsData } from '@/lib/data';
 
 export async function GET(request: Request) {
   try {

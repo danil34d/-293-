@@ -1,13 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { Employee } from '@/types';
 import { requireAuth } from '@/lib/server-auth';
-import { invalidateEmployeesCache } from '@/lib/data-loader';
-
-const dataDir = path.join(process.cwd(), 'data', 'employees');
+import { invalidateEmployeesCache } from '@/lib/data';
+import { readEntity, saveEntity } from '@/lib/data/write-helpers';
 
 export async function PUT(
   request: Request,
@@ -30,11 +27,11 @@ export async function PUT(
     return NextResponse.json({ error: 'Некорректный JSON' }, { status: 400 });
   }
 
-  const filePath = path.join(dataDir, `${id}.json`);
-
   try {
-    const content = await fs.readFile(filePath, 'utf-8');
-    const employee: Employee = JSON.parse(content);
+    const employee = await readEntity<Employee>('employee', id);
+    if (!employee) {
+      return NextResponse.json({ error: 'Сотрудник не найден' }, { status: 404 });
+    }
 
     // Формируем объект переопределений
     const overrides: NonNullable<Employee['managerOverrides']> = {};
@@ -78,14 +75,11 @@ export async function PUT(
       };
     }
 
-    await fs.writeFile(filePath, JSON.stringify(employee, null, 2), 'utf-8');
+    await saveEntity('employee', employee);
     invalidateEmployeesCache();
 
     return NextResponse.json({ employee });
   } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      return NextResponse.json({ error: 'Сотрудник не найден' }, { status: 404 });
-    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -10,7 +10,7 @@ import {
   getWashEventsData,
   getEmployeesData,
   getExpensesData,
-} from '@/lib/data-loader';
+} from '@/lib/data';
 
 // Define Zod schemas for the data structures
 // Note: These are simplified for the AI prompt context.

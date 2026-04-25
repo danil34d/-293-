@@ -6,7 +6,7 @@ import { AggregatorForm } from '../../components/AggregatorForm';
 import type { Aggregator } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getAggregatorById } from '@/lib/data-loader';
+import { getAggregatorById } from '@/lib/data';
 
 export default async function EditAggregatorPage({ params }: { params: { id: string } }) {
   const aggregatorId = params.id;

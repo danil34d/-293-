@@ -6,7 +6,7 @@ import { ExpenseForm } from '../../components/ExpenseForm';
 import type { Expense } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getExpenseById } from '@/lib/data-loader';
+import { getExpenseById } from '@/lib/data';
 
 export default async function EditExpensePage({ params }: { params: { id: string } }) {
   const expenseId = params.id;

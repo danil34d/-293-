@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
-import { invalidateEmployeeCanistersCache, invalidateInventoryCache, invalidateStockMovementsCache, getInventory } from '@/lib/data-loader';
+import { invalidateEmployeeCanistersCache, invalidateInventoryCache, invalidateStockMovementsCache, getInventory } from '@/lib/data';
 import type { EmployeeChemicalCanister, StockMovement } from '@/types';
 import { requireAdmin } from '@/lib/server-auth';
-
-const CANISTERS_DIR = path.join(process.cwd(), 'data', 'employee-canisters');
-const STOCK_MOVEMENTS_DIR = path.join(process.cwd(), 'data', 'stock-movements');
-const INVENTORY_FILE = path.join(process.cwd(), 'data', 'inventory.json');
+import { saveEntity, deleteEntity, readEntity, saveInventoryData } from '@/lib/data/write-helpers';
 
 // GET /api/employee-canisters/[id] - Get single canister
 export async function GET(
@@ -16,16 +11,14 @@ export async function GET(
 ) {
     try {
         const { id } = await params;
-        const canisterPath = path.join(CANISTERS_DIR, `${id}.json`);
+        const canister = await readEntity<EmployeeChemicalCanister>('employeeCanister', id);
 
-        const fileContent = await fs.readFile(canisterPath, 'utf-8');
-        const canister: EmployeeChemicalCanister = JSON.parse(fileContent);
+        if (!canister) {
+            return NextResponse.json({ error: 'Canister not found' }, { status: 404 });
+        }
 
         return NextResponse.json(canister);
     } catch (error: any) {
-        if (error.code === 'ENOENT') {
-            return NextResponse.json({ error: 'Canister not found' }, { status: 404 });
-        }
         console.error('Error fetching canister:', error);
         return NextResponse.json({ error: 'Failed to fetch canister' }, { status: 500 });
     }
@@ -42,18 +35,11 @@ export async function PUT(
     try {
         const { id } = await params;
         const body = await request.json();
-        const canisterPath = path.join(CANISTERS_DIR, `${id}.json`);
 
         // Read existing canister
-        let canister: EmployeeChemicalCanister;
-        try {
-            const fileContent = await fs.readFile(canisterPath, 'utf-8');
-            canister = JSON.parse(fileContent);
-        } catch (error: any) {
-            if (error.code === 'ENOENT') {
-                return NextResponse.json({ error: 'Canister not found' }, { status: 404 });
-            }
-            throw error;
+        const canister = await readEntity<EmployeeChemicalCanister>('employeeCanister', id);
+        if (!canister) {
+            return NextResponse.json({ error: 'Canister not found' }, { status: 404 });
         }
 
         // Update fields
@@ -91,10 +77,9 @@ export async function PUT(
                     }
                 }
 
-                await fs.writeFile(INVENTORY_FILE, JSON.stringify(inventory, null, 2), 'utf-8');
+                await saveInventoryData(inventory);
 
                 // Create stock movement record for return
-                await fs.mkdir(STOCK_MOVEMENTS_DIR, { recursive: true });
                 const movement: StockMovement = {
                     id: `mov_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                     materialId: 'mat_chemical_main',
@@ -107,8 +92,7 @@ export async function PUT(
                     relatedEntityId: canister.employeeId,
                     employeeId: canister.employeeId,
                 };
-                const movementPath = path.join(STOCK_MOVEMENTS_DIR, `${movement.id}.json`);
-                await fs.writeFile(movementPath, JSON.stringify(movement, null, 2), 'utf-8');
+                await saveEntity('stockMovement', movement);
 
                 invalidateInventoryCache();
                 invalidateStockMovementsCache();
@@ -119,7 +103,7 @@ export async function PUT(
         }
 
         // Save updated canister
-        await fs.writeFile(canisterPath, JSON.stringify(canister, null, 2), 'utf-8');
+        await saveEntity('employeeCanister', canister);
         invalidateEmployeeCanistersCache();
 
         return NextResponse.json(canister);
@@ -139,16 +123,17 @@ export async function DELETE(
 
     try {
         const { id } = await params;
-        const canisterPath = path.join(CANISTERS_DIR, `${id}.json`);
 
-        await fs.unlink(canisterPath);
+        const existing = await readEntity('employeeCanister', id);
+        if (!existing) {
+            return NextResponse.json({ error: 'Canister not found' }, { status: 404 });
+        }
+
+        await deleteEntity('employeeCanister', id);
         invalidateEmployeeCanistersCache();
 
         return NextResponse.json({ success: true, message: 'Canister deleted' });
     } catch (error: any) {
-        if (error.code === 'ENOENT') {
-            return NextResponse.json({ error: 'Canister not found' }, { status: 404 });
-        }
         console.error('Error deleting canister:', error);
         return NextResponse.json({ error: 'Failed to delete canister' }, { status: 500 });
     }

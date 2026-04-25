@@ -1,7 +1,7 @@
 import { endOfMonth, isWithinInterval, parse, startOfMonth } from 'date-fns';
 import type { EmployeeTransaction, EmployeeTransactionType } from '@/types';
 import type { TelegramFinanceSummary } from '@/types/telegram-bot';
-import { getEmployeeById, getEmployeeTransactions, getSalarySchemesData, getWashEventsData } from '@/lib/data-loader';
+import { getEmployeeById, getEmployeeTransactions, getSalarySchemesData, getWashEventsData } from '@/lib/data';
 import { generateSalaryReport } from './salary-calculator';
 import { ServiceError } from './service-error';
 

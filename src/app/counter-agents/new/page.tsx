@@ -1,6 +1,6 @@
 import PageHeader from '@/components/layout/PageHeader';
 import { CounterAgentForm } from '../components/CounterAgentForm';
-import { getCounterAgentsData, getWashEventsData } from '@/lib/data-loader';
+import { getCounterAgentsData, getWashEventsData } from '@/lib/data';
 
 export default async function NewCounterAgentPage() {
   const [referenceAgents, washEvents] = await Promise.all([

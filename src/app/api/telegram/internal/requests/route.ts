@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { getEmployeesData, getShiftAssignmentRequestsData, getShiftsData, getShiftSwapRequestsData } from '@/lib/data-loader';
+import { getEmployeesData, getShiftAssignmentRequestsData, getShiftsData, getShiftSwapRequestsData } from '@/lib/data';
 import { isEmployeeActiveInShift } from '@/lib/shift-state';
 import { requireTelegramInternalAuth } from '@/lib/telegram-internal-auth';
 import type { TelegramInternalApiResponse } from '@/types/telegram-bot';

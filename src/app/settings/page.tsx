@@ -3,7 +3,7 @@ import "@/styles/settings.css";
 import Link from 'next/link';
 import { RetailPriceListForm } from './components/RetailPriceListForm';
 import { ResetDataButton } from './components/ResetDataButton';
-import { getWashEventsData, getEmployeesData } from '@/lib/data-loader';
+import { getWashEventsData, getEmployeesData } from '@/lib/data';
 import type { WashEvent, Employee } from '@/types';
 import { AlertTriangle, ScanLine, ChevronRight } from 'lucide-react';
 

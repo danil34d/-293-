@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { addDays, endOfDay, endOfMonth, isWithinInterval, startOfDay, startOfMonth } from 'date-fns';
-import { getEmployeesData, getShiftsData } from '@/lib/data-loader';
+import { getEmployeesData, getShiftsData } from '@/lib/data';
 import {
   getShiftPartnerIdForEmployee,
   getShiftReleasedEmployeeId,

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "carwash",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "const http=require('http');const proxy=http.createServer((q,s)=>{const opts={hostname:'192.168.1.150',port:3000,path:q.url,method:q.method,headers:{...q.headers,host:'192.168.1.150:3000'}};const r=http.request(opts,p=>{s.writeHead(p.statusCode,p.headers);p.pipe(s)});q.pipe(r);r.on('error',()=>{s.writeHead(502);s.end('Bad Gateway')})});proxy.listen(3100,()=>console.log('Proxy 3100->192.168.1.150:3000'))"],
+      "port": 3100
+    }
+  ]
+}

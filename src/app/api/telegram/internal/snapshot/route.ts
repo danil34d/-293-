@@ -9,7 +9,7 @@ import {
   getShiftsData,
   getShiftSwapRequestsData,
   getWashEventsData,
-} from '@/lib/data-loader';
+} from '@/lib/data';
 import { getShiftActiveEmployeeIds, getShiftLinkedEmployeeIds, getShiftReleasedEmployeeId, isEmployeeLinkedToShift } from '@/lib/shift-state';
 import { requireTelegramInternalAuth } from '@/lib/telegram-internal-auth';
 import { buildEmployeeEvents } from '@/services/notification-diff-service';

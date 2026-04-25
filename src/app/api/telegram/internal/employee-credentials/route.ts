@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { getEmployeesData } from '@/lib/data-loader';
+import { getEmployeesData } from '@/lib/data';
 import { requireTelegramInternalAuth } from '@/lib/telegram-internal-auth';
 import type { TelegramEmployeeCredentialsResponse, TelegramInternalApiResponse } from '@/types/telegram-bot';
 

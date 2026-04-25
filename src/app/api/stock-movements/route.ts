@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
-import { getStockMovementsData, getInventory, invalidateStockMovementsCache, invalidateInventoryCache } from '@/lib/data-loader';
+import { getStockMovementsData, getInventory, invalidateStockMovementsCache, invalidateInventoryCache } from '@/lib/data';
 import type { StockMovement, StockMovementType } from '@/types';
 import { requireAdmin } from '@/lib/server-auth';
-
-const STOCK_MOVEMENTS_DIR = path.join(process.cwd(), 'data', 'stock-movements');
-const INVENTORY_FILE = path.join(process.cwd(), 'data', 'inventory.json');
+import { saveEntity, saveInventoryData } from '@/lib/data/write-helpers';
 
 // GET /api/stock-movements - Get all stock movements
 export async function GET(request: NextRequest) {
@@ -93,10 +89,8 @@ export async function POST(request: NextRequest) {
             createdBy: body.createdBy
         };
 
-        // Save movement to file
-        const movementFile = path.join(STOCK_MOVEMENTS_DIR, `${newMovement.id}.json`);
-        await fs.mkdir(STOCK_MOVEMENTS_DIR, { recursive: true });
-        await fs.writeFile(movementFile, JSON.stringify(newMovement, null, 2), 'utf-8');
+        // Save movement
+        await saveEntity('stockMovement', newMovement);
 
         // Update inventory stock
         if (material && Array.isArray(inventory.materials)) {
@@ -116,7 +110,7 @@ export async function POST(request: NextRequest) {
             inventory.chemicalStockGrams = balanceAfter;
         }
 
-        await fs.writeFile(INVENTORY_FILE, JSON.stringify(inventory, null, 2), 'utf-8');
+        await saveInventoryData(inventory);
 
         await invalidateStockMovementsCache();
         await invalidateInventoryCache();

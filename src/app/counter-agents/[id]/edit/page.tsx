@@ -6,7 +6,7 @@ import { CounterAgentForm } from '../../components/CounterAgentForm';
 import type { CounterAgent, WashEvent } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getCounterAgentById, getCounterAgentsData, getWashEventsData } from '@/lib/data-loader';
+import { getCounterAgentById, getCounterAgentsData, getWashEventsData } from '@/lib/data';
 
 export default async function EditCounterAgentPage({ params }: { params: { id: string } }) {
   const agentIdFromParams = params.id;

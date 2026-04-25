@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getEmployeesData } from '@/lib/data-loader';
+import { getEmployeesData } from '@/lib/data';
 import type { Employee } from '@/types';
 import { serializeEmployeeAuthCookie } from '@/lib/employee-auth-cookie';
 import { verifyPassword } from '@/lib/password-hash';

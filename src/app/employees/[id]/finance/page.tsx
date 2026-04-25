@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import PageHeader from '@/components/layout/PageHeader';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import { getEmployeeById } from '@/lib/data-loader';
+import { getEmployeeById } from '@/lib/data';
 import { FinanceDashboard } from './components/FinanceDashboard';
 import { Suspense } from 'react';
 

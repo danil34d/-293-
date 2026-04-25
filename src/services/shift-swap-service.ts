@@ -1,11 +1,7 @@
-import fs from 'fs/promises';
-import path from 'path';
 import type { Shift, ShiftRequestType, ShiftSwapRequest } from '@/types';
-import { getShiftById, getShiftSwapRequestsData, invalidateShiftSwapRequestsCache, invalidateShiftsCache } from '@/lib/data-loader';
+import { getShiftById, getShiftSwapRequestsData, invalidateShiftSwapRequestsCache, invalidateShiftsCache } from '@/lib/data';
+import { saveEntity } from '@/lib/data/write-helpers';
 import { ServiceError } from './service-error';
-
-const SWAP_DIR = path.join(process.cwd(), 'data', 'shift-swap-requests');
-const SHIFTS_DIR = path.join(process.cwd(), 'data', 'shifts');
 
 interface SwapPermissionContext {
   actorId: string;
@@ -25,19 +21,13 @@ interface RespondSwapInput extends SwapPermissionContext {
   decision: 'accepted' | 'rejected';
 }
 
-async function ensureDirectory(dirPath: string) {
-  await fs.mkdir(dirPath, { recursive: true });
-}
-
 async function saveSwapRequest(request: ShiftSwapRequest) {
-  await ensureDirectory(SWAP_DIR);
-  await fs.writeFile(path.join(SWAP_DIR, `${request.id}.json`), JSON.stringify(request, null, 2), 'utf-8');
+  await saveEntity('shiftSwapRequest', request);
   await invalidateShiftSwapRequestsCache();
 }
 
 async function saveShift(shift: Shift) {
-  await ensureDirectory(SHIFTS_DIR);
-  await fs.writeFile(path.join(SHIFTS_DIR, `${shift.id}.json`), JSON.stringify(shift, null, 2), 'utf-8');
+  await saveEntity('shift', shift);
 }
 
 export async function createSwapRequest(input: CreateSwapInput, ctx: SwapPermissionContext): Promise<ShiftSwapRequest> {
@@ -166,4 +156,3 @@ export async function respondSwapRequest(input: RespondSwapInput): Promise<Shift
   await saveSwapRequest(updatedRequest);
   return updatedRequest;
 }
-

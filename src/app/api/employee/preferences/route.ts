@@ -1,14 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { Employee } from '@/types';
 import { requireAuth } from '@/lib/server-auth';
-import { invalidateEmployeesCache } from '@/lib/data-loader';
+import { invalidateEmployeesCache } from '@/lib/data';
 import { serializeEmployeeAuthCookie } from '@/lib/employee-auth-cookie';
-
-const dataDir = path.join(process.cwd(), 'data', 'employees');
+import { readEntity, saveEntity } from '@/lib/data/write-helpers';
 
 type ShiftPref = 'day' | 'night' | 'any';
 type ShiftLoad = 'less' | 'standard' | 'more';
@@ -41,22 +38,6 @@ function clampInt(value: unknown, min: number, max: number): number | undefined 
   return Math.max(min, Math.min(max, Math.trunc(num)));
 }
 
-async function readEmployeeFile(employeeId: string): Promise<Employee | null> {
-  const filePath = path.join(dataDir, `${employeeId}.json`);
-  try {
-    const content = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(content) as Employee;
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
-async function writeEmployeeFile(employeeId: string, employee: Employee): Promise<void> {
-  const filePath = path.join(dataDir, `${employeeId}.json`);
-  await fs.writeFile(filePath, JSON.stringify(employee, null, 2), 'utf-8');
-}
-
 export async function PUT(request: Request) {
   const auth = requireAuth();
   if (auth instanceof NextResponse) return auth;
@@ -73,7 +54,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'Некорректная сессия: нет employeeId' }, { status: 401 });
   }
 
-  const existing = await readEmployeeFile(employeeId);
+  const existing = await readEntity<Employee>('employee', employeeId);
   if (!existing) {
     return NextResponse.json({ error: 'Сотрудник не найден' }, { status: 404 });
   }
@@ -123,7 +104,7 @@ export async function PUT(request: Request) {
   }
 
   try {
-    await writeEmployeeFile(employeeId, updated);
+    await saveEntity('employee', updated);
     invalidateEmployeesCache();
 
     // Обновляем cookie, чтобы UI сразу видел актуальные значения

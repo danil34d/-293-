@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { getShiftsData } from '@/lib/data-loader';
+import { getShiftsData } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { suggestDailyRequirementsFromHistory } from '@/services/schedule-pattern-service';
 import { normalizeWashId } from '@/lib/wash';

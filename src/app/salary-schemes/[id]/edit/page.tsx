@@ -6,7 +6,7 @@ import { SalarySchemeForm } from '../../components/SalarySchemeForm';
 import type { SalaryScheme } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getSalarySchemeById } from '@/lib/data-loader';
+import { getSalarySchemeById } from '@/lib/data';
 
 export default async function EditSalarySchemePage({ params }: { params: { id: string } }) {
   const schemeId = params.id;

@@ -2,53 +2,15 @@ export const dynamic = "force-dynamic";
 
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { EmployeeTransaction } from '@/types';
-import { invalidateEmployeeTransactionsCache, getInventory, invalidateInventoryCache, invalidateAllEmployeeTransactionsCache } from '@/lib/data-loader';
+import { invalidateEmployeeTransactionsCache, getInventory, invalidateInventoryCache, invalidateAllEmployeeTransactionsCache, getEmployeeTransactions } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
-
-const dataDir = path.join(process.cwd(), 'data', 'employee-transactions');
-const inventoryPath = path.join(process.cwd(), 'data', 'inventory.json');
-
-async function ensureDataDirectory() {
-  try {
-    await fs.access(dataDir);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      await fs.mkdir(dataDir, { recursive: true });
-    } else {
-      throw error;
-    }
-  }
-}
-
-async function readTransactions(employeeId: string): Promise<EmployeeTransaction[]> {
-    const filePath = path.join(dataDir, `${employeeId}.json`);
-    try {
-        await ensureDataDirectory();
-        const fileContent = await fs.readFile(filePath, 'utf-8');
-        return JSON.parse(fileContent) as EmployeeTransaction[];
-    } catch (error: any) {
-        if (error.code === 'ENOENT') {
-            return []; // No transactions file yet, return empty array
-        }
-        throw error; // Other errors should be propagated
-    }
-}
-
-async function writeTransactions(employeeId: string, transactions: EmployeeTransaction[]) {
-    const filePath = path.join(dataDir, `${employeeId}.json`);
-    await ensureDataDirectory();
-    await fs.writeFile(filePath, JSON.stringify(transactions, null, 2), 'utf-8');
-    invalidateEmployeeTransactionsCache(employeeId);
-    invalidateAllEmployeeTransactionsCache();
-}
+import { saveEmployeeTransactions, saveInventoryData } from '@/lib/data/write-helpers';
 
 async function updateInventory(changeInGrams: number) {
     const inventory = await getInventory();
     inventory.chemicalStockGrams += changeInGrams;
-    await fs.writeFile(inventoryPath, JSON.stringify(inventory, null, 2), 'utf-8');
+    await saveInventoryData(inventory);
     invalidateInventoryCache();
 }
 
@@ -74,7 +36,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         return NextResponse.json({ error: 'Amount must be a valid number' }, { status: 400 });
     }
 
-    const currentTransactions = await readTransactions(employeeId);
+    const currentTransactions = await getEmployeeTransactions(employeeId);
 
     const transactionToSave: EmployeeTransaction = {
       id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -84,11 +46,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
       amount: parsedAmount,
       description: newTransactionData.description,
     };
-    
+
     currentTransactions.push(transactionToSave);
-    
-    await writeTransactions(employeeId, currentTransactions);
-    
+
+    await saveEmployeeTransactions(employeeId, currentTransactions);
+    invalidateEmployeeTransactionsCache(employeeId);
+    invalidateAllEmployeeTransactionsCache();
+
     // If it's a chemical canister issue, update inventory by subtracting
     if (transactionToSave.type === 'purchase' && transactionToSave.description.includes('Выдача канистры химии')) {
       const inventory = await getInventory();
@@ -113,7 +77,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   if (!employeeId) {
     return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
   }
-  
+
   const { searchParams } = new URL(request.url);
   const transactionId = searchParams.get('transactionId');
   if (!transactionId) {
@@ -121,8 +85,8 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   }
 
   try {
-    let transactions = await readTransactions(employeeId);
-    
+    let transactions = await getEmployeeTransactions(employeeId);
+
     const transactionToDelete = transactions.find(t => t.id === transactionId);
     if (!transactionToDelete) {
         return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
@@ -137,7 +101,9 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
         await updateInventory(canisterWeightGrams);
     }
 
-    await writeTransactions(employeeId, transactions);
+    await saveEmployeeTransactions(employeeId, transactions);
+    invalidateEmployeeTransactionsCache(employeeId);
+    invalidateAllEmployeeTransactionsCache();
 
     return NextResponse.json({ message: 'Transaction deleted successfully' });
   } catch (error: any) {

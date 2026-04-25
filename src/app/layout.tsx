@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AppProviders } from '@/components/layout/AppProviders';
-import { getWashEventsData, getRetailPriceConfig } from '@/lib/data-loader';
+import { getWashEventsData, getRetailPriceConfig } from '@/lib/data';
 
 export const metadata: Metadata = {
   title: 'Менеджер Автомойки',

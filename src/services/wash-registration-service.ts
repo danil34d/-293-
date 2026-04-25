@@ -11,7 +11,7 @@ import {
   getWashEventById,
   getWashEventsData,
   invalidateAggregatorsCache,
-} from '@/lib/data-loader';
+} from '@/lib/data';
 import { isEmployeeAdmin } from '@/lib/employee-role';
 import { normalizeLicensePlate } from '@/lib/utils';
 import {
@@ -23,11 +23,11 @@ import {
   TelegramWashSubmitRequest,
   TelegramWashSubmitResponse,
 } from '@/types/telegram-bot';
+import { saveEntity } from '@/lib/data/write-helpers';
 import { createWashEvent } from './wash-event-create-service';
 
 const PRIORITY_SERVICE_KEYWORDS = ['тягач', '90 кубов', 'европа', 'америка', 'полуприцеп', 'самосвал', 'цистерна'];
 const DRAFT_STORE_PATH = path.join(process.cwd(), 'data', 'telegram-bot', 'wash-drafts.json');
-const AGGREGATORS_DIR = path.join(process.cwd(), 'data', 'aggregators');
 const DEFAULT_PAGE_SIZE = 8;
 const MAX_PAGE_SIZE = 20;
 const DRAFT_TTL_DAYS = 7;
@@ -517,8 +517,7 @@ async function appendAggregatorCarIfMissing(aggregator: Aggregator, normalizedVe
     cars: [...(aggregator.cars || []), nextCar],
   };
 
-  await fs.mkdir(AGGREGATORS_DIR, { recursive: true });
-  await fs.writeFile(path.join(AGGREGATORS_DIR, `${aggregator.id}.json`), JSON.stringify(updatedAggregator, null, 2), 'utf-8');
+  await saveEntity('aggregator', updatedAggregator);
   invalidateAggregatorsCache();
 }
 

@@ -15,7 +15,7 @@ import {
   getInventory,
   getStockMovementsData,
   getEmployeeCanistersData,
-} from '@/lib/data-loader';
+} from '@/lib/data';
 import { generateCustomDOCX } from './docx-generator';
 import { generateExcelTable } from './excel-generator';
 

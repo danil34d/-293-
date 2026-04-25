@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
-import { getEmployeeCanistersData, invalidateEmployeeCanistersCache, getInventory, invalidateInventoryCache, invalidateStockMovementsCache } from '@/lib/data-loader';
+import { getEmployeeCanistersData, invalidateEmployeeCanistersCache, getInventory, invalidateInventoryCache, invalidateStockMovementsCache } from '@/lib/data';
 import type { EmployeeChemicalCanister, StockMovement } from '@/types';
 import { requireAdmin } from '@/lib/server-auth';
-
-const CANISTERS_DIR = path.join(process.cwd(), 'data', 'employee-canisters');
-const STOCK_MOVEMENTS_DIR = path.join(process.cwd(), 'data', 'stock-movements');
-const INVENTORY_FILE = path.join(process.cwd(), 'data', 'inventory.json');
+import { saveEntity, saveInventoryData } from '@/lib/data/write-helpers';
 
 // GET /api/employee-canisters - Get all canisters or filter by employee
 export async function GET(request: NextRequest) {
@@ -72,10 +67,8 @@ export async function POST(request: NextRequest) {
             status: 'active',
         };
 
-        // Save canister file
-        await fs.mkdir(CANISTERS_DIR, { recursive: true });
-        const canisterFile = path.join(CANISTERS_DIR, `${newCanister.id}.json`);
-        await fs.writeFile(canisterFile, JSON.stringify(newCanister, null, 2), 'utf-8');
+        // Save canister
+        await saveEntity('employeeCanister', newCanister);
 
         // Subtract from inventory (issuing to employee reduces warehouse stock)
         const newInventoryBalance = inventory.chemicalStockGrams - initialAmount;
@@ -91,10 +84,9 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        await fs.writeFile(INVENTORY_FILE, JSON.stringify(inventory, null, 2), 'utf-8');
+        await saveInventoryData(inventory);
 
         // Create stock movement record for issue
-        await fs.mkdir(STOCK_MOVEMENTS_DIR, { recursive: true });
         const movement: StockMovement = {
             id: `mov_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             materialId: 'mat_chemical_main',
@@ -107,8 +99,7 @@ export async function POST(request: NextRequest) {
             relatedEntityId: body.employeeId,
             employeeId: body.employeeId,
         };
-        const movementPath = path.join(STOCK_MOVEMENTS_DIR, `${movement.id}.json`);
-        await fs.writeFile(movementPath, JSON.stringify(movement, null, 2), 'utf-8');
+        await saveEntity('stockMovement', movement);
 
         invalidateEmployeeCanistersCache();
         invalidateInventoryCache();

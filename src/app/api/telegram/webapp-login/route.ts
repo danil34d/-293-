@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { getEmployeesData } from '@/lib/data-loader';
+import { getEmployeesData } from '@/lib/data';
 import { consumeTelegramWebAppSession } from '@/services/telegram-webapp-session-service';
 import { serializeEmployeeAuthCookie } from '@/lib/employee-auth-cookie';
 

@@ -141,10 +141,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   const [isShiftActive, setIsShiftActive] = useState(() => {
     // Kiosk mode: shift is always active
     if (isKioskMode) return true;
-    // Admin coming from operations with pre-selected box: auto-activate
-    if (initialBoxNumber && initialBoxState.employees.length > 0) {
-      return true;
-    }
+    // Admin coming from operations with ?box=N: always active (no shift management needed)
+    if (initialBoxNumber) return true;
     // Initialize from sessionStorage if available
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('isShiftActive');
@@ -182,6 +180,10 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           console.error('[INIT] Failed to parse saved employees:', error);
         }
       }
+    }
+    // Auto-select logged-in non-admin employee (so they can start shift without schedule)
+    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') {
+      return [loggedInEmployee];
     }
     return [];
   });

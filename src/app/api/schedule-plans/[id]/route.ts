@@ -1,17 +1,14 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { SchedulePlan } from '@/types';
 import {
   getSchedulePlansData,
   invalidateSchedulePlansCache
-} from '@/lib/data-loader';
+} from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { normalizeWashId } from '@/lib/wash';
-
-const dataDir = path.join(process.cwd(), 'data', 'schedule-plans');
+import { saveEntity, deleteEntity } from '@/lib/data/write-helpers';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -58,14 +55,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       for (const otherPlan of plansInSameMonth) {
         if (otherPlan.isActive) {
           otherPlan.isActive = false;
-          const otherFilePath = path.join(dataDir, `${otherPlan.id}.json`);
-          await fs.writeFile(otherFilePath, JSON.stringify(otherPlan, null, 2), 'utf-8');
+          await saveEntity('schedulePlan', otherPlan);
         }
       }
     }
 
-    const filePath = path.join(dataDir, `${id}.json`);
-    await fs.writeFile(filePath, JSON.stringify(updatedPlan, null, 2), 'utf-8');
+    await saveEntity('schedulePlan', updatedPlan);
     invalidateSchedulePlansCache();
 
     return NextResponse.json({ message: 'Schedule plan updated successfully', plan: updatedPlan });
@@ -81,15 +76,14 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
   try {
     const { id } = await params;
-    const filePath = path.join(dataDir, `${id}.json`);
+    const plans = await getSchedulePlansData();
+    const existing = plans.find(p => p.id === id);
 
-    try {
-      await fs.access(filePath);
-    } catch {
+    if (!existing) {
       return NextResponse.json({ error: 'Schedule plan not found' }, { status: 404 });
     }
 
-    await fs.unlink(filePath);
+    await deleteEntity('schedulePlan', id);
     invalidateSchedulePlansCache();
 
     return NextResponse.json({ message: 'Schedule plan deleted successfully' });

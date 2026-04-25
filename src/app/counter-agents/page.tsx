@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import "@/styles/counter-agents.css";
 import type { CounterAgent } from '@/types';
-import { getCounterAgentsData } from '@/lib/data-loader';
+import { getCounterAgentsData } from '@/lib/data';
 import CounterAgentsSearch from './components/CounterAgentsSearch';
 
 type CounterAgentsView = 'active' | 'archived' | 'all';

@@ -1,18 +1,15 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import {
   getShiftAssignmentRequestsData,
   invalidateShiftAssignmentRequestsCache
-} from '@/lib/data-loader';
+} from '@/lib/data';
 import { requireAuth } from '@/lib/server-auth';
 import { resolveAssignmentRequest } from '@/services/shift-assignment-service';
 import { ServiceError } from '@/services/service-error';
 import { isEmployeeAdmin } from '@/lib/employee-role';
-
-const dataDir = path.join(process.cwd(), 'data', 'shift-assignment-requests');
+import { deleteEntity } from '@/lib/data/write-helpers';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -65,15 +62,13 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
   try {
     const { id } = await params;
-    const filePath = path.join(dataDir, `${id}.json`);
-
-    try {
-      await fs.access(filePath);
-    } catch {
+    const requests = await getShiftAssignmentRequestsData();
+    const existing = requests.find(r => r.id === id);
+    if (!existing) {
       return NextResponse.json({ error: 'Shift assignment request not found' }, { status: 404 });
     }
 
-    await fs.unlink(filePath);
+    await deleteEntity('shiftAssignmentRequest', id);
     invalidateShiftAssignmentRequestsCache();
 
     return NextResponse.json({ message: 'Shift assignment request deleted successfully' });

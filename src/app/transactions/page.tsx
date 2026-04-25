@@ -7,7 +7,7 @@ import { PlusCircle, Edit, DollarSign, CreditCard, Landmark, ListChecks, Car, Us
 import type { WashEvent, PaymentType, Employee } from '@/types';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { getWashEventsData, getEmployeesData } from '@/lib/data-loader';
+import { getWashEventsData, getEmployeesData } from '@/lib/data';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
 
 

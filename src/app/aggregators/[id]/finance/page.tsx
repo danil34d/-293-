@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import PageHeader from '@/components/layout/PageHeader';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getAggregatorsData, getWashEventsData, getClientTransactions } from '@/lib/data-loader';
+import { getAggregatorsData, getWashEventsData, getClientTransactions } from '@/lib/data';
 import { ClientFinanceDashboard } from '@/components/common/ClientFinanceDashboard';
 
 

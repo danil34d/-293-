@@ -1,18 +1,15 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import {
   getShiftSwapRequestById,
   invalidateShiftSwapRequestsCache
-} from '@/lib/data-loader';
+} from '@/lib/data';
 import { requireAuth } from '@/lib/server-auth';
 import { respondSwapRequest } from '@/services/shift-swap-service';
 import { ServiceError } from '@/services/service-error';
 import { isEmployeeAdmin } from '@/lib/employee-role';
-
-const dataDir = path.join(process.cwd(), 'data', 'shift-swap-requests');
+import { deleteEntity } from '@/lib/data/write-helpers';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -62,15 +59,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
   try {
     const { id } = await params;
-    const filePath = path.join(dataDir, `${id}.json`);
-
-    try {
-      await fs.access(filePath);
-    } catch {
+    const existing = await getShiftSwapRequestById(id);
+    if (!existing) {
       return NextResponse.json({ error: 'Shift swap request not found' }, { status: 404 });
     }
 
-    await fs.unlink(filePath);
+    await deleteEntity('shiftSwapRequest', id);
     invalidateShiftSwapRequestsCache();
 
     return NextResponse.json({ message: 'Shift swap request deleted successfully' });

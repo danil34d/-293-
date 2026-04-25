@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import { getRetailPriceConfig } from '@/lib/data-loader';
+import { getRetailPriceConfig } from '@/lib/data';
 import { requireAuth } from '@/lib/server-auth';
 
 export async function GET() {

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { PlusCircle, Edit, Wallet, Percent, ListTodo, Globe, AlertTriangle } from 'lucide-react';
 import type { SalaryScheme, Aggregator, CounterAgent } from '@/types';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
-import { getSalarySchemesData, getAggregatorsData, getCounterAgentsData } from '@/lib/data-loader';
+import { getSalarySchemesData, getAggregatorsData, getCounterAgentsData } from '@/lib/data';
 
 
 export default async function SalarySchemesPage() {

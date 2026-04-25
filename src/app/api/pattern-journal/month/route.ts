@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/server-auth';
-import { getShiftsData, getWashEventsData } from '@/lib/data-loader';
+import { getShiftsData, getWashEventsData } from '@/lib/data';
 import { eachDayOfInterval, endOfMonth, format, startOfMonth } from 'date-fns';
 import fs from 'fs/promises';
 import path from 'path';

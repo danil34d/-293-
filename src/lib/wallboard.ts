@@ -13,7 +13,7 @@ import {
   getShiftsData,
   getShiftSwapRequestsData,
   getWashEventsData,
-} from '@/lib/data-loader';
+} from '@/lib/data';
 import { getShiftActiveEmployeeIds } from '@/lib/shift-state';
 import { OCR_FAILED_DIR } from '@/services/plate-recognition-service';
 

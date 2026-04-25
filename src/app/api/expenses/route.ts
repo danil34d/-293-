@@ -2,32 +2,15 @@ export const dynamic = "force-dynamic";
 
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { Expense } from '@/types';
-import { getExpensesData, invalidateExpensesCache, invalidateInventoryCache, getInventory } from '@/lib/data-loader';
+import { getExpensesData, invalidateExpensesCache, invalidateInventoryCache, getInventory } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
-
-const dataDir = path.join(process.cwd(), 'data', 'expenses');
-const inventoryPath = path.join(process.cwd(), 'data', 'inventory.json');
-
-
-async function ensureDataDirectory() {
-  try {
-    await fs.access(dataDir);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      await fs.mkdir(dataDir, { recursive: true });
-    } else {
-      throw error;
-    }
-  }
-}
+import { saveEntity, saveInventoryData } from '@/lib/data/write-helpers';
 
 async function updateInventory(changeInGrams: number) {
     const inventory = await getInventory();
     inventory.chemicalStockGrams += changeInGrams;
-    await fs.writeFile(inventoryPath, JSON.stringify(inventory, null, 2), 'utf-8');
+    await saveInventoryData(inventory);
     invalidateInventoryCache();
 }
 
@@ -47,16 +30,13 @@ export async function POST(request: Request) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    await ensureDataDirectory();
     const newExpense: Expense = await request.json();
     if (!newExpense.id) {
        return NextResponse.json({ error: 'Expense ID is required' }, { status: 400 });
     }
 
-    const filePath = path.join(dataDir, `${newExpense.id}.json`);
-
-    // Write expense file FIRST - if this fails, inventory won't be updated
-    await fs.writeFile(filePath, JSON.stringify(newExpense, null, 2), 'utf-8');
+    // Write expense FIRST - if this fails, inventory won't be updated
+    await saveEntity('expense', newExpense);
     invalidateExpensesCache();
 
     // Only update inventory after expense is successfully saved

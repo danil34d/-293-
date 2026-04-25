@@ -1,39 +1,22 @@
-﻿export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { SchedulePlan, WeeklyPattern } from '@/types';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import {
   getSchedulePlansData,
   invalidateSchedulePlansCache
-} from '@/lib/data-loader';
+} from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { normalizeWashId } from '@/lib/wash';
-
-const dataDir = path.join(process.cwd(), 'data', 'schedule-plans');
-
-async function ensureDataDirectory() {
-  try {
-    await fs.access(dataDir);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      await fs.mkdir(dataDir, { recursive: true });
-    } else {
-      throw error;
-    }
-  }
-}
+import { saveEntity } from '@/lib/data/write-helpers';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {
-    await ensureDataDirectory();
-
     const { id } = await params;
     const { targetMonth } = await request.json(); // YYYY-MM format
 
@@ -55,7 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const clonedPlan: SchedulePlan = {
       id: newPlanId,
       washId: normalizeWashId(sourcePlan.washId),
-      name: `РџР»Р°РЅ РЅР° ${format(new Date(targetMonth + '-01'), 'LLLL yyyy', { locale: ru })}`,
+      name: `\u041f\u043b\u0430\u043d \u043d\u0430 ${format(new Date(targetMonth + '-01'), 'LLLL yyyy', { locale: ru })}`,
       month: targetMonth,
       createdAt: new Date().toISOString(),
       createdBy: sourcePlan.createdBy,
@@ -113,8 +96,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     // Save cloned plan
-    const filePath = path.join(dataDir, `${newPlanId}.json`);
-    await fs.writeFile(filePath, JSON.stringify(clonedPlan, null, 2), 'utf-8');
+    await saveEntity('schedulePlan', clonedPlan);
     invalidateSchedulePlansCache();
 
     return NextResponse.json({

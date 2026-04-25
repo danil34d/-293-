@@ -6,7 +6,7 @@ import type { WashEvent, Employee, CounterAgent, Aggregator, RetailPriceConfig }
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
 import { WashEventForm } from '../../components/WashEventForm';
-import { getEmployeesData, getCounterAgentsData, getAggregatorsData, getRetailPriceConfig, getWashEventById } from '@/lib/data-loader';
+import { getEmployeesData, getCounterAgentsData, getAggregatorsData, getRetailPriceConfig, getWashEventById } from '@/lib/data';
 
 async function fetchData(eventId: string) {
     const [washEvent, employees, counterAgents, aggregators, retailPriceConfig] = await Promise.all([

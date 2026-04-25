@@ -1,4 +1,4 @@
-import { getSchedulePlanById, getEmployeesData, getEmployeeDayStatusesData } from '@/lib/data-loader';
+import { getSchedulePlanById, getEmployeesData, getEmployeeDayStatusesData } from '@/lib/data';
 import { PlanEditor } from './components/PlanEditor';
 import { notFound } from 'next/navigation';
 

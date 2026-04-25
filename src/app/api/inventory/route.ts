@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
-import { getInventory, invalidateInventoryCache } from '@/lib/data-loader';
+import { getInventory, invalidateInventoryCache } from '@/lib/data';
 import type { Inventory, InventoryMaterial, InventorySettings } from '@/types';
 import { requireAdmin } from '@/lib/server-auth';
-
-const INVENTORY_FILE = path.join(process.cwd(), 'data', 'inventory.json');
+import { saveInventoryData } from '@/lib/data/write-helpers';
 
 // GET /api/inventory - Get full inventory data
 export async function GET() {
@@ -45,7 +42,7 @@ export async function PUT(request: NextRequest) {
             currentInventory.materials = body.materials;
         }
 
-        await fs.writeFile(INVENTORY_FILE, JSON.stringify(currentInventory, null, 2), 'utf-8');
+        await saveInventoryData(currentInventory);
         await invalidateInventoryCache();
 
         return NextResponse.json(currentInventory);
@@ -87,7 +84,7 @@ export async function POST(request: NextRequest) {
         }
         currentInventory.materials.push(newMaterial);
 
-        await fs.writeFile(INVENTORY_FILE, JSON.stringify(currentInventory, null, 2), 'utf-8');
+        await saveInventoryData(currentInventory);
         await invalidateInventoryCache();
 
         return NextResponse.json(newMaterial, { status: 201 });

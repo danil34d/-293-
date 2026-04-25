@@ -7,7 +7,7 @@ import { PlusCircle, Edit, UserCog, Check, XIcon, Wallet, WalletCards, AlertTria
 import type { Employee, SalaryScheme } from '@/types';
 import { ROLE_LABELS } from '@/types';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
-import { getEmployeesData, getSalarySchemesData } from '@/lib/data-loader';
+import { getEmployeesData, getSalarySchemesData } from '@/lib/data';
 
 
 export default async function EmployeesPage() {

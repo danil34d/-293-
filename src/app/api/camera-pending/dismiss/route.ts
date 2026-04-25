@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/server-auth';
-import { getEmployeesData } from '@/lib/data-loader';
+import { getEmployeesData } from '@/lib/data';
 import { normalizeLicensePlate } from '@/lib/utils';
 import { createWashEvent } from '@/services/wash-event-create-service';
 import type { WashEvent } from '@/types';

@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { getShiftsData, getEmployeesData, getWashEventsData } from '@/lib/data-loader';
+import { getShiftsData, getEmployeesData, getWashEventsData } from '@/lib/data';
 import { KioskClient } from './components/KioskClient';
 
 export default async function KioskPage() {

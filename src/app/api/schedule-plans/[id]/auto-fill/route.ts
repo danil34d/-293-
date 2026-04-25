@@ -1,8 +1,6 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import type { Shift, SchedulePlan, EmployeeDayStatusEntry, Employee } from '@/types';
 import { format, eachDayOfInterval, startOfMonth, endOfMonth } from 'date-fns';
 import {
@@ -12,36 +10,10 @@ import {
   getShiftsData,
   invalidateShiftsCache,
   invalidateSchedulePlansCache
-} from '@/lib/data-loader';
+} from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { normalizeWashId } from '@/lib/wash';
-
-const shiftsDir = path.join(process.cwd(), 'data', 'shifts');
-const schedulePlansDir = path.join(process.cwd(), 'data', 'schedule-plans');
-
-async function ensureShiftsDirectory() {
-  try {
-    await fs.access(shiftsDir);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      await fs.mkdir(shiftsDir, { recursive: true });
-    } else {
-      throw error;
-    }
-  }
-}
-
-async function ensureSchedulePlansDirectory() {
-  try {
-    await fs.access(schedulePlansDir);
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      await fs.mkdir(schedulePlansDir, { recursive: true });
-    } else {
-      throw error;
-    }
-  }
-}
+import { saveEntity, deleteEntity } from '@/lib/data/write-helpers';
 
 function clampInt(value: unknown, min: number, max: number): number {
   const num = typeof value === 'number' ? value : Number(value);
@@ -94,7 +66,7 @@ interface EmployeeWorkload {
   canWork24hShifts: boolean;
 }
 
-// Deterministic hash for fair tie-breaking (same seed → same result, different employees → different order per day)
+// Deterministic hash for fair tie-breaking (same seed -> same result, different employees -> different order per day)
 function simpleHash(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -119,9 +91,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (auth instanceof NextResponse) return auth;
 
   try {
-    await ensureShiftsDirectory();
-    await ensureSchedulePlansDirectory();
-
     const { id } = await params;
     const body = await request.json().catch(() => ({} as any));
     const clearExisting = Boolean((body as any)?.clearExisting);
@@ -177,8 +146,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const changed = JSON.stringify(nextConfigs) !== JSON.stringify(currentConfigs);
       if (changed) {
         (plan as any).employeeConfigs = nextConfigs as any;
-        const planFilePath = path.join(schedulePlansDir, `${id}.json`);
-        await fs.writeFile(planFilePath, JSON.stringify(plan, null, 2), 'utf-8');
+        await saveEntity('schedulePlan', plan);
         invalidateSchedulePlansCache();
       }
     }
@@ -190,17 +158,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     // Clear existing shifts if requested
     if (clearExisting) {
-      const existingFiles = await fs.readdir(shiftsDir);
       const monthStr = plan.month;
-      for (const file of existingFiles) {
-        if (file.endsWith('.json')) {
-          const filePath = path.join(shiftsDir, file);
-          const content = await fs.readFile(filePath, 'utf-8');
-          const shift = JSON.parse(content) as Partial<Shift>;
-          if (typeof shift.date === 'string' && shift.date.startsWith(monthStr) && normalizeWashId(shift.washId) === planWashId) {
-            await fs.unlink(filePath);
-          }
-        }
+      const allCurrentShifts = await getShiftsData();
+      const shiftsToDelete = allCurrentShifts.filter(
+        s => typeof s.date === 'string' && s.date.startsWith(monthStr) && normalizeWashId(s.washId) === planWashId
+      );
+      for (const shift of shiftsToDelete) {
+        await deleteEntity('shift', shift.id);
       }
     }
 
@@ -214,7 +178,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       ? []
       : allMonthShifts.filter((s) => normalizeWashId(s.washId) === planWashId);
 
-    // Shifts on the OTHER wash — employees here cannot be assigned to same date+shift on this wash
+    // Shifts on the OTHER wash -- employees here cannot be assigned to same date+shift on this wash
     const otherWashId = planWashId === 'wash_1' ? 'wash_2' : 'wash_1';
     const otherWashMonthShifts: Shift[] = allMonthShifts.filter((s) => normalizeWashId(s.washId) === otherWashId);
 
@@ -293,7 +257,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         // Check if already assigned enough shifts
         const effectiveTarget = workload.shiftLoadPreference === 'less'
-          ? Math.max(1, Math.floor(workload.targetCount * 0.7))  // ~30% меньше
+          ? Math.max(1, Math.floor(workload.targetCount * 0.7))  // ~30% less
           : workload.targetCount;
         if (!workload.wantsMoreShifts && workload.assignedCount >= effectiveTarget) {
           return false;
@@ -417,7 +381,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             washId: planWashId,
             employeeIds: merged,
           };
-          await fs.writeFile(path.join(shiftsDir, `${updatedShift.id}.json`), JSON.stringify(updatedShift, null, 2), 'utf-8');
+          await saveEntity('shift', updatedShift);
           updatedShifts.push(updatedShift);
           existingShiftBySlot.set(slotKey, updatedShift);
         } else {
@@ -436,8 +400,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             isAutoAssigned: true
           };
 
-          const filePath = path.join(shiftsDir, `${newShift.id}.json`);
-          await fs.writeFile(filePath, JSON.stringify(newShift, null, 2), 'utf-8');
+          await saveEntity('shift', newShift);
           createdShifts.push(newShift);
           existingShiftBySlot.set(slotKey, newShift);
 

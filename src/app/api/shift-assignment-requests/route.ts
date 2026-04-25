@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import { getShiftAssignmentRequestsData } from '@/lib/data-loader';
+import { getShiftAssignmentRequestsData } from '@/lib/data';
 import { requireAuth } from '@/lib/server-auth';
 import { createAssignmentRequest } from '@/services/shift-assignment-service';
 import { ServiceError } from '@/services/service-error';
