@@ -43,6 +43,7 @@ interface NormalizedShiftReport {
   sortTimestamp: number;
   durationMs: number | null;
   isTechnicalEmptyKiosk: boolean;
+  isComputed: boolean;
 }
 
 interface ShiftReportsTabProps {
@@ -137,6 +138,8 @@ export function ShiftReportsTab({ reports, employees }: ShiftReportsTabProps) {
       const durationMs = startedTs !== null && closedTs !== null ? Math.max(0, closedTs - startedTs) : null;
       const kioskOnly = employeeIds.length > 0 && employeeIds.every((employeeId) => employeeMap.get(employeeId)?.role === 'kiosk');
 
+      const isComputed = report.id.startsWith('computed_');
+
       return {
         id: report.id,
         date: deriveDate(report),
@@ -155,6 +158,7 @@ export function ShiftReportsTab({ reports, employees }: ShiftReportsTabProps) {
           && totalAmount === 0
           && durationMs !== null
           && durationMs <= TECHNICAL_EMPTY_KIOSK_SHIFT_MS,
+        isComputed,
       };
     });
   }, [employeeMap, reports]);
@@ -257,9 +261,14 @@ export function ShiftReportsTab({ reports, employees }: ShiftReportsTabProps) {
                   <tr key={report.id} className="border-b last:border-0 hover:bg-gray-50">
                     <td className="px-4 py-3">{formatDate(report.date)}</td>
                     <td className="px-4 py-3">
-                      <Badge variant={report.shiftType === 'day' ? 'default' : 'secondary'}>
-                        {report.shiftType === 'day' ? 'День' : 'Ночь'}
-                      </Badge>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={report.shiftType === 'day' ? 'default' : 'secondary'}>
+                          {report.shiftType === 'day' ? 'День' : 'Ночь'}
+                        </Badge>
+                        {report.isComputed && (
+                          <span className="text-[10px] text-gray-400">расписание</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">Бокс {report.boxNumber}</td>
                     <td className="px-4 py-3">
@@ -278,13 +287,21 @@ export function ShiftReportsTab({ reports, employees }: ShiftReportsTabProps) {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600">
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatTime(report.startedAt)} — {formatTime(report.closedAt)}
-                      </div>
-                      <div className="mt-1 text-xs text-gray-500">
-                        Длительность: {formatDuration(report.durationMs)}
-                      </div>
+                      {report.isComputed && !report.startedAt ? (
+                        <div className="text-xs text-gray-400">
+                          По расписанию: {report.shiftType === 'day' ? '08:00 — 20:00' : '20:00 — 08:00'}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {formatTime(report.startedAt)} — {formatTime(report.closedAt)}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            Длительность: {formatDuration(report.durationMs)}
+                          </div>
+                        </>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">{report.totalWashes}</td>
                     <td className="px-4 py-3 text-right font-medium">{(report.totalAmount || 0).toLocaleString('ru-RU')} ₽</td>
