@@ -1,34 +1,111 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  Users, Car, Camera, Sun, Moon, Box, TrendingUp,
+  Users, Car, Camera, Sun, Moon, Box,
   ClipboardList, BookCheck, ExternalLink
 } from 'lucide-react';
 import type { Employee, WashEvent } from '@/types';
+import type { PendingCameraVehicle } from '@/lib/camera-pending';
 import Link from 'next/link';
+import { PendingCameraSessionsPanel } from '@/components/camera/PendingCameraSessionsPanel';
 
 interface OperationsClientProps {
   box1Employees: Employee[];
   box2Employees: Employee[];
   todayEvents: WashEvent[];
+  initialPendingVehicles: PendingCameraVehicle[];
   allEmployees: Employee[];
   currentShiftType: string;
+}
+
+function buildCameraStreamUrl(boxNumber: number, wide = false) {
+  if (boxNumber !== 1) {
+    return null;
+  }
+
+  const params = new URLSearchParams({
+    width: wide ? '960' : '640',
+    quality: wide ? '60' : '45',
+    fps: wide ? '8' : '5',
+  });
+
+  return `/api/camera-stream/${boxNumber}?${params.toString()}`;
+}
+
+function CameraPreview({ boxNumber }: { boxNumber: number }) {
+  const [failed, setFailed] = useState(false);
+  const streamUrl = useMemo(() => buildCameraStreamUrl(boxNumber), [boxNumber]);
+  const openUrl = useMemo(() => buildCameraStreamUrl(boxNumber, true), [boxNumber]);
+
+  if (!streamUrl || !openUrl) {
+    return (
+      <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center border border-white/10">
+        <div className="text-center text-gray-500">
+          <Camera className="h-8 w-8 mx-auto mb-1 opacity-50" />
+          <p className="text-xs">Субпоток пока подключен только для камеры 1</p>
+          <p className="text-[11px] text-gray-400 mt-1">Для этого бокса поток еще не заведен</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (failed) {
+    return (
+      <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center border border-white/10">
+        <div className="text-center text-gray-500">
+          <Camera className="h-8 w-8 mx-auto mb-1 opacity-50" />
+          <p className="text-xs">Не удалось открыть sub stream</p>
+          <p className="text-[11px] text-gray-400 mt-1">Проверь dashboard камер на порту 8050</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-lg border border-white/10 bg-black">
+      <img
+        src={streamUrl}
+        alt={`Камера бокса ${boxNumber}`}
+        className="aspect-video w-full bg-black object-contain"
+        loading="lazy"
+        onError={() => setFailed(true)}
+        onLoad={() => setFailed(false)}
+      />
+      <div className="pointer-events-none absolute left-2 top-2 rounded bg-black/65 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/80">
+        камера 1 · sub stream
+      </div>
+      <a
+        href={openUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/65 text-white/80 transition hover:bg-black/80 hover:text-white"
+        title={`Открыть камеру бокса ${boxNumber}`}
+      >
+        <ExternalLink className="h-3.5 w-3.5" />
+      </a>
+    </div>
+  );
 }
 
 function BoxCard({
   boxNumber,
   employees,
   events,
+  pendingVehicles,
   allEmployees,
   color,
+  onDismissed,
 }: {
   boxNumber: number;
   employees: Employee[];
   events: WashEvent[];
+  pendingVehicles: PendingCameraVehicle[];
   allEmployees: Employee[];
   color: string;
+  onDismissed: (dirName: string) => void;
 }) {
   const total = events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
   const recentEvents = [...events]
@@ -70,18 +147,13 @@ function BoxCard({
           )}
         </div>
 
-        {/* Camera placeholder */}
+        {/* Camera */}
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <Camera className="h-3 w-3 inline mr-1" />
             Камера
           </h4>
-          <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
-            <div className="text-center text-gray-500">
-              <Camera className="h-8 w-8 mx-auto mb-1 opacity-50" />
-              <p className="text-xs">Камера не подключена</p>
-            </div>
-          </div>
+          <CameraPreview boxNumber={boxNumber} />
         </div>
 
         {/* Stats */}
@@ -139,6 +211,16 @@ function BoxCard({
             </div>
           )}
         </div>
+
+        <PendingCameraSessionsPanel
+          boxNumber={boxNumber}
+          pendingVehicles={pendingVehicles}
+          boxEmployees={employees}
+          allEmployees={allEmployees}
+          basePath="/workstation"
+          source="operations"
+          onDismissed={onDismissed}
+        />
       </CardContent>
     </Card>
   );
@@ -148,11 +230,49 @@ export function OperationsClient({
   box1Employees,
   box2Employees,
   todayEvents,
+  initialPendingVehicles,
   allEmployees,
   currentShiftType,
 }: OperationsClientProps) {
+  const [pendingVehicles, setPendingVehicles] = useState(initialPendingVehicles);
+  const handlePendingDismissed = (dirName: string) => {
+    setPendingVehicles((current) => current.filter((vehicle) => vehicle.dirName !== dirName));
+  };
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadPendingVehicles() {
+      try {
+        const response = await fetch('/api/camera-pending', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) return;
+
+        const data = (await response.json()) as { items?: PendingCameraVehicle[] };
+        if (!ignore && Array.isArray(data.items)) {
+          setPendingVehicles(data.items);
+        }
+      } catch (error) {
+        console.error('Failed to refresh pending camera vehicles:', error);
+      }
+    }
+
+    loadPendingVehicles();
+    const intervalId = window.setInterval(loadPendingVehicles, 30000);
+
+    return () => {
+      ignore = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const box1Events = todayEvents.filter(e => e.boxNumber === 1);
   const box2Events = todayEvents.filter(e => e.boxNumber === 2);
+  const box1PendingVehicles = pendingVehicles.filter(v => v.boxNumber === 1);
+  const box2PendingVehicles = pendingVehicles.filter(v => v.boxNumber === 2);
   const totalRevenue = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
   return (
@@ -187,7 +307,7 @@ export function OperationsClient({
       </div>
 
       {/* Summary bar */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4 pb-4 text-center">
             <p className="text-3xl font-bold">{todayEvents.length}</p>
@@ -206,6 +326,12 @@ export function OperationsClient({
             <p className="text-xs text-muted-foreground mt-1">Сотрудников на смене</p>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4 text-center">
+            <p className="text-3xl font-bold text-amber-700">{pendingVehicles.length}</p>
+            <p className="text-xs text-muted-foreground mt-1">Неоформлено камерами</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Two boxes side by side */}
@@ -214,15 +340,19 @@ export function OperationsClient({
           boxNumber={1}
           employees={box1Employees}
           events={box1Events}
+          pendingVehicles={box1PendingVehicles}
           allEmployees={allEmployees}
           color="text-blue-600"
+          onDismissed={handlePendingDismissed}
         />
         <BoxCard
           boxNumber={2}
           employees={box2Employees}
           events={box2Events}
+          pendingVehicles={box2PendingVehicles}
           allEmployees={allEmployees}
           color="text-emerald-600"
+          onDismissed={handlePendingDismissed}
         />
       </div>
     </div>
