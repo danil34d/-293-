@@ -1496,59 +1496,67 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
 
           {cameraSessionContext && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4">
-              <div className="flex flex-col gap-4 md:flex-row">
-                <div className="overflow-hidden rounded-lg border border-amber-200 bg-black md:w-[220px]">
-                  {cameraPreviewUrl ? (
-                    <img
-                      src={cameraPreviewUrl}
-                      alt={`Сессия ${cameraSessionContext.dirName}`}
-                      className="aspect-video h-full w-full object-cover"
-                      loading="lazy"
-                      onError={() => {
-                        if (cameraPreviewKind === 'plate') {
-                          setCameraPreviewKind('thumbnail');
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="flex aspect-video items-center justify-center text-xs text-white/70">
-                      Фото сессии
-                    </div>
-                  )}
+              {/* Header badges */}
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <Badge variant="secondary">Камера · бокс {cameraSessionContext.boxNumber}</Badge>
+                <Badge variant="outline">
+                  {cameraSessionContext.mode === 'edit' ? 'Исправление номера' : 'Быстрое оформление'}
+                </Badge>
+                {cameraSessionContext.vehicleClass && (
+                  <Badge variant="outline">{cameraSessionContext.vehicleClass}</Badge>
+                )}
+              </div>
+
+              {/* Photos: thumbnail (car) + plate (crop of plate) */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mb-3">
+                {/* Thumbnail — full car photo */}
+                <div className="overflow-hidden rounded-lg border border-amber-200 bg-black">
+                  <img
+                    src={buildCameraSessionMediaUrl(cameraSessionContext, 'thumbnail')}
+                    alt="Фото машины"
+                    className="aspect-video w-full object-cover"
+                    loading="lazy"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
                 </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary">Камера · бокс {cameraSessionContext.boxNumber}</Badge>
-                    <Badge variant="outline">
-                      {cameraSessionContext.mode === 'edit' ? 'Исправление номера' : 'Быстрое оформление'}
-                    </Badge>
-                    {cameraSessionContext.vehicleClass && (
-                      <Badge variant="outline">{cameraSessionContext.vehicleClass}</Badge>
-                    )}
-                  </div>
-                  <p className="font-medium text-amber-950">{cameraSessionContext.dirName}</p>
-                  <p className="text-amber-900">
-                    {cameraSessionContext.recognizedPlate ? (
-                      <>
-                        Распознано камерой:{' '}
-                        <span className="font-mono font-semibold">{cameraSessionContext.recognizedPlate}</span>
-                      </>
-                    ) : (
-                      'Камера собрала сессию без номера. Введите номер по фото и нажмите «Проверить».'
-                    )}
-                  </p>
-                  <p className="text-xs text-amber-800/80">
-                    {cameraSessionContext.mode === 'edit'
-                      ? 'Этот режим нужен, чтобы вручную поправить OCR по фото конкретной сессии и затем провести заказ.'
-                      : 'Если номер определился верно, станция сама переведёт тебя сразу к выбору способа оплаты.'}
-                  </p>
-                  {cameraSessionContext.correctionSaved && (
-                    <p className="text-xs font-medium text-emerald-700">
-                      Исправление OCR сохранено в разбор ошибочных распознаваний.
-                    </p>
-                  )}
+                {/* Plate — close-up frame with license plate */}
+                <div className="overflow-hidden rounded-lg border-2 border-blue-300 bg-black">
+                  <img
+                    src={buildCameraSessionMediaUrl(cameraSessionContext, 'plate')}
+                    alt="Кадр с номером"
+                    className="aspect-video w-full object-cover"
+                    loading="lazy"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
                 </div>
               </div>
+
+              {/* Recognized plate — big and prominent */}
+              <div className="rounded-lg bg-white border border-amber-200 px-4 py-3 mb-2">
+                {cameraSessionContext.recognizedPlate ? (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Распознано камерой:</p>
+                      <p className="text-2xl font-mono font-bold tracking-wider text-gray-900">
+                        {cameraSessionContext.recognizedPlate}
+                      </p>
+                    </div>
+                    <p className="text-xs text-amber-700 max-w-[200px] text-right">
+                      Проверьте номер по фото. Если неверно — исправьте ниже.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-amber-900 text-sm">
+                    Камера не распознала номер. Введите вручную по фото и нажмите «Проверить».
+                  </p>
+                )}
+              </div>
+
+              {cameraSessionContext.correctionSaved && (
+                <p className="text-xs font-medium text-emerald-700">
+                  Исправление OCR сохранено.
+                </p>
+              )}
             </div>
           )}
 
