@@ -7,9 +7,10 @@ import {
   Users, Car, Camera, Sun, Moon, Box,
   ClipboardList, BookCheck, ExternalLink
 } from 'lucide-react';
-import type { Employee, WashEvent } from '@/types';
+import type { Employee, WashEvent, WashId } from '@/types';
 import type { PendingCameraVehicle } from '@/lib/camera-pending';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { PendingCameraSessionsPanel } from '@/components/camera/PendingCameraSessionsPanel';
 
 interface OperationsClientProps {
@@ -19,6 +20,7 @@ interface OperationsClientProps {
   initialPendingVehicles: PendingCameraVehicle[];
   allEmployees: Employee[];
   currentShiftType: string;
+  washId: WashId;
 }
 
 function buildCameraStreamUrl(boxNumber: number, wide = false) {
@@ -226,6 +228,11 @@ function BoxCard({
   );
 }
 
+const WASH_LABELS: Record<WashId, string> = {
+  wash_1: 'Мойка 1 (Циолковского)',
+  wash_2: 'Мойка 2',
+};
+
 export function OperationsClient({
   box1Employees,
   box2Employees,
@@ -233,7 +240,9 @@ export function OperationsClient({
   initialPendingVehicles,
   allEmployees,
   currentShiftType,
+  washId,
 }: OperationsClientProps) {
+  const router = useRouter();
   const [pendingVehicles, setPendingVehicles] = useState(initialPendingVehicles);
   const handlePendingDismissed = (dirName: string) => {
     setPendingVehicles((current) => current.filter((vehicle) => vehicle.dirName !== dirName));
@@ -281,14 +290,30 @@ export function OperationsClient({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Центр управления</h1>
-          <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-1">
-            Мойка 1 •
-            {currentShiftType === 'day' ? (
-              <><Sun className="h-3.5 w-3.5 text-amber-500" /> Дневная смена</>
-            ) : (
-              <><Moon className="h-3.5 w-3.5 text-indigo-500" /> Ночная смена</>
-            )}
-          </p>
+          <div className="flex items-center gap-3 mt-1">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+              {(['wash_1', 'wash_2'] as WashId[]).map((wid) => (
+                <button
+                  key={wid}
+                  onClick={() => router.push(wid === 'wash_1' ? '/operations' : '/operations?wash=wash_2')}
+                  className={`px-3 py-1.5 transition-colors ${
+                    washId === wid
+                      ? 'bg-blue-600 text-white font-medium'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {wid === 'wash_1' ? 'Мойка 1' : 'Мойка 2'}
+                </button>
+              ))}
+            </div>
+            <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+              {currentShiftType === 'day' ? (
+                <><Sun className="h-3.5 w-3.5 text-amber-500" /> Дневная смена</>
+              ) : (
+                <><Moon className="h-3.5 w-3.5 text-indigo-500" /> Ночная смена</>
+              )}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" asChild>
@@ -334,17 +359,19 @@ export function OperationsClient({
         </Card>
       </div>
 
-      {/* Two boxes side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <BoxCard
-          boxNumber={1}
-          employees={box1Employees}
-          events={box1Events}
-          pendingVehicles={box1PendingVehicles}
-          allEmployees={allEmployees}
-          color="text-blue-600"
-          onDismissed={handlePendingDismissed}
-        />
+      {/* Boxes */}
+      <div className={`grid grid-cols-1 ${washId === 'wash_1' ? 'lg:grid-cols-2' : ''} gap-6`}>
+        {washId === 'wash_1' && (
+          <BoxCard
+            boxNumber={1}
+            employees={box1Employees}
+            events={box1Events}
+            pendingVehicles={box1PendingVehicles}
+            allEmployees={allEmployees}
+            color="text-blue-600"
+            onDismissed={handlePendingDismissed}
+          />
+        )}
         <BoxCard
           boxNumber={2}
           employees={box2Employees}

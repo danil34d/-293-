@@ -5,9 +5,15 @@ import { getPendingCameraVehicles } from '@/lib/camera-pending';
 import { resolveCurrentBoxShiftStates } from '@/lib/current-box-team';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
 import { OperationsClient } from './components/OperationsClient';
+import type { WashId } from '@/types';
 
-export default async function OperationsPage() {
+interface Props {
+  searchParams: { wash?: string };
+}
+
+export default async function OperationsPage({ searchParams }: Props) {
   const today = new Date().toISOString().slice(0, 10);
+  const washId: WashId = searchParams.wash === 'wash_2' ? 'wash_2' : 'wash_1';
 
   const [shifts, employees, washEvents] = await Promise.all([
     getShiftsData(),
@@ -27,6 +33,7 @@ export default async function OperationsPage() {
     employees: realEmployees,
     date: today,
     shiftType: currentShiftType,
+    washId,
   });
 
   // Today's wash events
@@ -42,6 +49,7 @@ export default async function OperationsPage() {
       initialPendingVehicles={pendingCameraVehicles}
       allEmployees={realEmployees}
       currentShiftType={currentShiftType}
+      washId={washId}
     />
   );
 }
