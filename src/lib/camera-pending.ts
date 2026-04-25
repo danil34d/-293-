@@ -1,5 +1,5 @@
 import type { WashEvent } from '@/types';
-import { getWashEventsData } from '@/lib/data-loader';
+import { getWashEventsData } from '@/lib/data';
 import { normalizeLicensePlate } from '@/lib/utils';
 import { blocksCameraPendingQueue, isCompletedWashEvent } from '@/lib/wash-event-status';
 
