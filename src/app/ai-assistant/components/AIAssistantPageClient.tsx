@@ -7,6 +7,7 @@ import ManualAnalysisTrigger from './ManualAnalysisTrigger';
 import type { BackgroundAnalysis } from '@/types/ai-assistant';
 import ReactMarkdown from 'react-markdown';
 import { CheckCircle2, Download, KeyRound, Save, Trash2, X } from 'lucide-react';
+import PlanimumImportCard from './PlanimumImportCard';
 
 export default function AIAssistantPageClient() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<BackgroundAnalysis | null>(null);
@@ -199,6 +200,7 @@ export default function AIAssistantPageClient() {
         </div>
       </div>
 
+      <PlanimumImportCard />
       <ManualAnalysisTrigger />
       <AIAssistantClient />
 

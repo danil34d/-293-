@@ -18,6 +18,7 @@ import {
 } from '@/lib/data';
 import { generateCustomDOCX } from './docx-generator';
 import { generateExcelTable } from './excel-generator';
+import { importPlanimumSchedule } from '@/lib/planimum-import';
 
 /**
  * MCP Tool Definitions for GLM
@@ -247,6 +248,32 @@ export const mcpTools: GLMToolDefinition[] = [
           },
         },
         required: ['title', 'headers', 'rows'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'import_planimum_schedule',
+      description: 'Импортировать расписание из planimum.ru в систему. Пользователь вставляет ссылку на расписание planimum.ru и смены автоматически создаются на странице /schedule.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'URL расписания planimum.ru (например https://planimum.ru/schedule/display/2026/04/xxxxx/)',
+          },
+          wash_id: {
+            type: 'string',
+            enum: ['wash_1', 'wash_2'],
+            description: 'ID мойки для импорта (по умолчанию wash_1)',
+          },
+          clear_existing: {
+            type: 'boolean',
+            description: 'Очистить существующие смены за этот месяц перед импортом (по умолчанию true)',
+          },
+        },
+        required: ['url'],
       },
     },
   },
@@ -606,6 +633,15 @@ export async function executeMCPTool(toolName: string, parameters: any): Promise
             filename: filePath.split('/').pop(),
           },
         };
+      }
+
+      case 'import_planimum_schedule': {
+        const { url, wash_id = 'wash_1', clear_existing = true } = parameters;
+        return importPlanimumSchedule({
+          url,
+          washId: wash_id,
+          clearExisting: clear_existing,
+        });
       }
 
       default:
