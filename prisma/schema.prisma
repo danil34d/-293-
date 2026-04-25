@@ -212,6 +212,7 @@ model Expense {
 model Shift {
   id                 String    @id
   date               String    // YYYY-MM-DD
+  washId             String    @default("wash_1") // 'wash_1' | 'wash_2'
   boxNumber          Int
   shiftType          String    // 'day' | 'night'
   startTime          String    @default("08:00")
@@ -228,7 +229,7 @@ model Shift {
   updatedAt DateTime @updatedAt
 
   @@index([date])
-  @@index([date, boxNumber, shiftType])
+  @@index([date, washId, boxNumber, shiftType])
   @@index([status])
 }
 

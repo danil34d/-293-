@@ -151,7 +151,7 @@ function shiftFromPrisma(row: any): Shift {
   const boxNum = row.boxNumber as 1 | 2;
   return {
     id: row.id,
-    washId: boxNum === 2 ? 'wash_2' : 'wash_1',
+    washId: (row.washId as 'wash_1' | 'wash_2') || (boxNum === 2 ? 'wash_2' : 'wash_1'),
     date: row.date,
     boxNumber: boxNum,
     shiftType: row.shiftType as any,
@@ -979,6 +979,7 @@ export async function saveShift(data: any): Promise<void> {
     where: { id: data.id },
     update: {
       date: data.date,
+      washId: data.washId ?? 'wash_1',
       boxNumber: data.boxNumber,
       shiftType: data.shiftType,
       startTime: data.startTime ?? '08:00',
@@ -992,6 +993,7 @@ export async function saveShift(data: any): Promise<void> {
     create: {
       id: data.id,
       date: data.date,
+      washId: data.washId ?? 'wash_1',
       boxNumber: data.boxNumber,
       shiftType: data.shiftType,
       startTime: data.startTime ?? '08:00',

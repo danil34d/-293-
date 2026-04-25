@@ -94,7 +94,7 @@ export default function PlanimumImportCard() {
                 onChange={() => setWashId('wash_1')}
                 disabled={isLoading}
               />
-              Мойка 1 (Циолковского)
+              Мойка 1 — 2 бокса
             </label>
             <label className={`planimum-wash-option ${washId === 'wash_2' ? 'active' : ''}`}>
               <input
@@ -105,7 +105,7 @@ export default function PlanimumImportCard() {
                 onChange={() => setWashId('wash_2')}
                 disabled={isLoading}
               />
-              Мойка 2
+              Мойка 2 — 1 бокс
             </label>
           </div>
 
