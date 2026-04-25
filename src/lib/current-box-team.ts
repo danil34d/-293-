@@ -1,4 +1,4 @@
-import type { Employee, Shift, ShiftStatus, ShiftType } from '@/types';
+import type { Employee, Shift, ShiftStatus, ShiftType, WashId } from '@/types';
 
 export type BoxNumber = 1 | 2;
 
@@ -71,28 +71,19 @@ export function resolveBoxShiftState(params: {
   date: string;
   shiftType: ShiftType;
   boxNumber: BoxNumber;
+  washId?: WashId;
 }): ResolvedBoxShiftState {
-  const { shifts, employees, date, shiftType, boxNumber } = params;
-  // Prefer shifts whose washId matches the expected wash for this box.
-  // Box 1 → wash_1, Box 2 → could be wash_1 (2nd box) or wash_2.
-  // Active shifts take priority regardless, then prefer matching washId.
-  const expectedWashId = boxNumber === 1 ? 'wash_1' : 'wash_2';
+  const { shifts, employees, date, shiftType, boxNumber, washId = 'wash_1' } = params;
 
   const relevantShifts = shifts
     .filter((shift) => (
       shift.date === date
       && shift.boxNumber === boxNumber
       && shift.shiftType === shiftType
+      && (shift.washId || 'wash_1') === washId
       && shift.status !== 'completed'
     ))
-    .sort((a, b) => {
-      const washMatchDelta = Number((b.washId || 'wash_1') === expectedWashId) - Number((a.washId || 'wash_1') === expectedWashId);
-      if (washMatchDelta !== 0) {
-        return washMatchDelta;
-      }
-
-      return compareByPriority(a, b);
-    });
+    .sort(compareByPriority);
 
   const activeShift = relevantShifts.find((shift) => shift.status === 'active') ?? null;
   const primaryShift = activeShift ?? relevantShifts[0] ?? null;
@@ -115,11 +106,12 @@ export function resolveCurrentBoxShiftStates(params: {
   employees: Employee[];
   date: string;
   shiftType: ShiftType;
+  washId?: WashId;
 }) {
-  const { shifts, employees, date, shiftType } = params;
+  const { shifts, employees, date, shiftType, washId = 'wash_1' } = params;
 
   return {
-    box1: resolveBoxShiftState({ shifts, employees, date, shiftType, boxNumber: 1 }),
-    box2: resolveBoxShiftState({ shifts, employees, date, shiftType, boxNumber: 2 }),
+    box1: resolveBoxShiftState({ shifts, employees, date, shiftType, boxNumber: 1, washId }),
+    box2: resolveBoxShiftState({ shifts, employees, date, shiftType, boxNumber: 2, washId }),
   };
 }
