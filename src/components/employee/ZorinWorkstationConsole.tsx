@@ -44,7 +44,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PlateRecognitionDialog } from '@/components/plate-recognition/PlateRecognitionDialog';
 import { LicensePlateInput } from '@/components/plate-recognition/LicensePlateInput';
 import { isEmployeeAdmin } from '@/lib/employee-role';
@@ -55,6 +55,21 @@ type PendingOcrData = {
   originalOcr: string;
   imageBase64?: string;
   failedFilename?: string;
+};
+
+type CameraSessionMode = 'checkout' | 'edit';
+
+type CameraSessionContext = {
+  key: string;
+  boxNumber: 1 | 2;
+  dirName: string;
+  recognizedPlate: string;
+  normalizedRecognizedPlate: string;
+  vehicleClass: string | null;
+  start: string | null;
+  end: string | null;
+  mode: CameraSessionMode;
+  correctionSaved: boolean;
 };
 
 const priorityServiceKeywords = [
@@ -70,24 +85,65 @@ const priorityServiceKeywords = [
 interface WorkstationProps {
   /** Pre-loaded schedule employees per box (for kiosk mode) */
   scheduleByBox?: { box1: Employee[]; box2: Employee[] };
+  /** Shift ids and active flags for the current box slot */
+  shiftStateByBox?: {
+    box1: { shiftId: string | null; isShiftActive: boolean };
+    box2: { shiftId: string | null; isShiftActive: boolean };
+  };
   /** Is this running in kiosk mode */
   isKioskMode?: boolean;
   /** Pre-select box number (from URL param) */
   initialBoxNumber?: number;
 }
 
-export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBoxNumber }: WorkstationProps = {}) {
+type BoxKey = 'box1' | 'box2';
+type BoxShiftUiState = {
+  employees: Employee[];
+  shiftId: string | null;
+  isShiftActive: boolean;
+};
+
+const EMPTY_BOX_SHIFT_STATE: BoxShiftUiState = {
+  employees: [],
+  shiftId: null,
+  isShiftActive: false,
+};
+
+function getBoxKey(boxNumber: number): BoxKey {
+  return boxNumber === 2 ? 'box2' : 'box1';
+}
+
+export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKioskMode, initialBoxNumber }: WorkstationProps = {}) {
   const { employee: loggedInEmployee } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   // Admin mode: admin came from /operations with ?box=N — simplified UI
   const isAdminMode = !isKioskMode && !!initialBoxNumber;
+  const initialBoxKey = getBoxKey(initialBoxNumber || 1);
+  const initialBoxState: BoxShiftUiState = {
+    employees: scheduleByBox?.[initialBoxKey] || [],
+    shiftId: shiftStateByBox?.[initialBoxKey]?.shiftId || null,
+    isShiftActive: shiftStateByBox?.[initialBoxKey]?.isShiftActive || false,
+  };
+  const [boxShiftStateByBox, setBoxShiftStateByBox] = useState<{ box1: BoxShiftUiState; box2: BoxShiftUiState }>(() => ({
+    box1: {
+      employees: scheduleByBox?.box1 || [],
+      shiftId: shiftStateByBox?.box1?.shiftId || null,
+      isShiftActive: shiftStateByBox?.box1?.isShiftActive || false,
+    },
+    box2: {
+      employees: scheduleByBox?.box2 || [],
+      shiftId: shiftStateByBox?.box2?.shiftId || null,
+      isShiftActive: shiftStateByBox?.box2?.isShiftActive || false,
+    },
+  }));
   const [isShiftActive, setIsShiftActive] = useState(() => {
     // Kiosk mode: shift is always active
     if (isKioskMode) return true;
     // Admin coming from operations with pre-selected box: auto-activate
-    if (initialBoxNumber && scheduleByBox) {
-      const box = initialBoxNumber === 2 ? scheduleByBox.box2 : scheduleByBox.box1;
-      if (box.length > 0) return true;
+    if (initialBoxNumber && initialBoxState.employees.length > 0) {
+      return true;
     }
     // Initialize from sessionStorage if available
     if (typeof window !== 'undefined') {
@@ -101,14 +157,17 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
   const [isPlateDialogOpen, setIsPlateDialogOpen] = useState(false);
   // OCR tracking: запоминаем результат OCR чтобы при ручном исправлении сохранить фото
   const [ocrData, setOcrData] = useState<PendingOcrData | null>(null);
+  const [cameraSessionContext, setCameraSessionContext] = useState<CameraSessionContext | null>(null);
+  const [cameraPreviewKind, setCameraPreviewKind] = useState<'plate' | 'thumbnail'>('plate');
+  const cameraPrefillKeyRef = useRef<string | null>(null);
+  const cameraAutoStartKeyRef = useRef<string | null>(null);
 
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [employeeMap, setEmployeeMap] = useState<Map<string, string>>(new Map());
   const [selectedEmployees, setSelectedEmployees] = useState<Employee[]>(() => {
     // Kiosk mode or admin with schedule: initialize from schedule for selected box
-    if (scheduleByBox) {
-      const box = initialBoxNumber === 2 ? scheduleByBox.box2 : scheduleByBox.box1;
-      if (box.length > 0) return box;
+    if (initialBoxState.employees.length > 0) {
+      return initialBoxState.employees;
     }
     // Initialize from sessionStorage if available
     if (typeof window !== 'undefined') {
@@ -151,6 +210,9 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
   const [tipsInput, setTipsInput] = useState('');
 
   const [activeShiftId, setActiveShiftId] = useState<string | null>(() => {
+    if (initialBoxState.shiftId) {
+      return initialBoxState.shiftId;
+    }
     if (typeof window !== 'undefined') return sessionStorage.getItem('activeShiftId');
     return null;
   });
@@ -163,6 +225,27 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
     return 1;
   });
   const [isShiftLoading, setIsShiftLoading] = useState(false);
+  const selectedBoxKey = getBoxKey(selectedBoxNumber);
+  const selectedBoxState = boxShiftStateByBox[selectedBoxKey] ?? EMPTY_BOX_SHIFT_STATE;
+
+  const updateBoxShiftState = useCallback((boxNumber: number, updater: (current: BoxShiftUiState) => BoxShiftUiState) => {
+    const boxKey = getBoxKey(boxNumber);
+    setBoxShiftStateByBox((current) => ({
+      ...current,
+      [boxKey]: updater(current[boxKey] ?? EMPTY_BOX_SHIFT_STATE),
+    }));
+  }, []);
+
+  const syncSelectedBox = useCallback((nextBoxNumber: number) => {
+    const boxKey = getBoxKey(nextBoxNumber);
+    const nextBoxState = boxShiftStateByBox[boxKey] ?? EMPTY_BOX_SHIFT_STATE;
+
+    setSelectedBoxNumber(nextBoxNumber);
+    sessionStorage.setItem('selectedBoxNumber', String(nextBoxNumber));
+    setSelectedEmployees(nextBoxState.employees);
+    setActiveShiftId(nextBoxState.shiftId);
+    setIsShiftActive(isKioskMode ? true : (isAdminMode ? nextBoxState.employees.length > 0 : nextBoxState.isShiftActive));
+  }, [boxShiftStateByBox, isAdminMode, isKioskMode]);
 
   const [currentStep, setCurrentStep] = useState<CurrentStep>("idle");
   const [isLoading, setIsLoading] = useState(false);
@@ -171,6 +254,95 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
   const [allAggregators, setAllAggregators] = useState<Aggregator[]>([]);
   const [allWashEvents, setAllWashEvents] = useState<WashEvent[]>([]);
   const [retailPriceConfig, setRetailPriceConfig] = useState<RetailPriceConfig>({ mainPriceList: [], additionalPriceList: [], allowCustomRetailServices: true, cardAcquiringPercentage: 1.2 });
+
+  useEffect(() => {
+    setBoxShiftStateByBox({
+      box1: {
+        employees: scheduleByBox?.box1 || [],
+        shiftId: shiftStateByBox?.box1?.shiftId || null,
+        isShiftActive: shiftStateByBox?.box1?.isShiftActive || false,
+      },
+      box2: {
+        employees: scheduleByBox?.box2 || [],
+        shiftId: shiftStateByBox?.box2?.shiftId || null,
+        isShiftActive: shiftStateByBox?.box2?.isShiftActive || false,
+      },
+    });
+  }, [
+    scheduleByBox?.box1,
+    scheduleByBox?.box2,
+    shiftStateByBox?.box1?.shiftId,
+    shiftStateByBox?.box1?.isShiftActive,
+    shiftStateByBox?.box2?.shiftId,
+    shiftStateByBox?.box2?.isShiftActive,
+  ]);
+
+  const cameraSessionFromUrl = useMemo(() => {
+    if (searchParams.get('camera') !== '1') {
+      return null;
+    }
+
+    const dirName = String(searchParams.get('cameraDir') || '').trim();
+    if (!dirName) {
+      return null;
+    }
+
+    const boxRaw = String(searchParams.get('cameraBox') || searchParams.get('box') || initialBoxNumber || 1).trim();
+    const boxNumber = boxRaw === '2' ? 2 : 1;
+    const recognizedPlate = String(searchParams.get('cameraPlate') || '').trim();
+
+    return {
+      key: `${boxNumber}:${dirName}`,
+      boxNumber: boxNumber as 1 | 2,
+      dirName,
+      recognizedPlate,
+      normalizedRecognizedPlate: normalizeLicensePlate(recognizedPlate),
+      vehicleClass: String(searchParams.get('cameraVehicleClass') || '').trim() || null,
+      start: String(searchParams.get('cameraStart') || '').trim() || null,
+      end: String(searchParams.get('cameraEnd') || '').trim() || null,
+      mode: searchParams.get('cameraMode') === 'edit' ? 'edit' : 'checkout',
+      correctionSaved: false,
+    } satisfies CameraSessionContext;
+  }, [initialBoxNumber, searchParams]);
+
+  const buildCameraSessionMediaUrl = useCallback(
+    (context: CameraSessionContext, kind: 'plate' | 'thumbnail') => {
+      const params = new URLSearchParams({
+        box: String(context.boxNumber),
+        dirName: context.dirName,
+        kind,
+      });
+      return `/api/camera-session-media?${params.toString()}`;
+    },
+    []
+  );
+
+  const clearCameraSessionFromUrl = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    [
+      'camera',
+      'cameraBox',
+      'cameraDir',
+      'cameraPlate',
+      'cameraVehicleClass',
+      'cameraStart',
+      'cameraEnd',
+      'cameraMode',
+    ].forEach((key) => params.delete(key));
+
+    cameraPrefillKeyRef.current = null;
+    cameraAutoStartKeyRef.current = null;
+
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+  }, [pathname, router, searchParams]);
+
+  const cameraPreviewUrl = useMemo(() => {
+    if (!cameraSessionContext) {
+      return null;
+    }
+    return buildCameraSessionMediaUrl(cameraSessionContext, cameraPreviewKind);
+  }, [buildCameraSessionMediaUrl, cameraPreviewKind, cameraSessionContext]);
 
   useEffect(() => {
     // Don't auto-add kiosk account as employee
@@ -193,6 +365,47 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
       console.log('[SAVE] Saved to sessionStorage:', JSON.stringify(selectedEmployees));
     }
   }, [selectedEmployees]);
+
+  useEffect(() => {
+    if (!cameraSessionFromUrl) {
+      setCameraSessionContext(null);
+      setCameraPreviewKind('plate');
+      cameraPrefillKeyRef.current = null;
+      cameraAutoStartKeyRef.current = null;
+      return;
+    }
+
+    setCameraSessionContext((prev) => ({
+      ...cameraSessionFromUrl,
+      correctionSaved: prev?.key === cameraSessionFromUrl.key ? prev.correctionSaved : false,
+    }));
+    setCameraPreviewKind(cameraSessionFromUrl.recognizedPlate ? 'plate' : 'thumbnail');
+  }, [cameraSessionFromUrl]);
+
+  const refreshClientDirectoriesForCheck = useCallback(async () => {
+    const [agentsRes, aggregatorsRes] = await Promise.all([
+      fetch('/api/counter-agents'),
+      fetch('/api/aggregators'),
+    ]);
+
+    if (!agentsRes.ok || !aggregatorsRes.ok) {
+      throw new Error('API error');
+    }
+
+    const [agentsData, aggregatorsData] = await Promise.all([
+      agentsRes.json(),
+      aggregatorsRes.json(),
+    ]);
+
+    const activeAgents = (agentsData as any[]).filter((a: any) => !(a.isArchived || a.archived));
+    setAllCounterAgents(activeAgents);
+    setAllAggregators(aggregatorsData);
+
+    return {
+      counterAgents: activeAgents as CounterAgent[],
+      aggregators: aggregatorsData as Aggregator[],
+    };
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
@@ -220,7 +433,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
           ]);
 
           // Filter active counter agents
-          const activeAgents = (agentsData as any[]).filter((a: any) => !a.isArchived);
+          const activeAgents = (agentsData as any[]).filter((a: any) => !(a.isArchived || a.archived));
           setAllCounterAgents(activeAgents);
           setAllAggregators(aggregatorsData);
           setRetailPriceConfig(retailData);
@@ -280,6 +493,32 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
     }
   }, [currentStep]);
 
+  useEffect(() => {
+    if (!cameraSessionContext) {
+      return;
+    }
+
+    if (cameraPrefillKeyRef.current !== cameraSessionContext.key && cameraSessionContext.recognizedPlate) {
+      setVehicleNumberInput(cameraSessionContext.recognizedPlate);
+      setNormalizedVehicleNumber(cameraSessionContext.normalizedRecognizedPlate);
+      cameraPrefillKeyRef.current = cameraSessionContext.key;
+    }
+
+    if (
+      cameraSessionContext.mode === 'checkout' &&
+      cameraSessionContext.recognizedPlate &&
+      isShiftActive &&
+      selectedEmployees.length > 0 &&
+      !isLoading &&
+      cameraAutoStartKeyRef.current !== cameraSessionContext.key
+    ) {
+      cameraAutoStartKeyRef.current = cameraSessionContext.key;
+      setVehicleNumberInput(cameraSessionContext.recognizedPlate);
+      setNormalizedVehicleNumber(cameraSessionContext.normalizedRecognizedPlate);
+      void checkVehicleNumber(cameraSessionContext.recognizedPlate);
+    }
+  }, [cameraSessionContext, isLoading, isShiftActive, selectedEmployees.length]);
+
   const formatTimer = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -306,7 +545,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
   const handleVehicleNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setVehicleNumberInput(e.target.value);
     if (currentStep !== "vehicleInput" && currentStep !== "idle") {
-        resetFormStateForNewVehicle(true, false, !ocrData);
+        resetFormStateForNewVehicle(true, false, !ocrData, false);
     }
   };
 
@@ -325,6 +564,97 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
         checkVehicleNumber(plateNumber, true);
       }
     }, 100);
+  };
+
+  const shouldPersistCameraSessionCorrection = (normalizedInput: string) => {
+    if (!cameraSessionContext || cameraSessionContext.correctionSaved || !normalizedInput) {
+      return false;
+    }
+
+    if (!cameraSessionContext.normalizedRecognizedPlate) {
+      return true;
+    }
+
+    return cameraSessionContext.normalizedRecognizedPlate !== normalizedInput;
+  };
+
+  const blobToDataUrl = (blob: Blob) => (
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+          return;
+        }
+        reject(new Error('Не удалось преобразовать изображение в base64'));
+      };
+      reader.onerror = () => reject(reader.error || new Error('Не удалось прочитать изображение'));
+      reader.readAsDataURL(blob);
+    })
+  );
+
+  const persistCameraSessionCorrection = async (normalizedInput: string, silent = false) => {
+    if (!cameraSessionContext || !shouldPersistCameraSessionCorrection(normalizedInput)) {
+      return true;
+    }
+
+    try {
+      const mediaKinds: Array<'plate' | 'thumbnail'> = cameraSessionContext.recognizedPlate
+        ? ['plate', 'thumbnail']
+        : ['thumbnail', 'plate'];
+
+      let imageBase64 = '';
+
+      for (const kind of mediaKinds) {
+        const response = await fetch(buildCameraSessionMediaUrl(cameraSessionContext, kind), {
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          continue;
+        }
+
+        const blob = await response.blob();
+        imageBase64 = await blobToDataUrl(blob);
+        setCameraPreviewKind(kind);
+        break;
+      }
+
+      if (!imageBase64) {
+        throw new Error('Не удалось загрузить фото сессии камеры');
+      }
+
+      const response = await fetch('/api/ocr-failed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64,
+          originalOcr: cameraSessionContext.recognizedPlate || 'not_recognized',
+          correctedOcr: normalizedInput,
+          source: `camera_session:${cameraSessionContext.boxNumber}:${cameraSessionContext.dirName}`,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof data?.error === 'string' ? data.error : 'Не удалось сохранить исправление камеры');
+      }
+
+      setCameraSessionContext((prev) => (
+        prev ? { ...prev, correctionSaved: true } : prev
+      ));
+      return true;
+    } catch (error: any) {
+      console.error('Failed to persist camera session correction:', error);
+      if (!silent) {
+        toast({
+          title: "Исправление номера не сохранено",
+          description: "Фото сессии не удалось отправить в OCR-разбор. Заказ можно провести, но исправление лучше повторить позже.",
+          variant: "destructive",
+        });
+      }
+      return false;
+    }
   };
 
   const handlePlateRecognitionFailed = ({
@@ -406,6 +736,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
     setIsLoading(true);
     const normalizedInput = normalizeLicensePlate(numberToCheck);
     setNormalizedVehicleNumber(normalizedInput);
+    let counterAgentsForCheck = allCounterAgents;
+    let aggregatorsForCheck = allAggregators;
 
     if (!isAutoCheck) {
       // Ручная проверка — сохраняем OCR-исправление если номер изменён
@@ -416,13 +748,30 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
         setOcrData(null); // номер совпал — сохранять не нужно
       }
 
-      resetFormStateForNewVehicle(true, false, clearOcrAfterReset);
+      if (shouldPersistCameraSessionCorrection(normalizedInput)) {
+        await persistCameraSessionCorrection(normalizedInput);
+      }
+
+      resetFormStateForNewVehicle(true, false, clearOcrAfterReset, false);
       if (ocrData && !shouldPersistOcrCorrection(normalizedInput)) {
         setOcrData(ocrData);
       }
+
+      try {
+        const refreshedDirectories = await refreshClientDirectoriesForCheck();
+        counterAgentsForCheck = refreshedDirectories.counterAgents;
+        aggregatorsForCheck = refreshedDirectories.aggregators;
+      } catch (error) {
+        console.error("Error refreshing client directories for workstation:", error);
+        toast({
+          title: "Справочники не обновились",
+          description: "Используем уже загруженные данные. Если вы только что меняли контрагента, попробуйте ещё раз через пару секунд.",
+          variant: "destructive",
+        });
+      }
     } else {
       // Авто-проверка после OCR — НЕ трогаем ocrData (stale closure issue)
-      resetFormStateForNewVehicle(true, false, false);
+      resetFormStateForNewVehicle(true, false, false, false);
     }
 
     // Find last wash for this vehicle
@@ -438,7 +787,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
         }
     }
 
-    const agent = allCounterAgents.find(ca =>
+    const agent = counterAgentsForCheck.find(ca =>
       ca.cars.some(car => normalizeLicensePlate(car.licensePlate) === normalizedInput)
     );
 
@@ -463,7 +812,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
       return;
     }
 
-    const aggregatorsWithCar = allAggregators.filter(agg =>
+    const aggregatorsWithCar = aggregatorsForCheck.filter(agg =>
       agg.cars.some(car => normalizeLicensePlate(car.licensePlate) === normalizedInput)
     );
 
@@ -478,17 +827,68 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
     setIsLoading(false);
   };
 
-  const handleEmployeeSelect = (employee: Employee) => {
+  const syncShiftTeam = useCallback(async (nextEmployees: Employee[], boxNumber: number, shiftId: string | null) => {
+    const response = await fetch('/api/workstation/shift', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        shiftId,
+        boxNumber,
+        employeeIds: nextEmployees.map((employee) => employee.id),
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Не удалось обновить команду бокса ${boxNumber}`);
+    }
+
+    const data = await response.json();
+    router.refresh();
+    return data.shift as { id?: string; status?: string } | undefined;
+  }, [router]);
+
+  const handleEmployeeSelect = async (employee: Employee) => {
     if (loggedInEmployee && employee.id === loggedInEmployee.id && !isEmployeeAdmin(loggedInEmployee)) {
         toast({ title: "Нельзя снять себя", description: "Вы не можете убрать себя из команды.", variant: "destructive"});
         return;
     }
 
-    setSelectedEmployees(prev =>
-      prev.some(e => e.id === employee.id)
-        ? prev.filter(e => e.id !== employee.id)
-        : [...prev, employee]
-    );
+    const nextEmployees = selectedEmployees.some((selectedEmployee) => selectedEmployee.id === employee.id)
+      ? selectedEmployees.filter((selectedEmployee) => selectedEmployee.id !== employee.id)
+      : [...selectedEmployees, employee];
+
+    setSelectedEmployees(nextEmployees);
+    updateBoxShiftState(selectedBoxNumber, (current) => ({
+      ...current,
+      employees: nextEmployees,
+    }));
+
+    setIsShiftLoading(true);
+    try {
+      const updatedShift = await syncShiftTeam(nextEmployees, selectedBoxNumber, selectedBoxState.shiftId);
+      if (updatedShift?.id) {
+        setActiveShiftId(updatedShift.id);
+      }
+      updateBoxShiftState(selectedBoxNumber, (current) => ({
+        ...current,
+        employees: nextEmployees,
+        shiftId: updatedShift?.id || current.shiftId,
+        isShiftActive: updatedShift?.status === 'active' ? true : (updatedShift?.status === 'scheduled' ? false : current.isShiftActive),
+      }));
+      toast({
+        title: "Команда бокса обновлена",
+        description: `Изменения по боксу ${selectedBoxNumber} сохранены и будут видны на других экранах после обновления.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Не удалось синхронизировать смену",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsShiftLoading(false);
+    }
   };
 
   const handlePaymentMethodSelect = (method: "cash" | "card" | "transfer" | "aggregator") => {
@@ -606,6 +1006,9 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
     if (shouldPersistOcrCorrection(normalizedVehicleNumber)) {
       await persistOcrCorrection(normalizedVehicleNumber, true);
     }
+    if (shouldPersistCameraSessionCorrection(normalizedVehicleNumber)) {
+      await persistCameraSessionCorrection(normalizedVehicleNumber, true);
+    }
 
     let finalSelectedAggregator = selectedAggregator;
 
@@ -670,6 +1073,16 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
     const additional = washServices.slice(1);
 
     const newWashComment = driverComment ? { text: driverComment, authorId: loggedInEmployee!.id, date: new Date().toISOString() } : undefined;
+    const cameraSessionLink = cameraSessionContext ? {
+      dirName: cameraSessionContext.dirName,
+      boxNumber: cameraSessionContext.boxNumber,
+      originalPlate: cameraSessionContext.recognizedPlate || null,
+      correctedPlate: normalizedVehicleNumber || null,
+      vehicleClass: cameraSessionContext.vehicleClass,
+      start: cameraSessionContext.start,
+      end: cameraSessionContext.end,
+      source: 'operations-camera' as const,
+    } : undefined;
 
 	    const washEventToSave: Omit<WashEvent, 'driverComments'> & { driverComments?: WashComment[] } = {
         id: `we_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -698,6 +1111,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
         washDurationSeconds: washTimerElapsed > 0 ? washTimerElapsed : undefined,
         shiftId: activeShiftId || undefined,
         boxNumber: selectedBoxNumber as 1 | 2,
+        cameraSession: cameraSessionLink,
     };
 
     try {
@@ -718,7 +1132,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
             variant: "default",
         });
         setAllWashEvents(prev => [washEventToSave as WashEvent, ...prev]);
-        resetFormStateForNewVehicle(false, true);
+        resetFormStateForNewVehicle(false, true, true, true);
     } catch (error: any) {
         console.error("Error saving wash event:", error);
         toast({
@@ -731,16 +1145,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
     }
   };
 
-  const resetFormStateForNewVehicle = (soft = false, keepEmployees = false, clearOcr = true) => {
+  const resetFormStateForNewVehicle = (soft = false, keepEmployees = false, clearOcr = true, clearCameraContext = false) => {
     console.log('[RESET_FORM] Called with soft:', soft, 'keepEmployees:', keepEmployees);
     console.trace('[RESET_FORM] Stack trace:');
     if(!soft) {
       setVehicleNumberInput('');
       setNormalizedVehicleNumber('');
       if (!keepEmployees) {
-        if (isKioskMode && scheduleByBox) {
-          const boxEmps = selectedBoxNumber === 2 ? scheduleByBox.box2 : scheduleByBox.box1;
-          setSelectedEmployees(boxEmps);
+        if ((isKioskMode || isAdminMode) && selectedBoxState.employees.length > 0) {
+          setSelectedEmployees(selectedBoxState.employees);
         } else {
           setSelectedEmployees((loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') ? [loggedInEmployee] : []);
         }
@@ -765,10 +1178,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
     if (clearOcr) {
       setOcrData(null);
     }
+    if (clearCameraContext) {
+      setCameraSessionContext(null);
+      setCameraPreviewKind('plate');
+      clearCameraSessionFromUrl();
+    }
   }
 
   const resetForm = () => {
-    resetFormStateForNewVehicle();
+    resetFormStateForNewVehicle(false, false, true, true);
   };
 
   const canAddCustomServices =
@@ -889,8 +1307,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
         setActiveShiftId(shiftId);
         sessionStorage.setItem('activeShiftId', shiftId);
       }
+      updateBoxShiftState(selectedBoxNumber, (current) => ({
+        ...current,
+        employees: selectedEmployees,
+        shiftId: shiftId || current.shiftId,
+        isShiftActive: true,
+      }));
       setIsShiftActive(true);
       sessionStorage.setItem('isShiftActive', 'true');
+      router.refresh();
     } catch (error: any) {
       toast({ title: "Ошибка", description: error.message, variant: "destructive" });
     } finally {
@@ -922,8 +1347,14 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
       });
       setActiveShiftId(null);
       setIsShiftActive(false);
+      updateBoxShiftState(selectedBoxNumber, (current) => ({
+        ...current,
+        shiftId: null,
+        isShiftActive: false,
+      }));
       sessionStorage.removeItem('activeShiftId');
       sessionStorage.removeItem('isShiftActive');
+      router.refresh();
     } catch (error: any) {
       toast({ title: "Ошибка", description: error.message, variant: "destructive" });
     } finally {
@@ -995,23 +1426,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
             <span className="text-sm font-semibold">Бокс:</span>
             <button
               className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${selectedBoxNumber === 1 ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              onClick={() => {
-                setSelectedBoxNumber(1);
-                sessionStorage.setItem('selectedBoxNumber', '1');
-                if (scheduleByBox) setSelectedEmployees(scheduleByBox.box1);
-              }}
+              onClick={() => syncSelectedBox(1)}
             >
-              Бокс 1 {scheduleByBox && scheduleByBox.box1.length > 0 ? `(${scheduleByBox.box1.length})` : ''}
+              Бокс 1 {boxShiftStateByBox.box1.employees.length > 0 ? `(${boxShiftStateByBox.box1.employees.length})` : ''}
             </button>
             <button
               className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${selectedBoxNumber === 2 ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              onClick={() => {
-                setSelectedBoxNumber(2);
-                sessionStorage.setItem('selectedBoxNumber', '2');
-                if (scheduleByBox) setSelectedEmployees(scheduleByBox.box2);
-              }}
+              onClick={() => syncSelectedBox(2)}
             >
-              Бокс 2 {scheduleByBox && scheduleByBox.box2.length > 0 ? `(${scheduleByBox.box2.length})` : ''}
+              Бокс 2 {boxShiftStateByBox.box2.employees.length > 0 ? `(${boxShiftStateByBox.box2.employees.length})` : ''}
             </button>
           </div>
         </div>
@@ -1024,13 +1447,13 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
               <span className="text-sm font-medium">Бокс:</span>
               <button
                 className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-                onClick={() => { setSelectedBoxNumber(1); sessionStorage.setItem('selectedBoxNumber', '1'); }}
+                onClick={() => syncSelectedBox(1)}
               >
                 Бокс 1
               </button>
               <button
                 className={`px-3 py-1 rounded-lg text-sm font-medium ${selectedBoxNumber === 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-                onClick={() => { setSelectedBoxNumber(2); sessionStorage.setItem('selectedBoxNumber', '2'); }}
+                onClick={() => syncSelectedBox(2)}
               >
                 Бокс 2
               </button>
@@ -1068,6 +1491,64 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
           <p className="zorin-registration-description">
             Выберите команду на смену, затем введите номер машины. Система автоматически определит тип клиента.
           </p>
+
+          {cameraSessionContext && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+              <div className="flex flex-col gap-4 md:flex-row">
+                <div className="overflow-hidden rounded-lg border border-amber-200 bg-black md:w-[220px]">
+                  {cameraPreviewUrl ? (
+                    <img
+                      src={cameraPreviewUrl}
+                      alt={`Сессия ${cameraSessionContext.dirName}`}
+                      className="aspect-video h-full w-full object-cover"
+                      loading="lazy"
+                      onError={() => {
+                        if (cameraPreviewKind === 'plate') {
+                          setCameraPreviewKind('thumbnail');
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="flex aspect-video items-center justify-center text-xs text-white/70">
+                      Фото сессии
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">Камера · бокс {cameraSessionContext.boxNumber}</Badge>
+                    <Badge variant="outline">
+                      {cameraSessionContext.mode === 'edit' ? 'Исправление номера' : 'Быстрое оформление'}
+                    </Badge>
+                    {cameraSessionContext.vehicleClass && (
+                      <Badge variant="outline">{cameraSessionContext.vehicleClass}</Badge>
+                    )}
+                  </div>
+                  <p className="font-medium text-amber-950">{cameraSessionContext.dirName}</p>
+                  <p className="text-amber-900">
+                    {cameraSessionContext.recognizedPlate ? (
+                      <>
+                        Распознано камерой:{' '}
+                        <span className="font-mono font-semibold">{cameraSessionContext.recognizedPlate}</span>
+                      </>
+                    ) : (
+                      'Камера собрала сессию без номера. Введите номер по фото и нажмите «Проверить».'
+                    )}
+                  </p>
+                  <p className="text-xs text-amber-800/80">
+                    {cameraSessionContext.mode === 'edit'
+                      ? 'Этот режим нужен, чтобы вручную поправить OCR по фото конкретной сессии и затем провести заказ.'
+                      : 'Если номер определился верно, станция сама переведёт тебя сразу к выбору способа оплаты.'}
+                  </p>
+                  {cameraSessionContext.correctionSaved && (
+                    <p className="text-xs font-medium text-emerald-700">
+                      Исправление OCR сохранено в разбор ошибочных распознаваний.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {(currentStep !== "idle") && (
             <div className="zorin-form-section">
@@ -1557,7 +2038,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, isKioskMode, initialBox
           )}
 
           {currentStep !== 'idle' && currentStep !== 'vehicleInput' && (
-            <button onClick={() => resetFormStateForNewVehicle()} className="zorin-button secondary mt-4">
+            <button onClick={() => resetFormStateForNewVehicle(false, false, true, true)} className="zorin-button secondary mt-4">
               Начать заново (другая машина)
             </button>
           )}
