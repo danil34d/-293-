@@ -53,6 +53,10 @@ function washEventFromPrisma(row: any): WashEvent {
     refundReason: row.refundReason ?? undefined,
     tips: row.tips ?? undefined,
     shiftId: row.shiftId ?? undefined,
+    washDurationSeconds: row.washDurationSeconds ?? undefined,
+    cameraSession: parseJsonField(row.cameraSession, undefined),
+    dismissal: parseJsonField(row.dismissal, undefined),
+    restoration: parseJsonField(row.restoration, undefined),
   };
 }
 
@@ -617,6 +621,10 @@ export async function saveWashEvent(data: any): Promise<void> {
       refundReason: data.refundReason ?? null,
       tips: data.tips ?? null,
       shiftId: data.shiftId ?? undefined,
+      washDurationSeconds: data.washDurationSeconds ?? null,
+      cameraSession: data.cameraSession ?? undefined,
+      dismissal: data.dismissal ?? undefined,
+      restoration: data.restoration ?? undefined,
     },
     create: {
       id: data.id,
@@ -643,6 +651,10 @@ export async function saveWashEvent(data: any): Promise<void> {
       refundReason: data.refundReason ?? null,
       tips: data.tips ?? null,
       shiftId: data.shiftId ?? null,
+      washDurationSeconds: data.washDurationSeconds ?? null,
+      cameraSession: data.cameraSession ?? undefined,
+      dismissal: data.dismissal ?? undefined,
+      restoration: data.restoration ?? undefined,
     },
   });
 
@@ -1371,6 +1383,10 @@ export async function createWashEventWithSideEffects(
         status: washEvent.status ?? null,
         completedAt: washEvent.completedAt ?? null,
         tips: washEvent.tips ?? null,
+        washDurationSeconds: washEvent.washDurationSeconds ?? null,
+        cameraSession: washEvent.cameraSession ?? undefined,
+        dismissal: washEvent.dismissal ?? undefined,
+        restoration: washEvent.restoration ?? undefined,
       },
     });
 

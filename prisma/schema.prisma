@@ -121,6 +121,10 @@ model WashEvent {
   refundReason             String?
   tips                     Float?
   shiftId                  String?
+  washDurationSeconds      Float?
+  cameraSession            Json?
+  dismissal                Json?
+  restoration              Json?
 
   aggregator   Aggregator?   @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
   counterAgent CounterAgent? @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
