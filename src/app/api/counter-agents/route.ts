@@ -3,8 +3,11 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import { getActiveCounterAgentsData, getCounterAgentsData } from '@/lib/data';
+import { requireAuth } from '@/lib/server-auth';
 
 export async function GET(request: Request) {
+  const auth = requireAuth();
+  if (auth instanceof NextResponse) return auth;
   try {
     const { searchParams } = new URL(request.url);
     const includeArchived = searchParams.get('includeArchived') === 'true';
