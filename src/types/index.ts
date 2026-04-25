@@ -216,6 +216,37 @@ export interface WashComment {
   date: string; // ISO timestamp
 }
 
+export interface WashEventCameraSessionLink {
+  dirName: string;
+  boxNumber?: 1 | 2;
+  originalPlate?: string | null;
+  correctedPlate?: string | null;
+  vehicleClass?: string | null;
+  start?: string | null;
+  end?: string | null;
+  source?: 'operations-camera';
+}
+
+export interface WashEventLogTimeline {
+  entryAt?: string | null;
+  exitAt?: string | null;
+  washDurationSeconds?: number | null;
+  sessionDurationSeconds?: number | null;
+  source?: 'camera-dashboard' | 'camera-session-link' | 'event-timestamp';
+}
+
+export interface WashEventDismissalMeta {
+  reason: 'drive_out_without_wash';
+  dismissedAt: string;
+  dismissedByEmployeeId: string;
+  dismissedByEmployeeName?: string;
+  source: 'operations' | 'kiosk-order';
+}
+
+export interface WashEventRestorationMeta {
+  restoredAt: string;
+}
+
 export interface WashEvent {
   id: string;
   timestamp: string; // ISO string
@@ -246,6 +277,11 @@ export interface WashEvent {
   refundReason?: string; // Причина возврата
   shiftId?: string;
   boxNumber?: 1 | 2; // Номер бокса, в котором выполнялась мойка
+  cameraSession?: WashEventCameraSessionLink;
+  logTimeline?: WashEventLogTimeline;
+  status?: 'completed' | 'dismissed' | 'restored';
+  dismissal?: WashEventDismissalMeta;
+  restoration?: WashEventRestorationMeta;
 }
 
 export type EmployeeTransactionType = 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off';
