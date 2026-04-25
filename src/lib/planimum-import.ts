@@ -37,17 +37,17 @@ export interface PlanimumImportResult {
   };
 }
 
-/** How many boxes are active per wash */
-const WASH_BOX_COUNT: Record<string, number> = {
-  wash_1: 2, // Мойка 1 (Циолковского) — 2 бокса
-  wash_2: 1, // Мойка 2 — 1 бокс
+/** washId → boxNumber mapping (PG adapter derives washId from boxNumber) */
+const WASH_TO_BOX: Record<string, number> = {
+  wash_1: 1, // Мойка 1 (Циолковского) → boxNumber 1
+  wash_2: 2, // Мойка 2 → boxNumber 2
 };
 
 export async function importPlanimumSchedule(
   params: PlanimumImportParams
 ): Promise<PlanimumImportResult> {
   const { url, washId, clearExisting = true } = params;
-  const boxCount = WASH_BOX_COUNT[washId] ?? 2;
+  const boxNumber = WASH_TO_BOX[washId] ?? 1;
 
   // ---- 1. Validate URL ----
   if (!url || !url.includes('planimum.ru/schedule/')) {
@@ -194,55 +194,18 @@ export async function importPlanimumSchedule(
       const startTime = shiftType === 'day' ? '08:00' : '20:00';
       const endTime = shiftType === 'day' ? '20:00' : '08:00';
 
-      if (boxCount === 1) {
-        // Single box — all employees to box 1
-        await saveEntity('shift', {
-          id: `shift_pl_${dateStr}_${shiftType}_b1`,
-          washId,
-          date: dateStr,
-          boxNumber: 1,
-          employeeIds: emps,
-          shiftType,
-          startTime,
-          endTime,
-          isAutoAssigned: true,
-        });
-        createdCount++;
-      } else {
-        // Two boxes — split employees
-        const mid = Math.ceil(emps.length / 2);
-        const box1 = emps.slice(0, mid);
-        const box2 = emps.slice(mid);
-
-        if (box1.length > 0) {
-          await saveEntity('shift', {
-            id: `shift_pl_${dateStr}_${shiftType}_b1`,
-            washId,
-            date: dateStr,
-            boxNumber: 1,
-            employeeIds: box1,
-            shiftType,
-            startTime,
-            endTime,
-            isAutoAssigned: true,
-          });
-          createdCount++;
-        }
-        if (box2.length > 0) {
-          await saveEntity('shift', {
-            id: `shift_pl_${dateStr}_${shiftType}_b2`,
-            washId,
-            date: dateStr,
-            boxNumber: 2,
-            employeeIds: box2,
-            shiftType,
-            startTime,
-            endTime,
-            isAutoAssigned: true,
-          });
-          createdCount++;
-        }
-      }
+      await saveEntity('shift', {
+        id: `shift_pl_${dateStr}_${shiftType}_b${boxNumber}`,
+        washId,
+        date: dateStr,
+        boxNumber,
+        employeeIds: emps,
+        shiftType,
+        startTime,
+        endTime,
+        isAutoAssigned: true,
+      });
+      createdCount++;
     }
   }
 
