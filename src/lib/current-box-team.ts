@@ -73,7 +73,10 @@ export function resolveBoxShiftState(params: {
   boxNumber: BoxNumber;
 }): ResolvedBoxShiftState {
   const { shifts, employees, date, shiftType, boxNumber } = params;
-  const expectedWashId = boxNumber === 2 ? 'wash_2' : 'wash_1';
+  // Prefer shifts whose washId matches the expected wash for this box.
+  // Box 1 → wash_1, Box 2 → could be wash_1 (2nd box) or wash_2.
+  // Active shifts take priority regardless, then prefer matching washId.
+  const expectedWashId = boxNumber === 1 ? 'wash_1' : 'wash_2';
 
   const relevantShifts = shifts
     .filter((shift) => (
