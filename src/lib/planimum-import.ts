@@ -198,7 +198,7 @@ export async function importPlanimumSchedule(
         // Single box — all employees to that box
         const bn = boxes[0];
         await saveEntity('shift', {
-          id: `shift_pl_${dateStr}_${shiftType}_b${bn}`,
+          id: `shift_pl_${dateStr}_${shiftType}_${washId}_b${bn}`,
           washId,
           date: dateStr,
           boxNumber: bn,
@@ -220,7 +220,7 @@ export async function importPlanimumSchedule(
           if (group.length === 0) continue;
 
           await saveEntity('shift', {
-            id: `shift_pl_${dateStr}_${shiftType}_b${bn}`,
+            id: `shift_pl_${dateStr}_${shiftType}_${washId}_b${bn}`,
             washId,
             date: dateStr,
             boxNumber: bn,
