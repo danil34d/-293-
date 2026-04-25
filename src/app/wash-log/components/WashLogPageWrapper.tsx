@@ -6,6 +6,7 @@ import { ZorinWashLogClient } from './ZorinWashLogClient';
 import { TodaySummary } from './TodaySummary';
 import { isToday, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
+import { isCompletedWashEvent } from '@/lib/wash-event-status';
 
 // Normalize vehicle number: convert Cyrillic to Latin and uppercase
 const cyrillicToLatin: Record<string, string> = {
@@ -30,6 +31,12 @@ function normalizeVehicleNumber(input: string): string {
     .join('');
 }
 
+function getEventTimelineDate(event: WashEvent): Date {
+  const sourceValue = event.logTimeline?.entryAt || event.logTimeline?.exitAt || event.timestamp;
+  const parsed = new Date(sourceValue);
+  return Number.isNaN(parsed.getTime()) ? new Date(event.timestamp) : parsed;
+}
+
 interface WashLogPageWrapperProps {
   initialWashEvents: WashEvent[];
   initialEmployees: Employee[];
@@ -45,9 +52,10 @@ export function WashLogPageWrapper({ initialWashEvents, initialEmployees }: Wash
 
   // Filter wash events based on all filters
   const filteredEvents = useMemo(() => {
-    return initialWashEvents.filter(event => {
+    return initialWashEvents
+      .filter(event => {
       // Text search filter (with vehicle number normalization)
-      if (query.trim()) {
+        if (query.trim()) {
         const searchLower = query.trim().toLowerCase();
         const normalizedSearch = normalizeVehicleNumber(query.trim());
         const normalizedVehicle = normalizeVehicleNumber(event.vehicleNumber || '');
@@ -69,45 +77,47 @@ export function WashLogPageWrapper({ initialWashEvents, initialEmployees }: Wash
         };
         const paymentMatch = paymentTranslations[paymentMethod]?.includes(searchLower);
 
-        if (!vehicleMatch && !sourceMatch && !paymentMatch) return false;
-      }
+          if (!vehicleMatch && !sourceMatch && !paymentMatch) return false;
+        }
 
       // Employee filter
-      if (selectedEmployeeId !== 'all') {
-        if (!event.employeeIds?.includes(selectedEmployeeId)) return false;
-      }
+        if (selectedEmployeeId !== 'all') {
+          if (!event.employeeIds?.includes(selectedEmployeeId)) return false;
+        }
 
       // Payment method filter
-      if (selectedPaymentMethod !== 'all') {
-        if (event.paymentMethod !== selectedPaymentMethod) return false;
-      }
+        if (selectedPaymentMethod !== 'all') {
+          if (event.paymentMethod !== selectedPaymentMethod) return false;
+        }
 
       // Date range filter
-      if (dateRange?.from || dateRange?.to) {
-        const eventDate = new Date(event.timestamp);
-        if (dateRange.from && dateRange.to) {
-          if (!isWithinInterval(eventDate, {
-            start: startOfDay(dateRange.from),
-            end: endOfDay(dateRange.to)
-          })) return false;
-        } else if (dateRange.from) {
-          if (eventDate < startOfDay(dateRange.from)) return false;
-        } else if (dateRange.to) {
-          if (eventDate > endOfDay(dateRange.to)) return false;
+        if (dateRange?.from || dateRange?.to) {
+          const eventDate = getEventTimelineDate(event);
+          if (dateRange.from && dateRange.to) {
+            if (!isWithinInterval(eventDate, {
+              start: startOfDay(dateRange.from),
+              end: endOfDay(dateRange.to)
+            })) return false;
+          } else if (dateRange.from) {
+            if (eventDate < startOfDay(dateRange.from)) return false;
+          } else if (dateRange.to) {
+            if (eventDate > endOfDay(dateRange.to)) return false;
+          }
         }
-      }
 
-      return true;
-    });
+        return true;
+      })
+      .sort((left, right) => getEventTimelineDate(right).getTime() - getEventTimelineDate(left).getTime());
   }, [initialWashEvents, query, selectedEmployeeId, selectedPaymentMethod, dateRange]);
 
   // Итоги по отфильтрованным данным
   const filteredSummary = useMemo(() => {
-    const totalWashes = filteredEvents.length;
-    const totalRevenue = filteredEvents.reduce((sum, e) => sum + e.totalAmount, 0);
-    const totalTips = filteredEvents.reduce((sum, e) => sum + (e.tips || 0), 0);
+    const completedEvents = filteredEvents.filter(isCompletedWashEvent);
+    const totalWashes = completedEvents.length;
+    const totalRevenue = completedEvents.reduce((sum, e) => sum + e.totalAmount, 0);
+    const totalTips = completedEvents.reduce((sum, e) => sum + (e.tips || 0), 0);
     const byPayment: Record<string, { count: number; amount: number }> = {};
-    filteredEvents.forEach(e => {
+    completedEvents.forEach(e => {
       if (!byPayment[e.paymentMethod]) byPayment[e.paymentMethod] = { count: 0, amount: 0 };
       byPayment[e.paymentMethod].count++;
       byPayment[e.paymentMethod].amount += e.totalAmount;
@@ -124,19 +134,20 @@ export function WashLogPageWrapper({ initialWashEvents, initialEmployees }: Wash
 
   // Calculate today's summary
   const todayEvents = useMemo(() => {
-    return initialWashEvents.filter(event => isToday(new Date(event.timestamp)));
+    return initialWashEvents.filter(event => isToday(getEventTimelineDate(event)));
   }, [initialWashEvents]);
 
   const todayReport = useMemo(() => {
+    const completedTodayEvents = todayEvents.filter(isCompletedWashEvent);
     // Build simple report matching TodaySummary expectations
     const employeesWorkedToday = new Set<string>();
 
-    todayEvents.forEach(event => {
+    completedTodayEvents.forEach(event => {
       event.employeeIds?.forEach(id => employeesWorkedToday.add(id));
     });
 
     return Array.from(employeesWorkedToday).map(empId => {
-      const empEvents = todayEvents.filter(e => e.employeeIds?.includes(empId));
+      const empEvents = completedTodayEvents.filter(e => e.employeeIds?.includes(empId));
       const totalPay = empEvents.reduce((sum, e) => {
         // Divide total amount by number of employees on that wash
         const empCount = e.employeeIds?.length || 1;

@@ -1,7 +1,15 @@
 "use client";
 
+import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { WashEvent, Employee, SalaryScheme, WashComment } from '@/types';
 import { format, isToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -14,6 +22,8 @@ import { CommentDialog } from '@/components/common/CommentDialog';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { DateRange } from 'react-day-picker';
+import { useToast } from '@/hooks/use-toast';
+import { isDismissedWashEvent, isRestoredWashEvent } from '@/lib/wash-event-status';
 import {
   BookCheck,
   Briefcase,
@@ -29,7 +39,10 @@ import {
   Printer,
   Search,
   Calendar,
-  Droplets
+  Droplets,
+  RotateCcw,
+  Ban,
+  Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -55,6 +68,49 @@ interface ZorinWashLogClientProps {
   dateRange: DateRange | undefined;
   onDateRangeChange: (range: DateRange | undefined) => void;
   filteredSummary: FilteredSummary;
+}
+
+interface CameraPreviewState {
+  vehicleNumber: string;
+  title: string;
+  currentUrl: string | null;
+  fallbackUrl: string | null;
+}
+
+function getDisplayDate(event: WashEvent): Date {
+  const sourceValue = event.logTimeline?.entryAt || event.logTimeline?.exitAt || event.timestamp;
+  const parsed = new Date(sourceValue);
+  return Number.isNaN(parsed.getTime()) ? new Date(event.timestamp) : parsed;
+}
+
+function getDisplayExitDate(event: WashEvent): Date | null {
+  if (!event.logTimeline?.exitAt) {
+    return null;
+  }
+
+  const parsed = new Date(event.logTimeline.exitAt);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatDurationShort(seconds: number | null | undefined): string | null {
+  if (!seconds || seconds <= 0) {
+    return null;
+  }
+
+  const wholeSeconds = Math.round(seconds);
+  const hours = Math.floor(wholeSeconds / 3600);
+  const minutes = Math.floor((wholeSeconds % 3600) / 60);
+  const restSeconds = wholeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}ч ${minutes}м`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}м ${restSeconds.toString().padStart(2, '0')}с`;
+  }
+
+  return `${restSeconds}с`;
 }
 
 const paymentMethodTranslations: Record<WashEvent['paymentMethod'], string> = {
@@ -92,7 +148,11 @@ export function ZorinWashLogClient({
   onDateRangeChange,
   filteredSummary
 }: ZorinWashLogClientProps) {
+  const router = useRouter();
+  const { toast } = useToast();
   const employeeMap = new Map(employees.map(e => [e.id, e.fullName]));
+  const [restoringEventId, setRestoringEventId] = useState<string | null>(null);
+  const [cameraPreview, setCameraPreview] = useState<CameraPreviewState | null>(null);
 
   const paginatedEvents = washEvents;
 
@@ -108,8 +168,140 @@ export function ZorinWashLogClient({
     minute: '2-digit'
   });
 
+  async function handleRestoreDismissed(event: WashEvent) {
+    setRestoringEventId(event.id);
+    try {
+      const response = await fetch(`/api/wash-events/${event.id}`, {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        throw new Error('Не удалось прочитать запись перед восстановлением.');
+      }
+
+      const eventToUpdate = await response.json();
+      const updateResponse = await fetch(`/api/wash-events/${event.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...eventToUpdate,
+          status: 'restored',
+          restoration: {
+            restoredAt: new Date().toISOString(),
+          },
+        }),
+      });
+
+      if (!updateResponse.ok) {
+        const errorData = await updateResponse.json().catch(() => ({}));
+        throw new Error(
+          typeof errorData?.error === 'string'
+            ? errorData.error
+            : 'Не удалось вернуть запись в неоформленные машины.'
+        );
+      }
+
+      toast({
+        title: 'Запись возвращена',
+        description: `Сессия ${event.vehicleNumber} снова может появиться в очереди на оформление.`,
+      });
+      router.refresh();
+    } catch (error: any) {
+      console.error('Failed to restore dismissed wash event:', error);
+      toast({
+        title: 'Не удалось вернуть запись',
+        description: error?.message || 'Ошибка при восстановлении отменённой сессии.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRestoringEventId(null);
+    }
+  }
+
+  function getCameraMediaUrls(event: WashEvent) {
+    const dirName = String(event.cameraSession?.dirName || '').trim();
+    const boxNumber = event.cameraSession?.boxNumber || event.boxNumber;
+
+    if (!dirName || !boxNumber) {
+      return null;
+    }
+
+    const base = `/api/camera-session-media?box=${boxNumber}&dirName=${encodeURIComponent(dirName)}`;
+    return {
+      plateUrl: `${base}&kind=plate`,
+      thumbnailUrl: `${base}&kind=thumbnail`,
+    };
+  }
+
+  function openCameraPreview(event: WashEvent) {
+    const urls = getCameraMediaUrls(event);
+    if (!urls) {
+      toast({
+        title: 'Фото сессии недоступно',
+        description: 'У этой записи нет привязки к камерной сессии.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCameraPreview({
+      vehicleNumber: event.vehicleNumber,
+      title: event.cameraSession?.dirName || 'Камерная сессия',
+      currentUrl: urls.plateUrl,
+      fallbackUrl: urls.thumbnailUrl,
+    });
+  }
+
+  function handleCameraPreviewError() {
+    setCameraPreview((prev) => {
+      if (!prev) return prev;
+      if (prev.currentUrl && prev.fallbackUrl && prev.currentUrl !== prev.fallbackUrl) {
+        return { ...prev, currentUrl: prev.fallbackUrl, fallbackUrl: null };
+      }
+      return { ...prev, currentUrl: null, fallbackUrl: null };
+    });
+  }
+
   return (
     <div className="zorin-wash-log">
+      <Dialog
+        open={Boolean(cameraPreview)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCameraPreview(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              Фото сессии {cameraPreview?.vehicleNumber ? `— ${cameraPreview.vehicleNumber}` : ''}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {cameraPreview?.title && (
+              <div className="text-sm text-muted-foreground">{cameraPreview.title}</div>
+            )}
+            {cameraPreview?.currentUrl ? (
+              <img
+                src={cameraPreview.currentUrl}
+                alt={cameraPreview?.vehicleNumber || 'Фото сессии'}
+                className="max-h-[70vh] w-full rounded-md border object-contain bg-slate-50"
+                onError={handleCameraPreviewError}
+              />
+            ) : (
+              <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+                Не удалось загрузить `plate.jpg` и `thumbnail.jpg` для этой сессии.
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground">
+              Сначала пробуем `plate.jpg` после OCR. Если OCR-картинки ещё нет, показываем `thumbnail.jpg`,
+              который сохраняется во время записи сессии.
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Print date - hidden on screen, shown on print */}
       <div className="print-date" style={{ display: 'none' }}>
         Дата печати: {currentDate}
@@ -199,9 +391,20 @@ export function ZorinWashLogClient({
             </thead>
             <tbody>
               {paginatedEvents.map((event) => {
-                const formattedDate = format(new Date(event.timestamp), 'dd.MM.yyyy HH:mm', { locale: ru });
-                const clientName = event.sourceName ? event.sourceName : paymentMethodTranslations[event.paymentMethod];
+                const entryDate = getDisplayDate(event);
+                const exitDate = getDisplayExitDate(event);
+                const formattedDate = format(entryDate, 'dd.MM.yyyy HH:mm', { locale: ru });
+                const cameraWashDuration = formatDurationShort(event.logTimeline?.washDurationSeconds);
+                const cameraSessionDuration = formatDurationShort(event.logTimeline?.sessionDurationSeconds);
+                const isDismissed = isDismissedWashEvent(event);
+                const isRestored = isRestoredWashEvent(event);
+                const clientName = isDismissed
+                  ? 'Не мылась'
+                  : isRestored
+                    ? 'Возвращена в неоформленные'
+                    : event.sourceName ? event.sourceName : paymentMethodTranslations[event.paymentMethod];
                 const lastEdit = event.editHistory && event.editHistory.length > 0 ? event.editHistory[event.editHistory.length - 1] : null;
+                const hasCameraSession = Boolean(getCameraMediaUrls(event));
 
                 return (
                   <tr key={event.id} className="zorin-table-row">
@@ -227,11 +430,26 @@ export function ZorinWashLogClient({
                         )}
                         <div>
                           <div className="zorin-date-main">
-                            {format(new Date(event.timestamp), 'dd.MM.yyyy', { locale: ru })}
+                            {format(entryDate, 'dd.MM.yyyy', { locale: ru })}
                           </div>
                           <div className="zorin-date-time">
-                            {format(new Date(event.timestamp), 'HH:mm', { locale: ru })}
+                            {format(entryDate, 'HH:mm', { locale: ru })}
                           </div>
+                          {cameraWashDuration && (
+                            <div className="text-[11px] text-blue-600 leading-tight mt-1">
+                              Мылась: {cameraWashDuration}
+                            </div>
+                          )}
+                          {!cameraWashDuration && cameraSessionDuration && (
+                            <div className="text-[11px] text-slate-500 leading-tight mt-1">
+                              Сессия: {cameraSessionDuration}
+                            </div>
+                          )}
+                          {exitDate && (
+                            <div className="text-[11px] text-slate-500 leading-tight">
+                              Выехала: {format(exitDate, 'HH:mm', { locale: ru })}
+                            </div>
+                          )}
                         </div>
                         <div className="zorin-date-icons">
                           {(event.driverComments && event.driverComments.length > 0) && (
@@ -254,11 +472,44 @@ export function ZorinWashLogClient({
                       <div className="zorin-vehicle-number">
                         <Car className="zorin-vehicle-icon" />
                         <span className="font-mono">{event.vehicleNumber}</span>
+                        {hasCameraSession && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 ml-1"
+                            onClick={() => openCameraPreview(event)}
+                            title="Открыть фото камерной сессии"
+                          >
+                            <ImageIcon className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {isDismissed && (
+                          <span className="ml-2 inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                            <Ban className="mr-1 h-3 w-3" />
+                            Не мылась
+                          </span>
+                        )}
+                        {isRestored && (
+                          <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                            <RotateCcw className="mr-1 h-3 w-3" />
+                            Возвращена
+                          </span>
+                        )}
                       </div>
                       <div className="zorin-client-info">
                         <ClientTypeIcon method={event.paymentMethod} />
                         <span>{clientName}</span>
                       </div>
+                      {event.dismissal && (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Удалил: {event.dismissal.dismissedByEmployeeName || employeeMap.get(event.dismissal.dismissedByEmployeeId) || 'Неизвестно'} · {format(new Date(event.dismissal.dismissedAt), 'dd.MM HH:mm', { locale: ru })}
+                        </div>
+                      )}
+                      {event.restoration?.restoredAt && (
+                        <div className="mt-1 text-xs text-amber-700">
+                          Возвращена в очередь: {format(new Date(event.restoration.restoredAt), 'dd.MM HH:mm', { locale: ru })}
+                        </div>
+                      )}
                     </td>
 
                     {/* Services Cell */}
@@ -351,15 +602,24 @@ export function ZorinWashLogClient({
                       <span className={cn("zorin-amount-value", event.refundedAt && "line-through text-red-400")}>
                         {event.totalAmount.toLocaleString('ru-RU')} руб.
                       </span>
+                      {isDismissed && (
+                        <span className="text-xs text-rose-500 block">Заехала и уехала без мойки</span>
+                      )}
+                      {isRestored && (
+                        <span className="text-xs text-amber-600 block">Возвращена в неоформленные</span>
+                      )}
                       {event.refundedAt && (
                         <span className="text-xs text-red-500 block">Возврат</span>
                       )}
                       {event.tips && event.tips > 0 && (
                         <span className="text-xs text-amber-600 block">+{event.tips} чай.</span>
                       )}
+                      {cameraWashDuration && (
+                        <span className="text-xs text-blue-600 block">Время мойки: {cameraWashDuration}</span>
+                      )}
                       {event.washDurationSeconds && event.washDurationSeconds > 0 && (
                         <span className="text-xs text-blue-500 block">
-                          {Math.floor(event.washDurationSeconds / 60)}:{(event.washDurationSeconds % 60).toString().padStart(2, '0')}
+                          Таймер заказа: {Math.floor(event.washDurationSeconds / 60)}:{(event.washDurationSeconds % 60).toString().padStart(2, '0')}
                         </span>
                       )}
                     </td>
@@ -368,6 +628,18 @@ export function ZorinWashLogClient({
                     <td className="zorin-table-cell zorin-actions-cell">
                       <div className="zorin-action-buttons">
                         <EditConsumptionDialog event={event} employees={employees.filter(e => event.employeeIds.includes(e.id))} />
+                        {isDismissed && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="zorin-action-btn edit"
+                            onClick={() => handleRestoreDismissed(event)}
+                            disabled={restoringEventId === event.id}
+                            title="Вернуть в неоформленные"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="icon" asChild className="zorin-action-btn edit">
                           <Link href={`/wash-log/${event.id}/edit`} aria-label={`Редактировать мойку`}>
                             <Edit className="h-4 w-4" />

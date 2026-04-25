@@ -1,7 +1,7 @@
 'use server';
 
-import type { Shift, WashEvent } from '@/types';
-import { getWashEventsData } from '@/lib/data';
+import type { Shift } from '@/types';
+import { getEmployeesData, getWashEventsData } from '@/lib/data';
 import { saveEntity } from '@/lib/data/write-helpers';
 
 interface ShiftReportSummary {
@@ -18,6 +18,7 @@ interface ShiftReportData {
   totalAmount: number;
   byPaymentMethod: Record<string, { count: number; amount: number }>;
   chemicalConsumptionGrams: number;
+  durationSeconds?: number;
   washes: Array<{
     id: string;
     vehicleNumber: string;
@@ -27,52 +28,80 @@ interface ShiftReportData {
   }>;
 }
 
+const TECHNICAL_EMPTY_KIOSK_SHIFT_MS = 15 * 60 * 1000;
+
+function parseTimestamp(value: string): number | null {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 export async function generateShiftReport(shift: Shift): Promise<ShiftReportSummary> {
-  const allWashes = await getWashEventsData();
+  const [allWashes, employees] = await Promise.all([
+    getWashEventsData(),
+    getEmployeesData(),
+  ]);
 
   const startedAt = shift.startedAt || shift.startTime;
   const closedAt = shift.closedAt || new Date().toISOString();
 
-  // Filter washes that belong to this shift
-  const shiftWashes = allWashes.filter(w => {
-    // Direct link via shiftId
-    if (w.shiftId === shift.id) return true;
+  const shiftWashes = allWashes.filter((wash) => {
+    if (wash.shiftId === shift.id) return true;
 
-    // Fallback: time range + employee overlap
-    const wTime = new Date(w.timestamp).getTime();
-    const sTime = new Date(startedAt).getTime();
-    const eTime = new Date(closedAt).getTime();
+    const washTime = new Date(wash.timestamp).getTime();
+    const shiftStartTime = new Date(startedAt).getTime();
+    const shiftEndTime = new Date(closedAt).getTime();
 
-    if (wTime < sTime || wTime > eTime) return false;
+    if (washTime < shiftStartTime || washTime > shiftEndTime) return false;
 
-    const hasEmployeeOverlap = w.employeeIds.some(eid => shift.employeeIds.includes(eid));
-    return hasEmployeeOverlap;
+    return wash.employeeIds.some((employeeId) => shift.employeeIds.includes(employeeId));
   });
 
-  // Aggregate
   const byPaymentMethod: Record<string, { count: number; amount: number }> = {};
   let totalAmount = 0;
   let chemicalConsumptionGrams = 0;
 
-  const washDetails = shiftWashes.map(w => {
-    totalAmount += w.totalAmount;
-    chemicalConsumptionGrams += w.chemicalConsumptionGrams || 0;
+  const washDetails = shiftWashes.map((wash) => {
+    totalAmount += wash.totalAmount;
+    chemicalConsumptionGrams += wash.chemicalConsumptionGrams || 0;
 
-    const pm = w.paymentMethod;
-    if (!byPaymentMethod[pm]) {
-      byPaymentMethod[pm] = { count: 0, amount: 0 };
+    const paymentMethod = wash.paymentMethod;
+    if (!byPaymentMethod[paymentMethod]) {
+      byPaymentMethod[paymentMethod] = { count: 0, amount: 0 };
     }
-    byPaymentMethod[pm].count++;
-    byPaymentMethod[pm].amount += w.totalAmount;
+    byPaymentMethod[paymentMethod].count++;
+    byPaymentMethod[paymentMethod].amount += wash.totalAmount;
 
     return {
-      id: w.id,
-      vehicleNumber: w.vehicleNumber,
-      totalAmount: w.totalAmount,
-      paymentMethod: w.paymentMethod,
-      timestamp: w.timestamp,
+      id: wash.id,
+      vehicleNumber: wash.vehicleNumber,
+      totalAmount: wash.totalAmount,
+      paymentMethod: wash.paymentMethod,
+      timestamp: wash.timestamp,
     };
   });
+
+  const startedAtMs = parseTimestamp(startedAt);
+  const closedAtMs = parseTimestamp(closedAt);
+  const durationMs = startedAtMs !== null && closedAtMs !== null
+    ? Math.max(0, closedAtMs - startedAtMs)
+    : null;
+
+  const employeeRoleMap = new Map(employees.map((employee) => [employee.id, employee.role]));
+  const kioskOnlyShift = shift.employeeIds.length > 0
+    && shift.employeeIds.every((employeeId) => employeeRoleMap.get(employeeId) === 'kiosk');
+
+  const shouldSkipTechnicalReport = shiftWashes.length === 0
+    && totalAmount === 0
+    && kioskOnlyShift
+    && durationMs !== null
+    && durationMs <= TECHNICAL_EMPTY_KIOSK_SHIFT_MS;
+
+  if (shouldSkipTechnicalReport) {
+    return {
+      totalWashes: 0,
+      totalAmount: 0,
+    };
+  }
 
   const reportData: ShiftReportData = {
     shiftId: shift.id,
@@ -83,10 +112,10 @@ export async function generateShiftReport(shift: Shift): Promise<ShiftReportSumm
     totalAmount,
     byPaymentMethod,
     chemicalConsumptionGrams,
+    durationSeconds: durationMs !== null ? Math.round(durationMs / 1000) : undefined,
     washes: washDetails,
   };
 
-  // Save report
   const reportId = `sr_${shift.id}`;
   await saveEntity('shiftReport', {
     id: reportId,
@@ -94,6 +123,7 @@ export async function generateShiftReport(shift: Shift): Promise<ShiftReportSumm
     shiftType: shift.shiftType,
     boxNumber: shift.boxNumber,
     shiftId: shift.id,
+    createdAt: new Date().toISOString(),
     data: reportData,
   });
 
