@@ -22,7 +22,8 @@ function normalize(str: string | undefined | null): string {
 }
 
 // Normalize plate number: remove spaces, convert Cyrillic to Latin for comparison
-function normalizePlate(plate: string): string {
+function normalizePlate(plate: string | undefined | null): string {
+  if (!plate) return '';
   const map: Record<string, string> = {
     'а': 'a', 'в': 'b', 'е': 'e', 'к': 'k', 'м': 'm', 'н': 'h',
     'о': 'o', 'р': 'p', 'с': 'c', 'т': 't', 'у': 'y', 'х': 'x',
@@ -38,7 +39,7 @@ function agentMatchesSearch(agent: CounterAgent, query: string): boolean {
   if (normalize(agent.name).includes(q)) return true;
 
   // Search in companies
-  for (const company of agent.companies) {
+  for (const company of (agent.companies || [])) {
     if (normalize(company.inn).includes(q)) return true;
     if (normalize(company.phone).includes(q)) return true;
     if (normalize(company.companyName).includes(q)) return true;
@@ -50,7 +51,7 @@ function agentMatchesSearch(agent: CounterAgent, query: string): boolean {
 
   // Search in cars (plate numbers)
   const normalizedQuery = normalizePlate(query);
-  for (const car of agent.cars) {
+  for (const car of (agent.cars || [])) {
     if (normalizePlate(car.licensePlate).includes(normalizedQuery)) return true;
   }
 

@@ -98,12 +98,19 @@ function aggregatorFromPrisma(row: any): Aggregator {
 }
 
 function counterAgentFromPrisma(row: any): CounterAgent {
+  const rawCars = parseJsonField(row.cars, []);
+  const cars = rawCars.map((c: any) => ({
+    id: c.id || c.number || '',
+    licensePlate: c.licensePlate || c.number || '',
+    mark: c.mark,
+    category: c.category,
+  }));
   return {
     id: row.id,
     name: row.name,
     balance: row.balance,
     companies: parseJsonField(row.companies, []),
-    cars: parseJsonField(row.cars, []),
+    cars,
     priceList: parseJsonField(row.priceList, []),
     additionalPriceList: parseJsonField(row.additionalPriceList, []),
     allowCustomServices: row.allowCustomServices,
