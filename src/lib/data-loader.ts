@@ -6,6 +6,20 @@ import path from 'path';
 import type { WashEvent, Aggregator, CounterAgent, Employee, SalaryScheme, EmployeeTransaction, RetailPriceConfig, Expense, ClientTransaction, Shift, ShiftSwapRequest, ShiftAssignmentRequest, EmployeeDayStatusEntry, SchedulePlan, Inventory, InventoryMaterial, StockMovement, EmployeeChemicalCanister } from '@/types';
 import { normalizeWashId } from '@/lib/wash';
 
+// Runtime delegation to PG adapter when DATA_SOURCE=postgres. Functions in this
+// file are bound to client-side Server Actions by their stable IDs, so we
+// can't move call sites without re-issuing those IDs. Instead, the
+// implementations below check env on each call and forward to pg-adapter.
+let _pgAdapter: any = null;
+function pgIfPostgres(): any | null {
+  if (process.env.DATA_SOURCE !== 'postgres') return null;
+  if (!_pgAdapter) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    _pgAdapter = require('./data/pg-adapter');
+  }
+  return _pgAdapter;
+}
+
 // In-memory cache variables
 let washEventsCache: WashEvent[] | null = null;
 let aggregatorsCache: Aggregator[] | null = null;
@@ -104,6 +118,7 @@ async function readDataFromDirectory<T>(dirName: string): Promise<T[]> {
 
 // Specific data loader functions using the cache
 export async function getWashEventsData(): Promise<WashEvent[]> {
+  const pg = pgIfPostgres(); if (pg) return pg.getWashEventsData();
   if (washEventsCache) return washEventsCache;
   const events = await readDataFromDirectory<WashEvent>('wash-events');
   events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -112,12 +127,14 @@ export async function getWashEventsData(): Promise<WashEvent[]> {
 }
 
 export async function getAggregatorsData(): Promise<Aggregator[]> {
+  const pg = pgIfPostgres(); if (pg) return pg.getAggregatorsData();
   if (aggregatorsCache) return aggregatorsCache;
   aggregatorsCache = await readDataFromDirectory<Aggregator>('aggregators');
   return aggregatorsCache;
 }
 
 export async function getCounterAgentsData(): Promise<CounterAgent[]> {
+  const pg = pgIfPostgres(); if (pg) return pg.getCounterAgentsData();
   if (!counterAgentsCache) {
     counterAgentsCache = await readDataFromDirectory<CounterAgent>('counter-agents');
   }
@@ -126,23 +143,27 @@ export async function getCounterAgentsData(): Promise<CounterAgent[]> {
 }
 
 export async function getActiveCounterAgentsData(): Promise<CounterAgent[]> {
+  const pg = pgIfPostgres(); if (pg) return pg.getActiveCounterAgentsData();
   const agents = await getCounterAgentsData();
   return filterCounterAgentsByArchive(agents, false);
 }
 
 export async function getEmployeesData(): Promise<Employee[]> {
+  const pg = pgIfPostgres(); if (pg) return pg.getEmployeesData();
   if (employeesCache) return employeesCache;
   employeesCache = await readDataFromDirectory<Employee>('employees');
   return employeesCache;
 }
 
 export async function getSalarySchemesData(): Promise<SalaryScheme[]> {
+  const pg = pgIfPostgres(); if (pg) return pg.getSalarySchemesData();
   if (salarySchemesCache) return salarySchemesCache;
   salarySchemesCache = await readDataFromDirectory<SalaryScheme>('salary-schemes');
   return salarySchemesCache;
 }
 
 export async function getExpensesData(): Promise<Expense[]> {
+    const pg = pgIfPostgres(); if (pg) return pg.getExpensesData();
     if (expensesCache) return expensesCache;
     const expenses = await readDataFromDirectory<Expense>('expenses');
     expenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -151,6 +172,7 @@ export async function getExpensesData(): Promise<Expense[]> {
 }
 
 export async function getAllEmployeeTransactions(): Promise<EmployeeTransaction[]> {
+    const pg = pgIfPostgres(); if (pg) return pg.getAllEmployeeTransactions();
     if (allEmployeeTransactionsCache) return allEmployeeTransactionsCache;
     const transactions = await readDataFromDirectory<EmployeeTransaction>('employee-transactions');
     transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -248,6 +270,7 @@ export async function getSalarySchemeById(id: string): Promise<SalaryScheme | nu
 
 // Special function for retail price list since it's a single file
 export async function getRetailPriceConfig(): Promise<RetailPriceConfig> {
+    const pg = pgIfPostgres(); if (pg) return pg.getRetailPriceConfig();
     if (retailPriceConfigCache) return retailPriceConfigCache;
     
     const dataFile = path.join(process.cwd(), 'data', 'retail-price-list.json');
@@ -363,6 +386,7 @@ export async function getActiveCanisterForEmployee(employeeId: string): Promise<
 }
 
 export async function getAllFinanceDataForEmployee(employeeId: string) {
+    const pg = pgIfPostgres(); if (pg) return pg.getAllFinanceDataForEmployee(employeeId);
     const [allWashEvents, allSchemes, initialTransactions, allEmployees, allViolations] = await Promise.all([
         getWashEventsData(),
         getSalarySchemesData(),
@@ -472,6 +496,7 @@ export async function getActiveSchedulePlan(month: string): Promise<SchedulePlan
 // --- Violations ---
 
 export async function getViolationsData(): Promise<any[]> {
+    const pg = pgIfPostgres(); if (pg) return pg.getViolationsData();
     const items = await readDataFromDirectory('violations');
     items.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return items;

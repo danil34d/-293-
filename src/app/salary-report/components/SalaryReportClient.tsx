@@ -8,7 +8,7 @@ import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, EmployeeTr
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, FilePieChart, TrendingUp, Wallet, AlertTriangle, Trophy, EyeOff, Eye, Car } from 'lucide-react';
-import { getEmployeesData, getWashEventsData, getSalarySchemesData, getAllEmployeeTransactions, getViolationsData } from "@/lib/data";
+import { getEmployeesData, getWashEventsData, getSalarySchemesData, getAllEmployeeTransactions, getViolationsData } from "@/lib/data-loader";
 import { SalaryReportRow } from "./SalaryReportRow";
 import { generateSalaryReport } from "@/services/salary-calculator";
 import { Table, TableBody, TableHeader, TableHead, TableRow } from "@/components/ui/table";
