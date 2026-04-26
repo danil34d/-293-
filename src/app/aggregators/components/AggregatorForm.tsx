@@ -127,7 +127,7 @@ export function AggregatorForm({ initialData, aggregatorId }: AggregatorFormProp
   });
 
   async function onSubmit(data: AggregatorFormValues) {
-    const currentAggregatorId = aggregatorId || `agg_${data.name.toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}`;
+    const currentAggregatorId = aggregatorId || `agg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const parsedCars = (data.cars || '')
         .split('\n')

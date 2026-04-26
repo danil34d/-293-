@@ -43,9 +43,7 @@ export function LicensePlateInput({
 
   // Клик на конкретную позицию для редактирования
   const handlePositionClick = (position: number | 'region', e: React.MouseEvent) => {
-    console.log('handlePositionClick called', position);
     if (disabled) {
-      console.log('disabled, returning');
       return;
     }
 
@@ -54,12 +52,10 @@ export function LicensePlateInput({
     e.preventDefault();
 
     const currentVal = value.toUpperCase();
-    console.log('currentVal:', currentVal);
 
     if (position === 'region') {
       // Удаляем весь регион
       const newValue = currentVal.slice(0, 6).trimEnd();
-      console.log('region delete, newValue:', newValue);
       onChange(newValue);
     } else if (typeof position === 'number' && position >= 0 && position <= 5) {
       // Заменяем символ на пробел, сохраняя остальные позиции
@@ -70,8 +66,6 @@ export function LicensePlateInput({
       const newMainPart = chars.join('');
       const regionPart = currentVal.slice(6);
       const newValue = (newMainPart + regionPart).trimEnd();
-      console.log('char delete, position:', position, 'newValue:', newValue);
-
       // Запоминаем позицию для следующего ввода
       setClickedPosition(position);
       onChange(newValue);
@@ -105,7 +99,6 @@ export function LicensePlateInput({
       };
 
       const char = cyrToLat[key] || key;
-      console.log('[KEYDOWN CLICK MODE] key:', key, 'char:', char, 'position:', clickedPosition);
 
       // Проверяем что символ подходит для этой позиции
       let isValid = false;
@@ -127,7 +120,6 @@ export function LicensePlateInput({
         const regionPart = value.slice(6);
         const newValue = (mainPart + regionPart).trimEnd();
 
-        console.log('[KEYDOWN CLICK MODE] Setting new value:', newValue);
         setClickedPosition(null);
         onChange(newValue);
         return;
@@ -135,8 +127,6 @@ export function LicensePlateInput({
         // Разрешаем удаление
         setClickedPosition(null);
       } else {
-        // Символ не подходит - игнорируем
-        console.log('[KEYDOWN CLICK MODE] Char not valid, ignoring');
         e.preventDefault();
       }
     }
@@ -160,8 +150,6 @@ export function LicensePlateInput({
       setClickedPosition(null);
       return;
     }
-
-    console.log('[NORMAL MODE] input:', input, 'value:', value);
 
     // Получаем текущее состояние (с пробелами как пустыми позициями)
     // ВАЖНО: берём только первые 6 символов для основной части, регион отдельно

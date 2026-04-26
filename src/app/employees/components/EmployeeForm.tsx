@@ -421,7 +421,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
                 <FormItem>
                   <FormLabel>Пароль</FormLabel>
                   <FormControl>
-                    <Input type="text" placeholder={employeeId ? "Новый пароль (не меняется, если пусто)" : "Задайте пароль"} {...field} value={field.value || ''} autoComplete="off" />
+                    <Input type="password" placeholder={employeeId ? "Новый пароль (не меняется, если пусто)" : "Задайте пароль"} {...field} value={field.value || ''} autoComplete="new-password" />
                   </FormControl>
                   <FormDescription>
                     {employeeId ? "Введите новый пароль или оставьте пустым, чтобы сохранить текущий." : "Задайте пароль для входа сотрудника."}

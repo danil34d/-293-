@@ -361,10 +361,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
 
   // Save selectedEmployees to sessionStorage whenever they change
   useEffect(() => {
-    console.log('[SAVE] selectedEmployees changed:', selectedEmployees);
     if (selectedEmployees.length > 0) {
       sessionStorage.setItem('selectedEmployees', JSON.stringify(selectedEmployees));
-      console.log('[SAVE] Saved to sessionStorage:', JSON.stringify(selectedEmployees));
     }
   }, [selectedEmployees]);
 
@@ -1148,8 +1146,6 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   };
 
   const resetFormStateForNewVehicle = (soft = false, keepEmployees = false, clearOcr = true, clearCameraContext = false) => {
-    console.log('[RESET_FORM] Called with soft:', soft, 'keepEmployees:', keepEmployees);
-    console.trace('[RESET_FORM] Stack trace:');
     if(!soft) {
       setVehicleNumberInput('');
       setNormalizedVehicleNumber('');

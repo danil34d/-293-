@@ -95,7 +95,7 @@ export function EmployeePreferencesManager({ employees }: EmployeePreferencesMan
       if (overrideForm.preferredShiftType) body.preferredShiftType = overrideForm.preferredShiftType;
       if (overrideForm.weekdayPreferredShiftType) body.weekdayPreferredShiftType = overrideForm.weekdayPreferredShiftType;
       if (overrideForm.weekendPreferredShiftType) body.weekendPreferredShiftType = overrideForm.weekendPreferredShiftType;
-      if (overrideForm.targetShiftsPerMonth) body.targetShiftsPerMonth = overrideForm.targetShiftsPerMonth;
+      if (overrideForm.targetShiftsPerMonth != null && overrideForm.targetShiftsPerMonth !== '') body.targetShiftsPerMonth = overrideForm.targetShiftsPerMonth;
       if (overrideForm.shiftLoadPreference) body.shiftLoadPreference = overrideForm.shiftLoadPreference;
       if (overrideForm.availableDays) body.availableDays = overrideForm.availableDays;
       if (overrideForm.canWork24hShifts !== undefined) body.canWork24hShifts = overrideForm.canWork24hShifts;

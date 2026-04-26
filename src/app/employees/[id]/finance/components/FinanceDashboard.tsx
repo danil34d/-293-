@@ -36,8 +36,8 @@ import { CommentDialog } from "@/components/common/CommentDialog";
 import { isEmployeeAdmin } from "@/lib/employee-role";
 
 
-const CHEMICAL_CANISTER_PRICE = 3000;
-const CHEMICAL_CANISTER_WEIGHT_G = 20000; // 20 kg in grams
+const DEFAULT_CANISTER_PRICE = 3000;
+const DEFAULT_CANISTER_WEIGHT_G = 21000; // 21 kg in grams (matches inventory defaults)
 
 interface AllData {
     allWashEvents: WashEvent[];
@@ -278,7 +278,7 @@ function ChemicalConsumptionDialog({ employee, washEvents, dailyEarnings, onCons
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [consumptionValues, setConsumptionValues] = useState<EditableConsumption>({});
 
-  const costPerGram = useMemo(() => CHEMICAL_CANISTER_PRICE / CHEMICAL_CANISTER_WEIGHT_G, []);
+  const costPerGram = useMemo(() => DEFAULT_CANISTER_PRICE / DEFAULT_CANISTER_WEIGHT_G, []);
 
   const dailyEarningsMap = useMemo(() => {
     return new Map(dailyEarnings.map(d => [d.date, d.earnings]));
@@ -721,7 +721,7 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
     }, [employeeWashEvents, employee.id]);
     
     const chemicalCost = useMemo(() => {
-        const costPerGram = CHEMICAL_CANISTER_PRICE / CHEMICAL_CANISTER_WEIGHT_G;
+        const costPerGram = DEFAULT_CANISTER_PRICE / DEFAULT_CANISTER_WEIGHT_G;
         return chemicalConsumption * costPerGram;
     }, [chemicalConsumption]);
 
@@ -784,8 +784,8 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
     const handleIssueCanister = async () => {
         const data = {
             type: 'purchase' as EmployeeTransactionType,
-            amount: CHEMICAL_CANISTER_PRICE,
-            description: `Выдача канистры химии (${CHEMICAL_CANISTER_WEIGHT_G / 1000} кг)`
+            amount: DEFAULT_CANISTER_PRICE,
+            description: `Выдача канистры химии (${DEFAULT_CANISTER_WEIGHT_G / 1000} кг)`
         };
         setIsSubmitting(true);
         try {
@@ -889,7 +889,7 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
                                                     </div>
                                                     </TableCell>
                                                     <TableCell className={`text-right font-medium ${displayAmount >= 0 ? 'text-sky-600' : 'text-red-600'}`}>
-                                                        {displayAmount >= 0 ? '+' : ''}{t.amount.toLocaleString('ru-RU')} руб.
+                                                        {displayAmount >= 0 ? '+' : '-'}{t.amount.toLocaleString('ru-RU')} руб.
                                                     </TableCell>
                                                     {isManagerView && (
                                                         <TableCell>

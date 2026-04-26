@@ -26,7 +26,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
     if (!data) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
     }
-    return NextResponse.json(data);
+    const { password, ...safeData } = data;
+    return NextResponse.json(safeData);
   } catch (error: any) {
     console.error(`Error reading employee data for ID ${id}:`, error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

@@ -167,19 +167,9 @@ export function ClientFinanceDashboard({ client, washEvents, initialTransactions
             if (!transactionResponse.ok) throw new Error("Не удалось добавить транзакцию.");
             const newTransaction = await transactionResponse.json();
             
-            // 2. Update client balance
+            // 2. Update local state (server already updated balance in the transaction API)
             const newBalance = (currentClient.balance ?? 0) + data.amount;
-            const apiPath = clientType === 'counter-agent' ? `/api/counter-agents` : `/api/aggregators`;
-            const balanceResponse = await fetch(`${apiPath}/${client.id}`, {
-                 method: 'PUT',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ ...currentClient, balance: newBalance }),
-            });
-            if (!balanceResponse.ok) throw new Error("Не удалось обновить баланс клиента.");
-            const updatedClient = await balanceResponse.json();
-
-            // 3. Update state
-            setCurrentClient(updatedClient.agent || updatedClient.aggregator);
+            setCurrentClient(prev => ({ ...prev, balance: newBalance }));
             setTransactions(prev => [newTransaction.transaction, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
             toast({ title: "Успешно!", description: "Платеж зарегистрирован." });
             setDialogOpen(false);
