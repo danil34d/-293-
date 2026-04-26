@@ -10,25 +10,17 @@ import type {
   EmployeeChemicalCanister, ActiveSession, Violation,
 } from '@/types';
 
-// Resolve the adapter lazily on every CALL — Next.js loads `.env` at runtime,
-// after this module's top-level evaluation. A module-load-time env check would
-// see DATA_SOURCE=undefined and lock the app onto the JSON adapter for the
-// lifetime of the process. The Proxy below returns a wrapper function for any
-// property access so the actual adapter pick happens at the first invocation,
-// when env has been loaded.
-let _adapter: any = null;
-function getAdapter() {
-  if (_adapter) return _adapter;
-  const usePostgres = process.env.DATA_SOURCE === 'postgres';
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  _adapter = usePostgres ? require('./pg-adapter') : require('@/lib/data-loader');
-  return _adapter;
-}
-const adapter: any = new Proxy({}, {
-  get(_, prop: string) {
-    return (...args: any[]) => getAdapter()[prop](...args);
-  },
-});
+const usePostgres = process.env.DATA_SOURCE === 'postgres';
+
+// Diagnostic: surface which adapter loaded and the env state at module-eval time
+// so we can tell from prod logs whether DATA_SOURCE was visible. Remove after
+// the salary-report stale-data investigation closes.
+console.log(`[data/index] DATA_SOURCE=${process.env.DATA_SOURCE ?? '<unset>'} usePostgres=${usePostgres}`);
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const adapter = usePostgres
+  ? require('./pg-adapter')
+  : require('@/lib/data-loader');
 
 // ─── Read functions ─────────────────────────────────────────
 
