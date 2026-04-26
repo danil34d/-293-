@@ -12,11 +12,6 @@ import type {
 
 const usePostgres = process.env.DATA_SOURCE === 'postgres';
 
-// Diagnostic: surface which adapter loaded and the env state at module-eval time
-// so we can tell from prod logs whether DATA_SOURCE was visible. Remove after
-// the salary-report stale-data investigation closes.
-console.log(`[data/index] DATA_SOURCE=${process.env.DATA_SOURCE ?? '<unset>'} usePostgres=${usePostgres}`);
-
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const adapter = usePostgres
   ? require('./pg-adapter')
