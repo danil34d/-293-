@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { Employee, EmployeeRole } from '@/types';
-import { invalidateEmployeesCache } from '@/lib/data';
+import { getEmployeesData, invalidateEmployeesCache } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { hashPassword } from '@/lib/password-hash';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
@@ -50,6 +50,15 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         updatedData.id = id;
     }
     updatedData.role = normalizeEmployeeRole(updatedData.role);
+
+    // Check username uniqueness (exclude self)
+    if (updatedData.username) {
+      const existing = await getEmployeesData();
+      const duplicate = existing.find(e => e.username === updatedData.username && e.id !== id);
+      if (duplicate) {
+        return NextResponse.json({ error: `Логин "${updatedData.username}" уже занят сотрудником ${duplicate.fullName}` }, { status: 409 });
+      }
+    }
 
     // Password handling: if empty — keep old, if provided — hash it
     if (!updatedData.password) {

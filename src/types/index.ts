@@ -90,6 +90,8 @@ export interface Aggregator {
   id: string;
   name: string;
   balance?: number;
+  archived?: boolean;
+  archivedAt?: string;
   companies?: CounterAgentCompany[];
   cars: Car[];
   priceLists: NamedPriceList[];

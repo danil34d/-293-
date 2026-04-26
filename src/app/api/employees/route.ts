@@ -42,6 +42,16 @@ export async function POST(request: Request) {
        return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
     }
     newEmployee.role = normalizeEmployeeRole(newEmployee.role);
+
+    // Check username uniqueness
+    if (newEmployee.username) {
+      const existing = await getEmployeesData();
+      const duplicate = existing.find(e => e.username === newEmployee.username && e.id !== newEmployee.id);
+      if (duplicate) {
+        return NextResponse.json({ error: `Логин "${newEmployee.username}" уже занят сотрудником ${duplicate.fullName}` }, { status: 409 });
+      }
+    }
+
     // Hash password if provided
     if (newEmployee.password) {
       newEmployee.password = await hashPassword(newEmployee.password);

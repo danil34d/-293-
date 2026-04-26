@@ -655,8 +655,8 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
             }
         });
 
-        // debt_write_off увеличивает баланс, штрафы уменьшают
-        summary.balance = summary.totalEarned + summary.bonuses + summary.debtWriteOffs - summary.payments - summary.loansAndPurchases - summary.totalPenalties;
+        // debt_write_off и tips увеличивают баланс, штрафы уменьшают
+        summary.balance = summary.totalEarned + summary.bonuses + summary.debtWriteOffs + summary.tips - summary.payments - summary.loansAndPurchases - summary.totalPenalties;
         return summary;
     }, [salaryData, filteredTransactions, employeeWashEvents]);
 

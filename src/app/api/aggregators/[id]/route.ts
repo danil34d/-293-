@@ -50,6 +50,44 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
 }
 
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  const auth = requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
+  const { id } = params;
+  if (!id) {
+    return NextResponse.json({ error: 'Aggregator ID is required for PATCH' }, { status: 400 });
+  }
+
+  try {
+    const patch = await request.json();
+    const existingData = await readEntity<Aggregator>('aggregator', id);
+    if (!existingData) {
+      return NextResponse.json({ error: 'Aggregator not found' }, { status: 404 });
+    }
+
+    if (typeof patch.archived !== 'boolean') {
+      return NextResponse.json({ error: 'Field "archived" must be boolean' }, { status: 400 });
+    }
+
+    const updatedData: Aggregator = {
+      ...existingData,
+      archived: patch.archived,
+      archivedAt: patch.archived ? (existingData.archivedAt || new Date().toISOString()) : undefined,
+    };
+
+    await saveEntity('aggregator', updatedData);
+    invalidateAggregatorsCache();
+    return NextResponse.json({
+      message: patch.archived ? 'Aggregator archived successfully' : 'Aggregator restored successfully',
+      aggregator: updatedData,
+    });
+  } catch (error: any) {
+    console.error(`Error patching aggregator ${id}:`, error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
@@ -60,9 +98,12 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   }
 
   try {
-    const existing = await readEntity('aggregator', id);
+    const existing = await readEntity<Aggregator>('aggregator', id);
     if (!existing) {
       return NextResponse.json({ error: 'Aggregator not found' }, { status: 404 });
+    }
+    if (!existing.archived) {
+      return NextResponse.json({ error: 'Сначала нужно архивировать агрегатора' }, { status: 400 });
     }
     await deleteEntity('aggregator', id);
     invalidateAggregatorsCache();
