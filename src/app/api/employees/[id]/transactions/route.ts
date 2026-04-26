@@ -39,16 +39,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const currentTransactions = await getEmployeeTransactions(employeeId);
 
     // Idempotency: silently drop a duplicate `payment` of identical amount
-    // posted within 30 seconds. Prevents accidental double-clicks on
-    // /salary-report from creating multiple payouts for the same period.
+    // posted on the same calendar day for the same employee. Stops the
+    // /salary-report stale-read loop from minting fresh duplicates whenever
+    // the UI shows an outdated `К выплате` and the user clicks again.
     if (newTransactionData.type === 'payment') {
-        const now = Date.now();
-        const DUP_WINDOW_MS = 30_000;
+        const today = new Date().toISOString().slice(0, 10);
         const recentDuplicate = currentTransactions.find((t) => {
             if (t.type !== 'payment') return false;
             if (Math.abs(Number(t.amount) - parsedAmount) > 0.005) return false;
-            const txnTime = new Date(t.date).getTime();
-            return Number.isFinite(txnTime) && now - txnTime < DUP_WINDOW_MS;
+            const txnDay = String(t.date).slice(0, 10);
+            return txnDay === today;
         });
         if (recentDuplicate) {
             return NextResponse.json(

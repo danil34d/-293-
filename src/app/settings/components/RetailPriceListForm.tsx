@@ -15,7 +15,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { getRetailPriceConfig } from "@/lib/data-loader";
+import { getRetailPriceConfig } from "@/lib/data";
 import { useReactToPrint } from "react-to-print";
 import { PrintablePriceList } from "./PrintablePriceList";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";

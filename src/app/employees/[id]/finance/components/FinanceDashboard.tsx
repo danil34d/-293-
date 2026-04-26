@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { DialogDescription } from "@/components/ui/dialog";
 import { EarningsChart } from "./EarningsChart";
 import { EmployeeCanistersCard } from "./EmployeeCanistersCard";
-import { getAllFinanceDataForEmployee } from "@/lib/data-loader";
+import { getAllFinanceDataForEmployee } from "@/lib/data";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { CommentDialog } from "@/components/common/CommentDialog";
