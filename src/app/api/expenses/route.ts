@@ -3,16 +3,9 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { Expense } from '@/types';
-import { getExpensesData, invalidateExpensesCache, invalidateInventoryCache, getInventory } from '@/lib/data';
+import { getExpensesData, invalidateExpensesCache } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
-import { saveEntity, saveInventoryData } from '@/lib/data/write-helpers';
-
-async function updateInventory(changeInGrams: number) {
-    const inventory = await getInventory();
-    inventory.chemicalStockGrams += changeInGrams;
-    await saveInventoryData(inventory);
-    invalidateInventoryCache();
-}
+import { saveEntity } from '@/lib/data/write-helpers';
 
 
 export async function GET() {
@@ -35,21 +28,15 @@ export async function POST(request: Request) {
        return NextResponse.json({ error: 'Expense ID is required' }, { status: 400 });
     }
 
-    // Write expense FIRST - if this fails, inventory won't be updated
+    // Persist the expense only. Inventory updates are owned by
+    // /api/stock-movements (which is the audit source for stock balance
+    // changes). Previously this route also added quantity*1000 grams to
+    // inventory.chemicalStockGrams when category was "Закупка химии",
+    // which double-counted every chemical purchase made through the UI
+    // (handlePurchaseChemical posts to both /api/stock-movements and
+    // /api/expenses, so the stock would be credited twice).
     await saveEntity('expense', newExpense);
     invalidateExpensesCache();
-
-    // Only update inventory after expense is successfully saved
-    // Check for chemical purchase (handle "кг", "кг.", "кг ", etc.)
-    const isChemicalPurchase = newExpense.category === 'Закупка химии' &&
-                               newExpense.unit &&
-                               newExpense.unit.trim().toLowerCase().startsWith('кг') &&
-                               typeof newExpense.quantity === 'number';
-
-    if (isChemicalPurchase) {
-        const amountInGrams = (newExpense.quantity ?? 0) * 1000;
-        await updateInventory(amountInGrams);
-    }
 
     return NextResponse.json({ message: 'Expense created successfully', expense: newExpense }, { status: 201 });
   } catch (error) {
