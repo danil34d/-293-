@@ -140,6 +140,10 @@ export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earn
     const { toast } = useToast();
     const router = useRouter();
     const [isPaying, setIsPaying] = useState(false);
+    // Hide button after a successful pay until parent provides fresh props.
+    // Prevents the user from triggering duplicate payments while the data
+    // refresh round-trips back from the server.
+    const [justPaid, setJustPaid] = useState(false);
 
     const payableTotal = balanceAtStart + earningsForPeriod + otherOperationsTotal - paymentsForPeriod;
 
@@ -148,6 +152,7 @@ export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earn
             toast({ title: "Нечего выплачивать", description: "Сумма к выплате равна нулю или отрицательна.", variant: "default" });
             return;
         }
+        if (isPaying || justPaid) return;
 
         setIsPaying(true);
         try {
@@ -160,9 +165,19 @@ export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earn
                     description: `Выплата зарплаты за период`
                 }),
             });
-            if (!response.ok) throw new Error("Не удалось зарегистрировать выплату.");
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(result?.error || "Не удалось зарегистрировать выплату.");
+            }
 
-            toast({ title: "Успешно!", description: `Сотруднику ${employeeName} выплачено ${payableTotal.toLocaleString('ru-RU')} руб.` });
+            setJustPaid(true);
+            const skipped = result?.skipped === true;
+            toast({
+                title: skipped ? "Уже выплачено" : "Успешно!",
+                description: skipped
+                    ? `Дублирующая выплата ${payableTotal.toLocaleString('ru-RU')} руб. отклонена.`
+                    : `Сотруднику ${employeeName} выплачено ${payableTotal.toLocaleString('ru-RU')} руб.`,
+            });
             router.refresh();
             onActionSuccess();
         } catch (error: any) {
@@ -251,7 +266,7 @@ export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earn
             {/* Actions */}
             <TableCell className="text-center py-3">
                 <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {payableTotal > 0 && (
+                    {payableTotal > 0 && !justPaid && (
                         <Button
                             onClick={handlePay}
                             disabled={isPaying}

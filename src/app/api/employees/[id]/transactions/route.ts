@@ -38,6 +38,26 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     const currentTransactions = await getEmployeeTransactions(employeeId);
 
+    // Idempotency: silently drop a duplicate `payment` of identical amount
+    // posted within 30 seconds. Prevents accidental double-clicks on
+    // /salary-report from creating multiple payouts for the same period.
+    if (newTransactionData.type === 'payment') {
+        const now = Date.now();
+        const DUP_WINDOW_MS = 30_000;
+        const recentDuplicate = currentTransactions.find((t) => {
+            if (t.type !== 'payment') return false;
+            if (Math.abs(Number(t.amount) - parsedAmount) > 0.005) return false;
+            const txnTime = new Date(t.date).getTime();
+            return Number.isFinite(txnTime) && now - txnTime < DUP_WINDOW_MS;
+        });
+        if (recentDuplicate) {
+            return NextResponse.json(
+                { message: 'Duplicate payment ignored', skipped: true, transaction: recentDuplicate },
+                { status: 200 },
+            );
+        }
+    }
+
     const transactionToSave: EmployeeTransaction = {
       id: `txn_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       employeeId: employeeId,
