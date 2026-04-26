@@ -41,6 +41,11 @@ interface DayAnalysis {
   windHint: string | null;
 }
 
+// TODO(weather-patterns): эти жёстко прописанные правила — текущий движок прогноза.
+// UI на /weather-patterns и /api/weather/patterns хранят пользовательские паттерны
+// (AppConfig.weatherPatterns), но сюда они НЕ подключены. План: после накопления
+// статистики (DailyStats: погода + кол-во моек + выручка) — заменить эти ветки на
+// матчинг по обученным паттернам с весами и confirmations/corrections.
 function analyzeDay(
   day: VyaznikiForecastDay,
   prevDay: VyaznikiForecastDay | null,

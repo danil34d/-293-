@@ -141,13 +141,18 @@ export default function WeatherPatternsTab() {
         </Button>
       </div>
 
-      {/* Info */}
-      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex gap-2 text-sm text-blue-800">
-        <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-        <span>
-          Система анализирует прогноз погоды и по паттернам определяет загрузку.
-          Встроенные паттерны нельзя удалить, но можно менять описание и уровень.
-        </span>
+      {/* Warning: feature in development */}
+      <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex gap-2 text-sm text-amber-900">
+        <Info className="h-4 w-4 text-amber-700 mt-0.5 flex-shrink-0" />
+        <div className="space-y-1">
+          <p className="font-semibold">⚠️ Фича в разработке — паттерны пока не влияют на прогноз</p>
+          <p className="text-xs">
+            Сейчас прогноз использует встроенные правила в коде (см. <code>analyzeDay</code>).
+            Когда накопится 1–2 месяца статистики (моек, выручки, погоды), эти паттерны
+            будут обучаться на реальных данных и подсказывать сколько сотрудников нужно завтра.
+            Записи здесь сохраняются, но игнорируются движком прогноза.
+          </p>
+        </div>
       </div>
 
       {/* Legend */}
