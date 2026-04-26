@@ -12,6 +12,36 @@ export async function POST(request: Request) {
     const auth = requireAdmin();
     if (auth instanceof NextResponse) return auth;
 
+    // When the app is running on PostgreSQL, the legacy JSON wipe below would
+    // have no effect on what users see (reads come from PG via data-loader's
+    // runtime delegation). Dispatch to the PG-side helper, which runs the
+    // delete in a single transaction.
+    if (process.env.DATA_SOURCE === 'postgres') {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const pg = require('@/lib/data/pg-adapter');
+      await pg.resetFinancialData();
+      // Drop in-memory caches in data-loader so the JSON branch (used as a
+      // fallback path through delegation) doesn't keep serving pre-reset
+      // values to anything that reads through it.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const dl = require('@/lib/data-loader');
+      await Promise.all([
+        dl.invalidateWashEventsCache?.(),
+        dl.invalidateAllEmployeeTransactionsCache?.(),
+        dl.invalidateAllClientTransactionsCache?.(),
+        dl.invalidateExpensesCache?.(),
+        dl.invalidateStockMovementsCache?.(),
+        dl.invalidateAggregatorsCache?.(),
+        dl.invalidateCounterAgentsCache?.(),
+        dl.invalidateInventoryCache?.(),
+      ].filter(Boolean));
+      return NextResponse.json({
+        message: 'Финансовые данные очищены (PostgreSQL)',
+        cleared: ['wash-events', 'employee-transactions', 'expenses', 'client-transactions', 'stock-movements', 'inventory.balance', 'aggregator.balance', 'counter-agent.balance'],
+        store: 'postgres',
+      });
+    }
+
     // Directories/files to clear (wash events, transactions, expenses)
     const pathsToClear = [
       path.join(dataDir, 'wash-events'),
