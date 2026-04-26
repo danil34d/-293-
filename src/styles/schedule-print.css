@@ -1,7 +1,31 @@
-/* Schedule Print Styles */
+/* Schedule Print Styles — A4 landscape, wall-friendly */
+
+/* ===== Print-only / Screen-only utilities ===== */
+.print-only {
+  display: none !important;
+}
 
 @media print {
-  /* Hide non-essential elements */
+  .print-only {
+    display: revert !important;
+  }
+  span.print-only {
+    display: inline !important;
+  }
+  div.print-only {
+    display: block !important;
+  }
+  .screen-only {
+    display: none !important;
+  }
+
+  /* ===== Page setup ===== */
+  @page {
+    size: A4 landscape;
+    margin: 5mm 4mm;
+  }
+
+  /* ===== Hide non-essential elements ===== */
   .print-hidden,
   nav,
   aside,
@@ -13,7 +37,32 @@
     display: none !important;
   }
 
-  /* Reset page styles */
+  /* Hide all buttons */
+  button {
+    display: none !important;
+  }
+
+  /* Hide weather load scale legend */
+  .flex.flex-wrap.items-center.gap-3 {
+    display: none !important;
+  }
+
+  /* Hide weather info inside header cells */
+  thead th .text-\[10px\] {
+    display: none !important;
+  }
+
+  /* Hide auto-assign indicator dots */
+  .absolute.-top-1.-right-1 {
+    display: none !important;
+  }
+
+  /* Hide interactive rings */
+  [class*="ring-"] {
+    box-shadow: none !important;
+  }
+
+  /* ===== Reset layout ===== */
   html, body {
     background: white !important;
     -webkit-print-color-adjust: exact;
@@ -22,7 +71,7 @@
     padding: 0 !important;
   }
 
-  /* Force full width for all containers */
+  /* Break out of Next.js layout wrappers */
   body > div,
   body > div > div,
   body > div > div > div,
@@ -37,85 +86,184 @@
     left: 0 !important;
   }
 
-  /* Schedule container */
+  /* Schedule container — minimal padding */
   .space-y-4 {
-    padding: 10px !important;
+    padding: 0 !important;
     background: white !important;
     width: 100% !important;
     max-width: 100% !important;
+    gap: 2px !important;
   }
 
-  /* Table container */
+  .space-y-4 > * + * {
+    margin-top: 2px !important;
+  }
+
+  /* ===== Print title (visible only on paper) ===== */
+  .print-title {
+    display: block !important;
+    text-align: center;
+    margin-bottom: 3px !important;
+    padding: 0 !important;
+  }
+
+  .print-title-main {
+    font-size: 14pt !important;
+    font-weight: 900 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #000 !important;
+  }
+
+  .print-title-sub {
+    font-size: 10pt !important;
+    font-weight: 600 !important;
+    color: #444 !important;
+    margin-top: 1px;
+  }
+
+  /* ===== Legend — compact, centered ===== */
+  .flex.flex-wrap.gap-4 {
+    display: flex !important;
+    gap: 10px !important;
+    margin-bottom: 3px !important;
+    font-size: 7pt !important;
+    justify-content: center !important;
+  }
+
+  .flex.flex-wrap.gap-4 span {
+    font-size: 7pt !important;
+  }
+
+  .w-6.h-6 {
+    width: 12px !important;
+    height: 12px !important;
+    font-size: 6pt !important;
+    border-radius: 1px !important;
+    min-width: 12px !important;
+  }
+
+  /* ===== Table container ===== */
   .overflow-x-auto {
     overflow: visible !important;
-    border: 1px solid #000 !important;
+    border: 2px solid #000 !important;
     border-radius: 0 !important;
   }
 
-  /* Table styles */
+  /* ===== Table ===== */
   table {
     width: 100% !important;
     table-layout: fixed !important;
     border-collapse: collapse !important;
   }
 
-  /* Table header */
+  /* CRITICAL: override Tailwind min-width to fit A4 */
+  th, td {
+    min-width: 0 !important;
+  }
+
+  /* ===== Table header ===== */
   thead tr {
-    background: #e5e7eb !important;
+    background: #e0e0e0 !important;
   }
 
   thead th {
     border: 1px solid #000 !important;
     color: #000 !important;
-    font-size: 7pt !important;
-    padding: 2px 3px !important;
-    line-height: 1.1 !important;
+    font-size: 7.5pt !important;
+    padding: 3px 1px !important;
+    line-height: 1.2 !important;
     text-align: center !important;
     vertical-align: middle !important;
+    overflow: hidden !important;
   }
 
-  /* First two columns (№ and Name) */
-  thead th:first-child {
-    width: 25px !important;
+  /* Day number in header — bigger */
+  thead th .text-xs.font-bold {
+    font-size: 8pt !important;
+    font-weight: 900 !important;
   }
 
+  /* Day-of-week abbreviation — smaller but visible */
+  thead th .text-xs.font-normal {
+    font-size: 6pt !important;
+    opacity: 0.6 !important;
+  }
+
+  /* ===== Column widths ===== */
+
+  /* # column — narrow */
+  thead th:first-child,
+  tbody td:first-child,
+  tfoot td:first-child {
+    width: 16px !important;
+    font-size: 6pt !important;
+  }
+
+  /* Employee name column */
   thead th:nth-child(2) {
-    width: 100px !important;
+    width: 90px !important;
     text-align: left !important;
+    padding-left: 3px !important;
+    font-size: 7pt !important;
   }
 
-  /* Stats columns */
+  /* Stats columns (last 4) */
   thead th:nth-last-child(1),
   thead th:nth-last-child(2),
   thead th:nth-last-child(3),
   thead th:nth-last-child(4) {
-    width: 30px !important;
+    width: 22px !important;
+    font-size: 6pt !important;
+    background: #d0d0d0 !important;
   }
 
-  /* Data rows */
+  /* Stats header badges */
+  thead th .w-5.h-5 {
+    width: 10px !important;
+    height: 10px !important;
+    font-size: 5pt !important;
+    border-radius: 1px !important;
+  }
+
+  /* ===== Data rows ===== */
   tbody tr {
-    border: 1px solid #ccc !important;
+    border-bottom: 1px solid #888 !important;
     page-break-inside: avoid;
   }
 
+  /* Alternate row shading for readability on wall */
+  tbody tr:nth-child(even) {
+    background: #fafafa !important;
+  }
+
   tbody td {
-    border: 1px solid #ccc !important;
-    padding: 2px 3px !important;
-    line-height: 1.1 !important;
+    border: 1px solid #aaa !important;
+    padding: 2px 1px !important;
+    line-height: 1.15 !important;
     vertical-align: middle !important;
-    font-size: 7pt !important;
+    font-size: 7.5pt !important;
     text-align: center !important;
   }
 
-  /* First two columns in body */
+  /* # column in body */
   tbody td:first-child {
     text-align: center !important;
     font-weight: bold !important;
+    font-size: 6pt !important;
+    color: #888 !important;
   }
 
+  /* Employee name — the most important column */
   tbody td:nth-child(2) {
     text-align: left !important;
-    font-weight: normal !important;
+    font-weight: 700 !important;
+    font-size: 8pt !important;
+    padding-left: 3px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    color: #000 !important;
   }
 
   /* Stats columns in body */
@@ -124,10 +272,14 @@
   tbody td:nth-last-child(3),
   tbody td:nth-last-child(4) {
     font-weight: bold !important;
-    background: #f3f4f6 !important;
+    background: #f0f0f0 !important;
+    font-size: 7pt !important;
+    border-left: 1.5px solid #000 !important;
   }
 
-  /* Shift cells - preserve colors */
+  /* ===== Shift badges — THE MAIN EVENT ===== */
+
+  /* Color mode: green = day, blue = night */
   .bg-green-500 {
     background: #22c55e !important;
     color: #fff !important;
@@ -142,80 +294,140 @@
     print-color-adjust: exact;
   }
 
-  /* Compact shift badges */
+  /* Shift badge sizing — big and bold for wall readability */
   .rounded {
-    padding: 1px 3px !important;
-    font-size: 6pt !important;
-    font-weight: bold !important;
+    padding: 1px 2px !important;
+    font-size: 8pt !important;
+    font-weight: 900 !important;
     border-radius: 2px !important;
+    line-height: 1.3 !important;
+    letter-spacing: 0.5px;
   }
 
-  /* Weekend highlighting */
+  /* Gap between multiple shifts in one cell */
+  .flex.flex-col.gap-0\.5 {
+    gap: 1px !important;
+  }
+
+  /* Empty cell dash — subtle */
+  td .text-center.text-gray-300 {
+    color: #ddd !important;
+    font-size: 6pt !important;
+  }
+
+  /* ===== Weekend columns ===== */
+  thead th.bg-slate-600 {
+    background: #bbb !important;
+  }
+
   .bg-gray-50 {
-    background: #f9fafb !important;
+    background: #f2f2f2 !important;
   }
 
-  /* Hide hover effects */
-  .hover\:bg-gray-100:hover {
+  /* Today highlight — no special treatment in print (it's static on paper) */
+  .bg-amber-50,
+  .bg-amber-100 {
     background: transparent !important;
   }
 
-  /* Legend - make compact */
-  .flex.flex-wrap.gap-4 {
-    display: flex !important;
-    gap: 8px !important;
-    margin-bottom: 5px !important;
+  .border-amber-300 {
+    border-color: #aaa !important;
+  }
+
+  /* ===== Footer row ===== */
+  tfoot tr {
+    background: #e0e0e0 !important;
+    border-top: 2px solid #000 !important;
+  }
+
+  tfoot td {
+    border: 1px solid #888 !important;
     font-size: 7pt !important;
+    font-weight: 700 !important;
+    padding: 3px 1px !important;
+    text-align: center !important;
   }
 
-  .w-6.h-6 {
-    width: 14px !important;
-    height: 14px !important;
-    font-size: 6pt !important;
+  /* ===== Hide interactive states ===== */
+  .hover\:bg-gray-100:hover,
+  .hover\:bg-gray-50:hover,
+  .hover\:opacity-80:hover {
+    background: transparent !important;
   }
 
-  /* Page settings - landscape for wide table */
-  @page {
-    margin: 0.5cm;
-    size: A4 landscape;
+  .cursor-pointer {
+    cursor: default !important;
   }
 
-  /* Print header with date */
-  .flex.items-center.justify-between {
-    margin-bottom: 5px !important;
-  }
-
-  .flex.items-center.gap-4 {
-    justify-content: center !important;
-  }
-
-  .text-xl {
-    font-size: 10pt !important;
-    font-weight: bold !important;
-  }
-
-  /* Hide navigation buttons */
-  button {
+  /* Day-by-day cards — always hidden in print */
+  .mt-6.print-hidden {
     display: none !important;
-  }
-
-  .text-xl.font-medium {
-    display: block !important;
-    font-size: 10pt !important;
   }
 }
 
-/* B&W print — active when body.bw-print is set */
+/* ============================= */
+/* B&W print mode (body.bw-print) */
+/* ============================= */
 @media print {
-  body.bw-print .bg-green-500,
-  body.bw-print .bg-blue-500,
-  body.bw-print [class*="bg-green"],
-  body.bw-print [class*="bg-blue"],
+  /* Day shifts — white bg, bold black border, "Д" clearly visible */
+  body.bw-print .bg-green-500 {
+    background: white !important;
+    color: #000 !important;
+    border: 2px solid #000 !important;
+    font-weight: 900 !important;
+  }
+
+  /* Night shifts — DARK bg, white text — instantly recognizable on wall */
+  body.bw-print .bg-blue-500 {
+    background: #222 !important;
+    color: #fff !important;
+    border: 2px solid #000 !important;
+    font-weight: 900 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Remove weather-based cell tinting */
+  body.bw-print [class*="bg-green-1"],
+  body.bw-print [class*="bg-yellow"],
   body.bw-print [class*="bg-orange"],
-  body.bw-print [class*="bg-red"],
-  body.bw-print [class*="bg-yellow"] {
+  body.bw-print [class*="bg-red-1"],
+  body.bw-print [class*="bg-amber"] {
+    background: white !important;
+  }
+
+  /* Header */
+  body.bw-print thead tr {
+    background: #ddd !important;
+  }
+
+  /* Weekend columns */
+  body.bw-print .bg-gray-50 {
+    background: #eee !important;
+  }
+
+  /* Stats columns */
+  body.bw-print tbody td:nth-last-child(1),
+  body.bw-print tbody td:nth-last-child(2),
+  body.bw-print tbody td:nth-last-child(3),
+  body.bw-print tbody td:nth-last-child(4) {
+    background: #e8e8e8 !important;
+  }
+
+  /* Legend badges in B&W */
+  body.bw-print .w-6.h-6.bg-green-500,
+  body.bw-print .bg-green-500.w-6 {
     background: white !important;
     color: black !important;
-    border: 1px solid #333 !important;
+    border: 2px solid #000 !important;
+  }
+
+  body.bw-print .w-6.h-6.bg-blue-500,
+  body.bw-print .bg-blue-500.w-6 {
+    background: #222 !important;
+    color: white !important;
+    border: 2px solid #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

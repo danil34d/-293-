@@ -695,8 +695,18 @@ export function ScheduleCalendar({ initialShifts, initialMonth, initialWashId, e
 
   return (
     <div className="space-y-4">
+      {/* Print-only title — visible only on paper */}
+      <div className="print-only print-title">
+        <div className="print-title-main">
+          График — {format(currentMonth, 'LLLL yyyy', { locale: ru })}
+        </div>
+        <div className="print-title-sub">
+          Мойка {selectedWashId === 'wash_1' ? '1' : '2'}, Бокс {calendarBoxFilter}
+        </div>
+      </div>
+
       {/* Header with navigation */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between print-hidden">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>
             <ChevronLeft className="h-4 w-4" />
@@ -987,7 +997,8 @@ export function ScheduleCalendar({ initialShifts, initialMonth, initialWashId, e
                                   className={`${bgColor} text-white rounded px-1 py-0.5 text-center font-bold text-xs relative`}
                                   title={`Бокс ${box} - ${isDay ? 'Дневная' : 'Ночная'}${isAuto ? ' (Авто-назначена)' : ''}`}
                                 >
-                                  {box}
+                                  <span className="screen-only">{box}</span>
+                                  <span className="print-only">{isDay ? 'Д' : 'Н'}</span>
                                   {isAuto && (
                                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-300 text-green-800 rounded-full flex items-center justify-center text-[8px] font-bold">
                                       А
