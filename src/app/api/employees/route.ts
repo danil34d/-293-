@@ -5,10 +5,22 @@ import { NextResponse } from 'next/server';
 import type { Employee, EmployeeRole } from '@/types';
 import { getEmployeesData, invalidateEmployeesCache } from '@/lib/data';
 import { requireAuth, requireAdmin } from '@/lib/server-auth';
+import { hasAdminAccess } from '@/lib/employee-role';
 import { hashPassword } from '@/lib/password-hash';
 import { saveEntity } from '@/lib/data/write-helpers';
 
 const VALID_ROLES: EmployeeRole[] = ['admin', 'employee', 'kiosk'];
+
+const PUBLIC_FIELDS_FOR_NON_ADMIN = ['id', 'fullName', 'role', 'username'] as const;
+
+function pickPublicFields(emp: Employee): Pick<Employee, typeof PUBLIC_FIELDS_FOR_NON_ADMIN[number]> {
+  return {
+    id: emp.id,
+    fullName: emp.fullName,
+    role: emp.role,
+    username: emp.username,
+  };
+}
 
 function normalizeEmployeeRole(requestedRole?: EmployeeRole): EmployeeRole {
   if (requestedRole && VALID_ROLES.includes(requestedRole)) return requestedRole;
@@ -21,10 +33,16 @@ export async function GET() {
 
   try {
     const employees = await getEmployeesData();
-    // Убираем пароли и киоск-аккаунты из ответа
-    const safeEmployees = employees
-      .filter(emp => emp.role !== 'kiosk')
-      .map(({ password, ...emp }) => emp);
+    const filteredEmployees = employees.filter((emp) => emp.role !== 'kiosk');
+
+    if (hasAdminAccess(auth)) {
+      const safeEmployees = filteredEmployees.map(({ password, ...emp }) => emp);
+      return NextResponse.json(safeEmployees);
+    }
+
+    // Non-admin caller: strip PII (phone, paymentDetails, telegramChatId, etc.)
+    // Only safe fields needed for shift display, swap UI, employee selectors.
+    const safeEmployees = filteredEmployees.map(pickPublicFields);
     return NextResponse.json(safeEmployees);
   } catch (error) {
     console.error('Error reading employees directory:', error);

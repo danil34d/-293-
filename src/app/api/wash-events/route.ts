@@ -4,12 +4,28 @@ import { NextResponse } from 'next/server';
 import type { WashEvent } from '@/types';
 import { getWashEventsData } from '@/lib/data';
 import { requireAuth } from '@/lib/server-auth';
+import { hasAdminAccess, isKiosk } from '@/lib/employee-role';
 import { createWashEvent } from '@/services/wash-event-create-service';
 
 export async function GET() {
+  const auth = requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const events = await getWashEventsData();
-    return NextResponse.json(events);
+
+    // Admin и kiosk (включая legacy kiosk1 для рабочего телефона в боксе)
+    // видят все мойки. Обычный сотрудник — только те, где он указан в
+    // employeeIds. Игнорируем query-параметр employeeId для employee-роли
+    // — фильтрация всегда по cookie identity.
+    if (hasAdminAccess(auth) || isKiosk(auth) || (auth.role as string) === 'kiosk1') {
+      return NextResponse.json(events);
+    }
+
+    const ownEvents = events.filter((event) =>
+      Array.isArray(event.employeeIds) && event.employeeIds.includes(auth.id)
+    );
+    return NextResponse.json(ownEvents);
   } catch (error) {
     console.error('Error reading wash events directory:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

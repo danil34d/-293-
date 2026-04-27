@@ -1238,9 +1238,15 @@ export async function deleteEmployeeCanister(id: string): Promise<void> {
 // --- Shift Reports ---
 
 export async function saveShiftReport(data: any): Promise<void> {
-  const reportData = { ...data };
-  delete reportData.id;
-  const dateStr = data.closedAt?.substring(0, 10) ?? data.startedAt?.substring(0, 10) ?? data.date ?? '';
+  // Caller (shift-report-service) passes envelope:
+  //   { id, date, shiftType, boxNumber, shiftId, createdAt, data: ShiftReportData }
+  // The envelope's scalar fields (date/shiftType/boxNumber/shiftId) go into
+  // their own columns; only the inner `data` payload belongs in the JSONB
+  // `data` column. Previously the entire envelope (minus id) was stored,
+  // producing `report.data.data.totalAmount` double-nesting in reads.
+  const innerPayload = data.data && typeof data.data === 'object' ? data.data : data;
+  const dateStr = data.date ?? innerPayload.closedAt?.substring(0, 10)
+    ?? innerPayload.startedAt?.substring(0, 10) ?? '';
 
   await prisma.shiftReport.upsert({
     where: { id: data.id },
@@ -1249,7 +1255,7 @@ export async function saveShiftReport(data: any): Promise<void> {
       shiftType: data.shiftType ?? 'day',
       boxNumber: data.boxNumber ?? 1,
       shiftId: data.shiftId ?? null,
-      data: reportData,
+      data: innerPayload,
     },
     create: {
       id: data.id,
@@ -1257,8 +1263,10 @@ export async function saveShiftReport(data: any): Promise<void> {
       shiftType: data.shiftType ?? 'day',
       boxNumber: data.boxNumber ?? 1,
       shiftId: data.shiftId ?? null,
-      data: reportData,
-      createdAt: data.closedAt ? new Date(data.closedAt) : undefined,
+      data: innerPayload,
+      createdAt: innerPayload.closedAt
+        ? new Date(innerPayload.closedAt)
+        : (data.createdAt ? new Date(data.createdAt) : undefined),
     },
   });
 }
@@ -1571,13 +1579,21 @@ export async function getShiftReportsData(): Promise<any[]> {
   const rows = await prisma.shiftReport.findMany({
     orderBy: { createdAt: 'desc' },
   });
-  return rows.map(r => ({
-    id: r.id,
-    date: r.date,
-    shiftType: r.shiftType,
-    boxNumber: r.boxNumber,
-    shiftId: (r as any).shiftId ?? undefined,
-    data: r.data,
-    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
-  }));
+  return rows.map((r: any) => {
+    const raw = r.data as any;
+    // Backward compat: legacy rows stored the whole envelope (with nested
+    // `data` field) into the JSONB column. Unwrap if double-nesting detected.
+    const data = raw && typeof raw === 'object' && raw.data && typeof raw.data === 'object'
+      ? raw.data
+      : raw;
+    return {
+      id: r.id,
+      date: r.date,
+      shiftType: r.shiftType,
+      boxNumber: r.boxNumber,
+      shiftId: (r as any).shiftId ?? undefined,
+      data,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    };
+  });
 }

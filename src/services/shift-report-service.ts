@@ -12,11 +12,19 @@ interface ShiftReportSummary {
 interface ShiftReportData {
   shiftId: string;
   employeeIds: string[];
+  employeeNames: string[];
   startedAt: string;
   closedAt: string;
   totalWashes: number;
   totalAmount: number;
   byPaymentMethod: Record<string, { count: number; amount: number }>;
+  cashTotal: number;
+  cardTotal: number;
+  transferTotal: number;
+  aggregatorTotal: number;
+  contractTotal: number;
+  tipsTotal: number;
+  cashInRegister: number;
   chemicalConsumptionGrams: number;
   durationSeconds?: number;
   washes: Array<{
@@ -25,6 +33,7 @@ interface ShiftReportData {
     totalAmount: number;
     paymentMethod: string;
     timestamp: string;
+    tips?: number;
   }>;
 }
 
@@ -59,10 +68,12 @@ export async function generateShiftReport(shift: Shift): Promise<ShiftReportSumm
   const byPaymentMethod: Record<string, { count: number; amount: number }> = {};
   let totalAmount = 0;
   let chemicalConsumptionGrams = 0;
+  let tipsTotal = 0;
 
   const washDetails = shiftWashes.map((wash) => {
     totalAmount += wash.totalAmount;
     chemicalConsumptionGrams += wash.chemicalConsumptionGrams || 0;
+    tipsTotal += wash.tips || 0;
 
     const paymentMethod = wash.paymentMethod;
     if (!byPaymentMethod[paymentMethod]) {
@@ -77,8 +88,21 @@ export async function generateShiftReport(shift: Shift): Promise<ShiftReportSumm
       totalAmount: wash.totalAmount,
       paymentMethod: wash.paymentMethod,
       timestamp: wash.timestamp,
+      tips: wash.tips,
     };
   });
+
+  const cashTotal = byPaymentMethod['cash']?.amount || 0;
+  const cardTotal = byPaymentMethod['card']?.amount || 0;
+  const transferTotal = byPaymentMethod['transfer']?.amount || 0;
+  const aggregatorTotal = byPaymentMethod['aggregator']?.amount || 0;
+  const contractTotal = byPaymentMethod['counterAgentContract']?.amount || 0;
+  const cashInRegister = cashTotal + tipsTotal;
+
+  const employeeMap = new Map(employees.map((e) => [e.id, e.fullName]));
+  const employeeNames = shift.employeeIds
+    .map((id) => employeeMap.get(id))
+    .filter((name): name is string => Boolean(name));
 
   const startedAtMs = parseTimestamp(startedAt);
   const closedAtMs = parseTimestamp(closedAt);
@@ -106,11 +130,19 @@ export async function generateShiftReport(shift: Shift): Promise<ShiftReportSumm
   const reportData: ShiftReportData = {
     shiftId: shift.id,
     employeeIds: shift.employeeIds,
+    employeeNames,
     startedAt,
     closedAt,
     totalWashes: shiftWashes.length,
     totalAmount,
     byPaymentMethod,
+    cashTotal,
+    cardTotal,
+    transferTotal,
+    aggregatorTotal,
+    contractTotal,
+    tipsTotal,
+    cashInRegister,
     chemicalConsumptionGrams,
     durationSeconds: durationMs !== null ? Math.round(durationMs / 1000) : undefined,
     washes: washDetails,
