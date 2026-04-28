@@ -22,6 +22,17 @@ interface CameraSession {
   has_thumbnail: boolean;
   has_grid: boolean;
   is_negative: boolean;
+  // Operator overrides из camera-dashboard /api/sessions/today
+  merged_into?: string | null;
+  merge_group_id?: string | null;
+  corrected_plate?: string | null;
+  note?: string | null;
+  is_for_retraining?: boolean;
+  is_dismissed?: boolean;
+  // Агрегаты группы (если merge применён)
+  aggregated_count?: number;
+  aggregated_duration_sec?: number;
+  is_main?: boolean;
 }
 
 export interface PendingCameraVehicle {
@@ -37,6 +48,11 @@ export interface PendingCameraVehicle {
   plateConfidence: number;
   hasThumbnail: boolean;
   hasGrid: boolean;
+  // Operator overrides из camera-dashboard (передаются прозрачно)
+  isPlateCorrected?: boolean;   // true если plateNumber взят из corrected_plate
+  note?: string | null;
+  isMergedGroup?: boolean;      // true если это main группы (несколько сегментов)
+  mergedSegmentsCount?: number; // сколько сегментов в группе (>= 2 для main, 1 для одиночной)
 }
 
 function getLinkedCameraSessionDir(event: WashEvent): string {
@@ -65,8 +81,11 @@ function parseSessionTime(value: string | null | undefined) {
 
 async function fetchCameraSessionsByShift(shift: CameraShift): Promise<CameraSession[]> {
   try {
+    // grouped=1 — camera-dashboard скроет дочерние объединённые сессии
+    // и в main вернёт aggregated_duration_sec / aggregated_count.
+    // Это даёт «одна машина = одна карточка» в админке carwash-web.
     const response = await fetch(
-      `${CAMERA_DASHBOARD_BASE_URL}/api/sessions/today?shift=${shift}`,
+      `${CAMERA_DASHBOARD_BASE_URL}/api/sessions/today?shift=${shift}&grouped=1`,
       { cache: 'no-store' }
     );
 
@@ -132,10 +151,15 @@ export function buildPendingCameraVehicles(
     const boxNumber = session.box === 2 ? 2 : session.box === 1 ? 1 : null;
     if (!boxNumber) continue;
     if (session.is_negative) continue;
+    if (session.is_dismissed) continue;          // оператор пометил «не оформлять»
+    if (session.merged_into) continue;            // дочерняя merge-группы — показываем только main
     if (!session.end) continue;
     if (processedSessionDirs.has(session.dir_name)) continue;
 
-    const plateNumber = String(session.plate_number || '').trim() || null;
+    // corrected_plate имеет приоритет над plate_number (оператор исправил OCR)
+    const correctedPlate = String(session.corrected_plate || '').trim() || null;
+    const rawPlate = String(session.plate_number || '').trim() || null;
+    const plateNumber = correctedPlate || rawPlate;
     const normalizedPlate = normalizeLicensePlate(plateNumber || '');
 
     const processed = normalizedPlate ? (processedCounts.get(normalizedPlate) || 0) : 0;
@@ -146,6 +170,9 @@ export function buildPendingCameraVehicles(
       continue;
     }
 
+    const aggregatedCount = Number(session.aggregated_count || 1);
+    const aggregatedDuration = Number(session.aggregated_duration_sec || session.duration_sec || 0);
+
     const candidate: PendingCameraVehicle = {
       id: normalizedPlate ? `${session.dir_name}:${normalizedPlate}` : session.dir_name,
       boxNumber,
@@ -154,11 +181,15 @@ export function buildPendingCameraVehicles(
       vehicleClass: session.vehicle_class,
       start: session.start,
       end: session.end,
-      durationSec: Number(session.duration_sec || 0),
+      durationSec: aggregatedDuration,            // используем агрегат (для main = сумма всей группы)
       dirName: session.dir_name,
       plateConfidence: Number(session.plate_confidence || 0),
       hasThumbnail: Boolean(session.has_thumbnail),
       hasGrid: Boolean(session.has_grid),
+      isPlateCorrected: Boolean(correctedPlate),
+      note: session.note || null,
+      isMergedGroup: Boolean(session.is_main && aggregatedCount > 1),
+      mergedSegmentsCount: aggregatedCount,
     };
 
     pendingVehicles.push(candidate);

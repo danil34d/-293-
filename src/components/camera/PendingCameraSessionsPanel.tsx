@@ -223,16 +223,31 @@ export function PendingCameraSessionsPanel({
                       <span className="font-mono text-sm font-semibold text-gray-900">
                         {vehicle.plateNumber || 'Без номера'}
                       </span>
+                      {vehicle.isPlateCorrected && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800" title="Номер исправлен оператором в дашборде камер">
+                          ✓ исправлен оператором
+                        </span>
+                      )}
                       <span className="rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
                         {VEHICLE_CLASS_LABELS[vehicle.vehicleClass || ''] || vehicle.vehicleClass || 'машина'}
                       </span>
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${status.badgeClassName}`}>
                         {status.label}
                       </span>
+                      {vehicle.isMergedGroup && vehicle.mergedSegmentsCount && vehicle.mergedSegmentsCount > 1 && (
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-800" title="Эта запись — объединение нескольких сегментов одной мойки">
+                          {vehicle.mergedSegmentsCount} сегментов
+                        </span>
+                      )}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Сессия завершена в {formatSessionTime(vehicle.end || vehicle.start)} · бокс {boxNumber}
                     </p>
+                    {vehicle.note && (
+                      <p className="mt-1 text-[11px] italic text-amber-900">
+                        💬 {vehicle.note}
+                      </p>
+                    )}
                     <p className="mt-1 text-[11px] text-muted-foreground/90">
                       {status.description}
                     </p>
