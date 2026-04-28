@@ -3,57 +3,28 @@ import { getEmployeesData } from '@/lib/data';
 import type { Employee } from '@/types';
 import { serializeEmployeeAuthCookie } from '@/lib/employee-auth-cookie';
 import { verifyPassword } from '@/lib/password-hash';
+import { RateLimiter, getClientIp } from '@/lib/rate-limit';
 
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX_FAILURES = 5;
-
-type RateEntry = { count: number; firstAt: number };
-const rateMap = new Map<string, RateEntry>();
-
-function getClientIp(request: Request): string {
-  const xff = request.headers.get('x-forwarded-for');
-  if (xff) return xff.split(',')[0]!.trim();
-  const xri = request.headers.get('x-real-ip');
-  if (xri) return xri.trim();
-  return 'unknown';
-}
+// 5 неудачных попыток за минуту (per-IP + per-username) → 429 + Retry-After
+const loginRateLimiter = new RateLimiter({ windowMs: 60_000, maxFailures: 5 });
 
 function rateKey(request: Request, username: string): string {
   return `${getClientIp(request)}::${username.toLowerCase()}`;
 }
 
-function consumeFailedAttempt(key: string): { blocked: boolean; retryAfterSec: number } {
-  const now = Date.now();
-  const entry = rateMap.get(key);
-  if (!entry || now - entry.firstAt >= RATE_LIMIT_WINDOW_MS) {
-    rateMap.set(key, { count: 1, firstAt: now });
-    return { blocked: false, retryAfterSec: 0 };
+/**
+ * Ответ при неудачной попытке логина: 401 если лимит не достигнут,
+ * 429+Retry-After если этот запрос превысил лимит.
+ */
+function failedLoginResponse(rkey: string): NextResponse {
+  const after = loginRateLimiter.consumeFailure(rkey);
+  if (after.blocked) {
+    return NextResponse.json(
+      { error: 'Слишком много попыток. Попробуйте позже.' },
+      { status: 429, headers: { 'Retry-After': String(after.retryAfterSec) } }
+    );
   }
-  entry.count += 1;
-  if (entry.count > RATE_LIMIT_MAX_FAILURES) {
-    const retryAfterSec = Math.max(1, Math.ceil((entry.firstAt + RATE_LIMIT_WINDOW_MS - now) / 1000));
-    return { blocked: true, retryAfterSec };
-  }
-  return { blocked: false, retryAfterSec: 0 };
-}
-
-function checkRateLimit(key: string): { blocked: boolean; retryAfterSec: number } {
-  const now = Date.now();
-  const entry = rateMap.get(key);
-  if (!entry) return { blocked: false, retryAfterSec: 0 };
-  if (now - entry.firstAt >= RATE_LIMIT_WINDOW_MS) {
-    rateMap.delete(key);
-    return { blocked: false, retryAfterSec: 0 };
-  }
-  if (entry.count > RATE_LIMIT_MAX_FAILURES) {
-    const retryAfterSec = Math.max(1, Math.ceil((entry.firstAt + RATE_LIMIT_WINDOW_MS - now) / 1000));
-    return { blocked: true, retryAfterSec };
-  }
-  return { blocked: false, retryAfterSec: 0 };
-}
-
-function clearRate(key: string): void {
-  rateMap.delete(key);
+  return NextResponse.json({ error: 'Неверный логин или пароль' }, { status: 401 });
 }
 
 export async function POST(request: Request) {
@@ -75,7 +46,7 @@ export async function POST(request: Request) {
     }
 
     const rkey = rateKey(request, username);
-    const preCheck = checkRateLimit(rkey);
+    const preCheck = loginRateLimiter.check(rkey);
     if (preCheck.blocked) {
       return NextResponse.json(
         { error: 'Слишком много попыток. Попробуйте позже.' },
@@ -89,27 +60,15 @@ export async function POST(request: Request) {
     // (поддерживает и хеш scrypt, и plain-text для обратной совместимости)
     const employee = employees.find((emp) => emp.username === username);
     if (!employee || !employee.password) {
-      const after = consumeFailedAttempt(rkey);
-      const status = after.blocked ? 429 : 401;
-      const headers = after.blocked ? { 'Retry-After': String(after.retryAfterSec) } : undefined;
-      return NextResponse.json(
-        { error: after.blocked ? 'Слишком много попыток. Попробуйте позже.' : 'Неверный логин или пароль' },
-        headers ? { status, headers } : { status }
-      );
+      return failedLoginResponse(rkey);
     }
 
     const passwordValid = await verifyPassword(password, employee.password);
     if (!passwordValid) {
-      const after = consumeFailedAttempt(rkey);
-      const status = after.blocked ? 429 : 401;
-      const headers = after.blocked ? { 'Retry-After': String(after.retryAfterSec) } : undefined;
-      return NextResponse.json(
-        { error: after.blocked ? 'Слишком много попыток. Попробуйте позже.' : 'Неверный логин или пароль' },
-        headers ? { status, headers } : { status }
-      );
+      return failedLoginResponse(rkey);
     }
 
-    clearRate(rkey);
+    loginRateLimiter.clear(rkey);
     const { password: _, ...employeeData } = employee;
 
     const cookieValue = JSON.stringify(employeeData);
