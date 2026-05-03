@@ -1,8 +1,10 @@
 "use client";
 
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { BookCheck, Calendar, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { BookCheck, Calendar, AlertTriangle, Camera } from 'lucide-react';
 
 interface WashLogTabsProps {
   washLogContent: ReactNode;
@@ -13,7 +15,15 @@ interface WashLogTabsProps {
 export function WashLogTabs({ washLogContent, shiftsContent, violationsContent }: WashLogTabsProps) {
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">Журнал моек</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold tracking-tight">Журнал моек</h1>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/wash-log/unprocessed" className="flex items-center gap-2">
+            <Camera className="h-4 w-4" />
+            Неоформленные мойки
+          </Link>
+        </Button>
+      </div>
 
       <Tabs defaultValue="wash-log" className="w-full">
         <TabsList className="mb-4">

@@ -74,6 +74,30 @@ export async function createWashEvent(washEvent: WashEvent): Promise<WashEvent> 
     return existing;
   }
 
+  // 🔥 Server-side подстраховка для bug 11b (retroactive timestamp).
+  // Если есть привязка cameraSession и её end != null, и end отличается от
+  // переданного timestamp больше чем на 5 минут — значит клиент мог не применить
+  // правильный timestamp (старая версия APK или старая страница). Перезаписываем.
+  const cs = (washEvent as WashEvent & { cameraSession?: { end?: string | null; start?: string | null } }).cameraSession;
+  if (cs) {
+    const csEndRaw = cs.end || cs.start;
+    if (csEndRaw) {
+      const normalized = csEndRaw.includes('_') ? csEndRaw.replace('_', 'T') : csEndRaw;
+      const csTime = new Date(normalized);
+      const evtTime = new Date(washEvent.timestamp);
+      if (Number.isFinite(csTime.getTime()) && Number.isFinite(evtTime.getTime())) {
+        const diffMs = Math.abs(csTime.getTime() - evtTime.getTime());
+        if (diffMs > 5 * 60 * 1000) {
+          console.warn(
+            `[wash-event] timestamp mismatch with cameraSession (diff ${Math.round(diffMs / 60000)}min). ` +
+            `Overriding ${washEvent.timestamp} → ${csTime.toISOString()} for retroactive consistency.`
+          );
+          washEvent.timestamp = csTime.toISOString();
+        }
+      }
+    }
+  }
+
   normalizeLegacyComments(washEvent);
 
   const inventory = await getInventory();
