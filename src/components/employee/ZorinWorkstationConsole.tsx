@@ -1084,9 +1084,25 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
       source: 'operations-camera' as const,
     } : undefined;
 
+    // 🔥 ФИКС 11b: для ретроспективного оформления (camera-сессия из прошлого)
+    // используем реальное время по камере, а не «сегодня сейчас». Иначе вчерашняя
+    // мойка попадает в сегодняшнюю смену, ломая отчёты и зарплату.
+    function normalizeCameraTimestamp(value: string | null | undefined): string | null {
+      if (!value) return null;
+      const normalized = value.includes('_') ? value.replace('_', 'T') : value;
+      const parsed = new Date(normalized);
+      return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+    }
+    const isRetrospective = !!cameraSessionLink;
+    const washTimestamp = isRetrospective
+      ? (normalizeCameraTimestamp(cameraSessionLink!.end) ||
+         normalizeCameraTimestamp(cameraSessionLink!.start) ||
+         new Date().toISOString())
+      : new Date().toISOString();
+
 	    const washEventToSave: Omit<WashEvent, 'driverComments'> & { driverComments?: WashComment[] } = {
         id: `we_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-        timestamp: new Date().toISOString(),
+        timestamp: washTimestamp,
         vehicleNumber: normalizedVehicleNumber,
         employeeIds: selectedEmployees.map(e => e.id),
         paymentMethod: selectedPaymentMethod,

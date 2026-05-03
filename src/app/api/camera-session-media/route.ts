@@ -27,35 +27,62 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'box must be 1 or 2' }, { status: 400 });
   }
 
-  const kind: 'plate' | 'plate_crop' | 'thumbnail' =
+  const requested: 'plate' | 'plate_crop' | 'thumbnail' =
     kindParam === 'plate_crop' ? 'plate_crop' : kindParam === 'plate' ? 'plate' : 'thumbnail';
 
-  try {
-    const response = await fetch(getCameraSessionAssetUrl(box, dirName, kind), {
-      cache: 'no-store',
-    });
+  // Fallback chain: если запрошенный asset не найден (часто бывает что
+  // OCR не успел/не смог сделать plate.jpg, но thumbnail.jpg всегда есть)
+  // — пробуем альтернативы, чтобы UI не падал в 404 на /workstation.
+  const fallbackChain: Record<typeof requested, Array<typeof requested>> = {
+    plate: ['plate', 'plate_crop', 'thumbnail'],
+    plate_crop: ['plate_crop', 'plate', 'thumbnail'],
+    thumbnail: ['thumbnail', 'plate_crop', 'plate'],
+  };
 
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `camera asset not found: ${kind}` },
-        { status: response.status === 404 ? 404 : 502 },
-      );
+  const chain = fallbackChain[requested];
+  let lastStatus = 404;
+  let lastError: string | null = null;
+
+  for (const kind of chain) {
+    try {
+      const response = await fetch(getCameraSessionAssetUrl(box, dirName, kind), {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        lastStatus = response.status;
+        lastError = `camera asset not found: ${kind} (${response.status})`;
+        // 404 → пробуем следующий kind. Любой другой статус (5xx, 502)
+        // — тоже пробуем дальше: вдруг хоть thumbnail отдадут.
+        continue;
+      }
+
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      const arrayBuffer = await response.arrayBuffer();
+
+      return new NextResponse(arrayBuffer, {
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'private, max-age=30',
+          // Сообщаем клиенту, какой kind реально отдали (для отладки UI).
+          'X-Asset-Kind': kind,
+          'X-Asset-Requested': requested,
+        },
+      });
+    } catch (error: any) {
+      lastError = error?.message || 'Failed to load camera asset';
+      lastStatus = 500;
+      // network error — тоже пробуем следующий kind
+      continue;
     }
-
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
-    const arrayBuffer = await response.arrayBuffer();
-
-    return new NextResponse(arrayBuffer, {
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'private, max-age=30',
-      },
-    });
-  } catch (error: any) {
-    console.error('GET /api/camera-session-media error:', error);
-    return NextResponse.json(
-      { error: error?.message || 'Failed to load camera asset' },
-      { status: 500 },
-    );
   }
+
+  // Все варианты исчерпаны — отдаём ошибку.
+  console.error(
+    `GET /api/camera-session-media: all fallbacks failed for box=${box} dir=${dirName} requested=${requested}: ${lastError}`,
+  );
+  return NextResponse.json(
+    { error: lastError || `camera asset not found: ${requested}`, requested },
+    { status: lastStatus === 502 ? 502 : 404 },
+  );
 }
