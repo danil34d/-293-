@@ -30,7 +30,8 @@ interface DeviceHeartbeat {
   count: number;
 }
 
-// In-memory storage. Map<employeeId, DeviceHeartbeat>
+// In-memory storage. Map<key, DeviceHeartbeat>
+// key = "auth:<employeeId>" или "anon:<deviceId>"
 // Экспортируем для /api/device-heartbeat/list
 export const heartbeats = new Map<string, DeviceHeartbeat>();
 
@@ -43,8 +44,12 @@ function extractIp(request: NextRequest): string {
 }
 
 export async function POST(request: NextRequest) {
+  // Двухрежимный auth:
+  //   1. Cookie auth (нормальный путь — для будущего APK или Web-клиента)
+  //   2. Anonymous device — если cookie не прислан, идентифицируем по X-Device-Id
+  //      (текущий APK 1.5.5 не парсит наш cookie-формат, баг HeartbeatService.java)
   const auth = requireAuth();
-  if (auth instanceof NextResponse) return auth;
+  const isAuthenticated = !(auth instanceof NextResponse);
 
   // APK может слать пустой body — это нормально. Тело опционально.
   const body = await request.json().catch(() => ({} as Record<string, unknown>));
@@ -59,12 +64,46 @@ export async function POST(request: NextRequest) {
   const userAgent = request.headers.get('user-agent') || 'unknown';
   const now = new Date().toISOString();
 
-  const existing = heartbeats.get(auth.id);
+  // Identity:
+  // - если auth есть → employeeId + username + role + fullName из cookie
+  // - иначе → X-Device-Id заголовок или body.deviceId, role='unknown'
+  let identity: {
+    key: string;
+    employeeId: string;
+    username: string;
+    role: string;
+    fullName: string;
+  };
+
+  if (isAuthenticated) {
+    const a = auth as Exclude<typeof auth, NextResponse>;
+    identity = {
+      key: `auth:${a.id}`,
+      employeeId: a.id,
+      username: a.username,
+      role: String(a.role),
+      fullName: a.fullName || a.username,
+    };
+  } else {
+    const deviceId =
+      request.headers.get('x-device-id') ||
+      (typeof body.deviceId === 'string' ? body.deviceId : null) ||
+      `anon:${ip}`;
+    identity = {
+      key: `anon:${deviceId}`,
+      employeeId: deviceId,
+      username: '(anonymous)',
+      role: 'unknown',
+      fullName: 'Anonymous device',
+    };
+  }
+
+  const existing = heartbeats.get(identity.key);
   const record: DeviceHeartbeat = {
-    employeeId: auth.id,
-    username: auth.username,
-    role: String(auth.role),
-    fullName: auth.fullName || auth.username,
+    employeeId: identity.employeeId,
+    username: identity.username,
+    role: identity.role,
+    fullName: identity.fullName,
     ip,
     userAgent: userAgent.substring(0, 200),
     appVersion,
@@ -73,12 +112,13 @@ export async function POST(request: NextRequest) {
     count: (existing?.count || 0) + 1,
   };
 
-  heartbeats.set(auth.id, record);
+  heartbeats.set(identity.key, record);
 
   return NextResponse.json({
     ok: true,
     lastSeen: now,
     count: record.count,
+    authenticated: isAuthenticated,
   });
 }
 
