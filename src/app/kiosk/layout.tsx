@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePathname } from 'next/navigation';
-import { LogOut, Monitor, Home, ClipboardList, XCircle } from 'lucide-react';
+import { LogOut, Monitor, Home, ClipboardList, XCircle, History, Calendar } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -17,6 +17,8 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
 
   const isHome = pathname === '/kiosk';
   const isOrder = pathname.includes('/order');
+  const isHistory = pathname.includes('/history');
+  const isSchedule = pathname.includes('/schedule');
 
   const handleEndBoxShift = async (boxNumber: number) => {
     setIsEndingShift(true);
@@ -85,29 +87,34 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
       {/* Main content */}
       <main className="flex-1 pb-20 p-4">{children}</main>
 
-      {/* Bottom navigation */}
+      {/* Bottom navigation — 4 крупные кнопки для мокрых рук (≥56px touch) */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t shadow-lg">
-        <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
-          <Link
-            href="/kiosk"
-            className={cn(
-              'flex flex-col items-center justify-center gap-0.5 px-4 py-2 rounded-lg transition-colors',
-              isHome ? 'text-blue-600' : 'text-gray-500 hover:text-gray-800'
-            )}
-          >
-            <Home className={cn('h-5 w-5', isHome && 'stroke-[2.5]')} />
-            <span className={cn('text-[11px]', isHome ? 'font-semibold' : 'font-medium')}>Главная</span>
-          </Link>
-          <Link
-            href="/kiosk/order"
-            className={cn(
-              'flex flex-col items-center justify-center gap-0.5 px-4 py-2 rounded-lg transition-colors',
-              isOrder ? 'text-blue-600' : 'text-gray-500 hover:text-gray-800'
-            )}
-          >
-            <ClipboardList className={cn('h-5 w-5', isOrder && 'stroke-[2.5]')} />
-            <span className={cn('text-[11px]', isOrder ? 'font-semibold' : 'font-medium')}>Оформить</span>
-          </Link>
+        <div className="grid grid-cols-4 max-w-2xl mx-auto">
+          {[
+            { href: '/kiosk', label: 'Главная', icon: Home, active: isHome },
+            { href: '/kiosk/order', label: 'Оформить', icon: ClipboardList, active: isOrder },
+            { href: '/kiosk/history', label: 'История', icon: History, active: isHistory },
+            { href: '/kiosk/schedule', label: 'График', icon: Calendar, active: isSchedule },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={cn(
+                  'flex flex-col items-center justify-center gap-0.5 min-h-[64px] py-2 transition-colors',
+                  tab.active
+                    ? 'text-blue-600 bg-blue-50'
+                    : 'text-gray-500 hover:text-gray-800 active:bg-gray-100'
+                )}
+              >
+                <Icon className={cn('h-6 w-6', tab.active && 'stroke-[2.5]')} />
+                <span className={cn('text-xs', tab.active ? 'font-bold' : 'font-medium')}>
+                  {tab.label}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       </nav>
     </div>

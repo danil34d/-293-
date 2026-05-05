@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { getShiftsData, getEmployeesData } from '@/lib/data';
 import { EmployeeCabinetClient } from './components/EmployeeCabinetClient';
 import { verifyCookieValue } from '@/lib/employee-auth-cookie';
@@ -9,6 +10,7 @@ export default async function EmployeeCabinetPage() {
   const cookieStore = cookies();
   const authCookie = cookieStore.get('employee_auth_sim');
   let currentEmployeeId = '';
+  let currentRole = '';
 
   if (authCookie?.value) {
     try {
@@ -19,7 +21,14 @@ export default async function EmployeeCabinetPage() {
       }
       const authData = JSON.parse(rawPayload);
       currentEmployeeId = authData.id;
+      currentRole = String(authData.role || '');
     } catch (e) {}
+  }
+
+  // 🔥 Терминалы (kiosk/kiosk1) НЕ должны видеть employee-cabinet — это интерфейс для людей.
+  // Редирект на /kiosk где специальный UI для устройства.
+  if (currentRole === 'kiosk' || currentRole === 'kiosk1') {
+    redirect('/kiosk');
   }
 
   const [shifts, employees] = await Promise.all([

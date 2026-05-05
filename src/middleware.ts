@@ -6,10 +6,11 @@ const DEFAULT_SECRET = 'zorin-carwash-dev-secret-change-in-production';
 const PUBLIC_PATHS = [
   '/login',
   '/wallboard',
+  '/k',                  // 🔥 короткий URL входа терминала (auto-login для LAN)
 ];
 
 const PUBLIC_API_PREFIXES = [
-  '/api/auth/',
+  '/api/auth/',          // включает /api/auth/kiosk-init
   '/api/wallboard',
   '/api/device-heartbeat',
 ];
