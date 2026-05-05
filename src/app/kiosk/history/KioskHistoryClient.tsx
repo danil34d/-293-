@@ -153,6 +153,9 @@ function UnprocessedList({ items }: { items: UnprocessedCameraVehicle[] }) {
 }
 
 function buildOrderUrl(v: UnprocessedCameraVehicle): string {
+  // 🔥 Терминал → /kiosk/order (kiosk-страница), не /workstation (employee).
+  // Параметры camera* передаются как есть → ZorinWorkstationConsole в kiosk-режиме
+  // подхватит их, покажет фото, plate_crop, форму оформления.
   const params = new URLSearchParams({
     box: String(v.boxNumber),
     camera: '1',
@@ -164,7 +167,7 @@ function buildOrderUrl(v: UnprocessedCameraVehicle): string {
   if (v.vehicleClass) params.set('cameraVehicleClass', v.vehicleClass);
   if (v.actualStart) params.set('cameraStart', v.actualStart);
   if (v.actualEnd) params.set('cameraEnd', v.actualEnd);
-  return `/workstation?${params.toString()}`;
+  return `/kiosk/order?${params.toString()}`;
 }
 
 function paymentLabel(m: string): string {
