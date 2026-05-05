@@ -47,9 +47,15 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-100">
-      {/* Kiosk header */}
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-white px-4 shadow-sm">
-        <div className="flex items-center gap-2">
+      {/* Kiosk header — safe-area inset чтобы не залезало под status-bar телефона */}
+      <header
+        className="sticky top-0 z-30 flex items-center justify-between border-b bg-white px-4 shadow-sm"
+        style={{
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          minHeight: 'calc(56px + env(safe-area-inset-top, 0px))',
+        }}
+      >
+        <div className="flex items-center gap-2 py-2">
           <Monitor className="h-5 w-5 text-blue-600" />
           <h1 className="text-base font-bold text-gray-800">Терминал — Мойка 1</h1>
         </div>

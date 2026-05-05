@@ -34,10 +34,34 @@ export default async function KioskPage() {
     new Set(todayShifts.flatMap((s) => s.employeeIds)),
   ).filter((id) => realPeople.some((p) => p.id === id));
 
-  // Wash events за сегодня
-  const todayEvents = washEvents.filter(
-    (e) => e.timestamp?.startsWith(todayStr) && isCompletedWashEvent(e),
-  );
+  // 🔥 ФИКС приватности: показываем только мойки ТЕКУЩЕЙ смены, а не за весь день.
+  // Иначе мойщик ночной видит выручку дневной (и наоборот) — можно прикинуть
+  // зарплату коллег. Граница смен: 08:00–20:00 = day, 20:00–08:00 = night.
+  const currentHour = today.getHours();
+  const isDayShift = currentHour >= 8 && currentHour < 20;
+
+  function isInCurrentShift(timestamp: string): boolean {
+    if (!timestamp) return false;
+    const ts = new Date(timestamp);
+    if (!Number.isFinite(ts.getTime())) return false;
+    const sameDay = timestamp.startsWith(todayStr);
+    const hr = ts.getHours();
+    if (isDayShift) {
+      // Дневная смена: с 8:00 сегодня до 20:00 сегодня
+      return sameDay && hr >= 8 && hr < 20;
+    } else if (currentHour >= 20) {
+      // Ночь после 20:00: с 20:00 сегодня
+      return sameDay && hr >= 20;
+    } else {
+      // Ночь до 8:00: события с 20:00 вчера или 0:00–8:00 сегодня
+      const yesterdayStr = ymd(new Date(today.getTime() - 86_400_000));
+      if (timestamp.startsWith(yesterdayStr)) return hr >= 20;
+      return sameDay && hr < 8;
+    }
+  }
+
+  const allTodayEvents = washEvents.filter((e) => isCompletedWashEvent(e));
+  const shiftEvents = allTodayEvents.filter((e) => isInCurrentShift(e.timestamp || ''));
 
   // Pending camera (неоформленные) за неделю — для бейджа на главной
   const unprocessedCount = buildUnprocessedVehicles(
@@ -47,19 +71,20 @@ export default async function KioskPage() {
     todayStr,
   ).length;
 
-  // Сводка: total + по боксам
-  const box1Count = todayEvents.filter((e) => e.boxNumber === 1).length;
-  const box2Count = todayEvents.filter((e) => e.boxNumber === 2).length;
-  const todayTotal = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  // Сводка: только текущая смена (приватность!)
+  const box1Count = shiftEvents.filter((e) => e.boxNumber === 1).length;
+  const box2Count = shiftEvents.filter((e) => e.boxNumber === 2).length;
+  const shiftTotal = shiftEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
   return (
     <KioskClient
       todayEmployeeIds={todayEmployeeIds}
       employees={realPeople}            // ⚠ только реальные люди
-      todayCount={todayEvents.length}
+      shiftCount={shiftEvents.length}
       box1Count={box1Count}
       box2Count={box2Count}
-      todayTotal={todayTotal}
+      shiftTotal={shiftTotal}
+      shiftLabel={isDayShift ? 'дневной смены' : 'ночной смены'}
       unprocessedCount={unprocessedCount}
     />
   );

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Process | Where-Object {$_.ProcessName -match 'python|yolo'} | Select-Object Id,ProcessName,StartTime,CPU | Format-Table -AutoSize)"
+    ]
+  }
+}

@@ -27,9 +27,9 @@ interface ShiftSlotData {
   box2Names: string[];
 }
 
-function getEmployeeName(employees: Employee[], id: string): string {
+function getEmployeeName(employees: Employee[], id: string): string | null {
   const e = employees.find((emp) => emp.id === id);
-  if (!e) return '?';
+  if (!e) return null;  // 🔥 уволенных/удалённых не показываем (раньше было '?')
   // Приоритет: fullName, потом username
   return e.fullName?.split(' ')[0] || e.username || id;
 }
@@ -46,11 +46,13 @@ function buildSlot(
   const box1 = matching
     .filter((s) => s.boxNumber === 1)
     .flatMap((s) => s.employeeIds)
-    .map((id) => getEmployeeName(employees, id));
+    .map((id) => getEmployeeName(employees, id))
+    .filter((name): name is string => name !== null);
   const box2 = matching
     .filter((s) => s.boxNumber === 2)
     .flatMap((s) => s.employeeIds)
-    .map((id) => getEmployeeName(employees, id));
+    .map((id) => getEmployeeName(employees, id))
+    .filter((name): name is string => name !== null);
   return { date, shiftType, box1Names: box1, box2Names: box2 };
 }
 
@@ -91,7 +93,17 @@ export default async function KioskSchedulePage() {
 function SlotCard({ slot, isToday }: { slot: ShiftSlotData; isToday: boolean }) {
   const dateLabel = isToday ? 'Сегодня' : 'Завтра';
   const shiftLabel = slot.shiftType === 'day' ? 'День ☀' : 'Ночь 🌙';
-  const shiftColor = slot.shiftType === 'day' ? 'amber' : 'indigo';
+
+  // 🔥 ФИКС 2: статические классы (Tailwind JIT не работает с интерполяцией bg-${color}-50).
+  // Раньше: `bg-${shiftColor}-50 border-${shiftColor}-200` → классы выкидывались на prod build.
+  const cardClasses =
+    slot.shiftType === 'day'
+      ? 'bg-amber-50 border-amber-200'
+      : 'bg-indigo-50 border-indigo-200';
+
+  // 🔥 ФИКС 5: фильтруем null (раньше getEmployeeName возвращал '?' для уволенных)
+  const box1Names = slot.box1Names.filter(Boolean);
+  const box2Names = slot.box2Names.filter(Boolean);
 
   const renderBox = (label: string, names: string[]) => (
     <div className="bg-white rounded-md p-2 border border-gray-200">
@@ -107,7 +119,7 @@ function SlotCard({ slot, isToday }: { slot: ShiftSlotData; isToday: boolean }) 
   );
 
   return (
-    <div className={`bg-${shiftColor}-50 border-2 border-${shiftColor}-200 rounded-lg p-3 space-y-2`}>
+    <div className={`${cardClasses} border-2 rounded-lg p-3 space-y-2`}>
       <div className="flex items-center justify-between">
         <div className="text-base font-bold text-gray-900">
           {dateLabel} • {shiftLabel}
@@ -117,8 +129,8 @@ function SlotCard({ slot, isToday }: { slot: ShiftSlotData; isToday: boolean }) 
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {renderBox('Бокс 1', slot.box1Names)}
-        {renderBox('Бокс 2', slot.box2Names)}
+        {renderBox('Бокс 1', box1Names)}
+        {renderBox('Бокс 2', box2Names)}
       </div>
     </div>
   );

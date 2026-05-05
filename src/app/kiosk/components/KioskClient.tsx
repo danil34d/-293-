@@ -2,26 +2,28 @@
 
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
-import { Users, ClipboardList, AlertTriangle, History, Calendar } from 'lucide-react';
+import { Users, AlertTriangle } from 'lucide-react';
 import type { Employee } from '@/types';
 
 interface KioskClientProps {
   todayEmployeeIds: string[];
   employees: Employee[];           // только реальные люди (без kiosk/kiosk1)
-  todayCount: number;
+  shiftCount: number;
   box1Count: number;
   box2Count: number;
-  todayTotal: number;
+  shiftTotal: number;              // только мойки текущей смены (приватность)
+  shiftLabel: string;              // 'дневной смены' / 'ночной смены'
   unprocessedCount: number;
 }
 
 export function KioskClient({
   todayEmployeeIds,
   employees,
-  todayCount,
+  shiftCount,
   box1Count,
   box2Count,
-  todayTotal,
+  shiftTotal,
+  shiftLabel,
   unprocessedCount,
 }: KioskClientProps) {
   const todayPeople = employees.filter((e) => todayEmployeeIds.includes(e.id));
@@ -52,19 +54,19 @@ export function KioskClient({
         </CardContent>
       </Card>
 
-      {/* Сводка моек за сегодня */}
+      {/* Сводка моек ТЕКУЩЕЙ смены (без чужих смен — приватность) */}
       <div className="grid grid-cols-3 gap-2">
-        <SummaryTile label="Всего" value={String(todayCount)} sublabel="моек" color="gray" />
+        <SummaryTile label="Всего" value={String(shiftCount)} sublabel="моек" color="gray" />
         <SummaryTile label="Бокс 1" value={String(box1Count)} sublabel="моек" color="blue" />
         <SummaryTile label="Бокс 2" value={String(box2Count)} sublabel="моек" color="green" />
       </div>
 
-      {/* Сумма за сегодня */}
+      {/* Касса текущей смены (не за весь день — иначе видно выручку чужой смены) */}
       <Card>
         <CardContent className="p-4 flex items-center justify-between">
-          <span className="text-sm text-gray-600">Касса за сегодня:</span>
+          <span className="text-sm text-gray-600">Касса {shiftLabel}:</span>
           <span className="text-2xl font-bold text-green-700">
-            {todayTotal.toLocaleString('ru-RU')} ₽
+            {shiftTotal.toLocaleString('ru-RU')} ₽
           </span>
         </CardContent>
       </Card>
@@ -88,24 +90,7 @@ export function KioskClient({
           </div>
         </Link>
       )}
-
-      {/* Подсказка про bottom-nav */}
-      <Card className="border-dashed">
-        <CardContent className="p-4 text-xs text-gray-500 space-y-1">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="h-3.5 w-3.5" />
-            <span>Кнопка <strong>«Оформить»</strong> внизу — оформить новый заказ</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <History className="h-3.5 w-3.5" />
-            <span><strong>«История»</strong> — мойки за день и неоформленные</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-3.5 w-3.5" />
-            <span><strong>«График»</strong> — кто работает сегодня и завтра</span>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Блок подсказок убран — bottom-nav сама себя объясняет иконками+подписями. */}
     </div>
   );
 }
