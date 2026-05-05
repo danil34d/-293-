@@ -4,9 +4,11 @@ import {
   invalidateInventoryCache,
   invalidateStockMovementsCache,
   invalidateWashEventsCache,
+  getEmployeesData,
 } from '@/lib/data';
 import { createWashEventAtomic, readEntity } from '@/lib/data/write-helpers';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
+import { isKiosk } from '@/lib/employee-role';
 
 function calculateTotalChemicalConsumption(washEvent: WashEvent, inventory: Inventory): number {
   if (!isCompletedWashEvent(washEvent)) {
@@ -95,6 +97,27 @@ export async function createWashEvent(washEvent: WashEvent): Promise<WashEvent> 
           washEvent.timestamp = csTime.toISOString();
         }
       }
+    }
+  }
+
+  // 🔥 ФИКС 2026-05-05: Защита от попадания терминалов (kiosk/kiosk1) в employeeIds.
+  // Терминал — устройство, не сотрудник. Если попал — мойка делилась на N+1 чел.
+  // и устройство получало долю зарплаты. Server-side last line of defense.
+  if (Array.isArray(washEvent.employeeIds) && washEvent.employeeIds.length > 0) {
+    try {
+      const allEmployees = await getEmployeesData();
+      const filtered = washEvent.employeeIds.filter((id) => {
+        const emp = allEmployees.find((e) => e.id === id);
+        return emp && !isKiosk(emp);
+      });
+      if (filtered.length !== washEvent.employeeIds.length) {
+        console.warn(
+          `[wash-event] Отфильтрован терминал из employeeIds: ${washEvent.employeeIds.join(',')} → ${filtered.join(',')}`,
+        );
+        washEvent.employeeIds = filtered;
+      }
+    } catch (err) {
+      console.error('[wash-event] не удалось проверить employeeIds на kiosk:', err);
     }
   }
 

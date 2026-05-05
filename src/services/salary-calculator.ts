@@ -2,6 +2,7 @@
 'use server';
 
 import type { WashEvent, Employee, SalaryScheme, SalaryRate, SalaryReportData, SalaryBreakdownItem, Violation, SalaryPenaltyItem } from '@/types';
+import { isKiosk } from '@/lib/employee-role';
 
 // Helper to determine the source type from a wash event
 function getWashSourceType(washEvent: WashEvent): 'retail' | 'aggregator' | 'counterAgent' | null {
@@ -159,10 +160,18 @@ export async function generateSalaryReport(
   for (const event of washEvents) {
     if (!event.employeeIds || event.employeeIds.length === 0) continue;
 
-    // Use event.employeeIds.length for total count (not filtered employees)
-    const numEmployeesOnWash = event.employeeIds.length;
+    // 🔥 ФИКС 2026-05-05: исключаем терминалы (kiosk/kiosk1) из расчёта зарплаты.
+    // Терминал — это устройство (телефон на стене), не сотрудник. Раньше если в
+    // employeeIds попадал emp_kiosk — мойка делилась на N+1 чел., и устройство
+    // получало свою долю (1800 × 45% / 3, где 1 из 3 — терминал = ошибка).
+    const realEmployeeIds = event.employeeIds.filter((id) => {
+      const emp = employees.find((e) => e.id === id);
+      return emp && !isKiosk(emp);
+    });
+    if (realEmployeeIds.length === 0) continue;
 
-    const employeesOnWash = event.employeeIds.map(id => employees.find(e => e.id === id)).filter(Boolean) as Employee[];
+    const numEmployeesOnWash = realEmployeeIds.length;
+    const employeesOnWash = realEmployeeIds.map(id => employees.find(e => e.id === id)).filter(Boolean) as Employee[];
     if (employeesOnWash.length === 0) continue;
 
     for (const employee of employeesOnWash) {
