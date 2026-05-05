@@ -1519,36 +1519,31 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 )}
               </div>
 
-              {/* Photos: thumbnail (car) + plate (crop of plate) */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mb-3">
-                {/* Thumbnail — full car photo */}
-                <div className="overflow-hidden rounded-lg border border-amber-200 bg-black">
-                  <img
-                    src={buildCameraSessionMediaUrl(cameraSessionContext, 'thumbnail')}
-                    alt="Фото машины"
-                    className="aspect-video w-full object-cover"
-                    loading="lazy"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                </div>
-                {/* Plate crop — cropped license plate region */}
-                <div className="overflow-hidden rounded-lg border-2 border-blue-300 bg-black flex items-center justify-center">
-                  <img
-                    src={buildCameraSessionMediaUrl(cameraSessionContext, 'plate_crop')}
-                    alt="Кроп номера"
-                    className="w-full object-contain"
-                    loading="lazy"
-                    onError={(e) => {
-                      const img = e.target as HTMLImageElement;
-                      const fallbackUrl = buildCameraSessionMediaUrl(cameraSessionContext, 'plate');
-                      if (img.src !== fallbackUrl) {
-                        img.src = fallbackUrl;
+              {/* 🔥 ФИКС 2026-05-05: одно фото — крупный план номера. Раньше показывали
+                  два (общий план + crop) — общий лишний, оператору важен только номер.
+                  Fallback chain: plate_crop → plate → thumbnail (через бэкенд route) */}
+              <div className="overflow-hidden rounded-lg border-2 border-blue-300 bg-black flex items-center justify-center mb-3 max-h-[260px]">
+                <img
+                  src={buildCameraSessionMediaUrl(cameraSessionContext, 'plate_crop')}
+                  alt="Номер машины (крупный план)"
+                  className="w-full object-contain"
+                  loading="lazy"
+                  onError={(e) => {
+                    const img = e.target as HTMLImageElement;
+                    const fallbackUrl = buildCameraSessionMediaUrl(cameraSessionContext, 'plate');
+                    if (!img.src.endsWith('kind=plate')) {
+                      img.src = fallbackUrl;
+                    } else {
+                      // Если и plate.jpg нет — показываем thumbnail последним фолбэком
+                      const thumbUrl = buildCameraSessionMediaUrl(cameraSessionContext, 'thumbnail');
+                      if (img.src !== thumbUrl) {
+                        img.src = thumbUrl;
                       } else {
                         img.style.display = 'none';
                       }
-                    }}
-                  />
-                </div>
+                    }
+                  }}
+                />
               </div>
 
               {/* Recognized plate — big and prominent */}
