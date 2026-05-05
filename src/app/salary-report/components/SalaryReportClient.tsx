@@ -51,13 +51,17 @@ export function SalaryReportClient() {
     const fetchAndProcessData = async () => {
         setIsLoading(true);
         try {
-            const [employees, allWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
-                (await getEmployeesData()).filter((e) => !isEmployeeAdmin(e) && !isKiosk(e)),
-                await getWashEventsData(),
-                await getSalarySchemesData(),
-                await getAllEmployeeTransactions(),
-                await getViolationsData(),
+            const [allEmployeesRaw, allWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
+                getEmployeesData(),
+                getWashEventsData(),
+                getSalarySchemesData(),
+                getAllEmployeeTransactions(),
+                getViolationsData(),
             ]);
+            // employees — кому считаем зарплату (без admin и kiosk).
+            // allEmployeesRaw — полный список (с kiosk!) для определения команды
+            // в generateSalaryReport (иначе делитель numEmployeesOnWash будет неправильным).
+            const employees = allEmployeesRaw.filter((e) => !isEmployeeAdmin(e) && !isKiosk(e));
 
             const periodStart = dateRange?.from ? startOfDay(dateRange.from) : null;
             const periodEnd = dateRange?.from ? endOfDay(dateRange.to || dateRange.from) : null;
@@ -83,7 +87,7 @@ export function SalaryReportClient() {
                         we.employeeIds.includes(emp.id)
                     );
                     const previousViolations = allViolations.filter((v: any) => v.employeeId === emp.id && v.date && new Date(v.date + 'T00:00:00') < periodStart);
-                    const previousReport = await generateSalaryReport(previousWashEvents, [emp], allSchemes, previousViolations);
+                    const previousReport = await generateSalaryReport(previousWashEvents, [emp], allSchemes, previousViolations, allEmployeesRaw);
                     balance += (previousReport[0]?.totalEarnings ?? 0) - (previousReport[0]?.totalPenalties ?? 0);
 
                     const previousTransactions = employeeTransactions.filter(t => new Date(t.date) < periodStart);
@@ -110,7 +114,7 @@ export function SalaryReportClient() {
                     new Date(v.date + 'T00:00:00') >= periodStart &&
                     new Date(v.date + 'T00:00:00') <= periodEnd
                 );
-                const periodReport = (await generateSalaryReport(periodWashEvents, [emp], allSchemes, periodViolations))[0];
+                const periodReport = (await generateSalaryReport(periodWashEvents, [emp], allSchemes, periodViolations, allEmployeesRaw))[0];
                 const earningsForPeriod = (periodReport?.totalEarnings ?? 0) - (periodReport?.totalPenalties ?? 0);
 
                 const periodTransactions = employeeTransactions.filter(t =>

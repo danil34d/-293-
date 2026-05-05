@@ -604,7 +604,7 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
             );
 
             try {
-                const reportResult = await generateSalaryReport(filteredEvents, [employee], allSchemes, filteredViolations);
+                const reportResult = await generateSalaryReport(filteredEvents, [employee], allSchemes, filteredViolations, allEmployees);
                 setSalaryData(reportResult[0]);
             } catch (error) {
                 console.error("Failed to generate salary report:", error);
@@ -687,8 +687,8 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
                 v.date && isWithinInterval(new Date(v.date + 'T00:00:00'), { start: monthStart, end: todayEnd })
             );
 
-            const todayReport = await generateSalaryReport(todayEvents, [employee], allSchemes, todayViolations);
-            const monthReport = await generateSalaryReport(monthEvents, [employee], allSchemes, monthViolations);
+            const todayReport = await generateSalaryReport(todayEvents, [employee], allSchemes, todayViolations, allEmployees);
+            const monthReport = await generateSalaryReport(monthEvents, [employee], allSchemes, monthViolations, allEmployees);
 
             return {
                 today: todayReport[0]?.totalEarnings ?? 0,

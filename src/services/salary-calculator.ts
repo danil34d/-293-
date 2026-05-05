@@ -140,10 +140,19 @@ export async function generateSalaryReport(
   washEvents: WashEvent[],
   employees: Employee[],
   salarySchemes: SalaryScheme[],
-  violations?: Violation[]
+  violations?: Violation[],
+  /**
+   * 🔥 ФИКС 2026-05-05: Полный список сотрудников для определения команды.
+   * Если caller передал только подмножество (например один emp для отчёта),
+   * без allEmployees мы не сможем правильно посчитать numEmployeesOnWash —
+   * остальные участники мойки будут считаться "не найденными" и отфильтруются.
+   * Если не передан — fallback на employees (legacy совместимость).
+   */
+  allEmployees?: Employee[],
 ): Promise<SalaryReportData[]> {
   const schemeMap = new Map(salarySchemes.map(s => [s.id, s]));
   const salaryData: Record<string, SalaryReportData> = {};
+  const teamLookup = allEmployees ?? employees;
 
   // Initialize data for all employees
   for (const emp of employees) {
@@ -161,16 +170,24 @@ export async function generateSalaryReport(
     if (!event.employeeIds || event.employeeIds.length === 0) continue;
 
     // 🔥 ФИКС 2026-05-05: исключаем терминалы (kiosk/kiosk1) из расчёта зарплаты.
-    // Терминал — это устройство (телефон на стене), не сотрудник. Раньше если в
-    // employeeIds попадал emp_kiosk — мойка делилась на N+1 чел., и устройство
-    // получало свою долю (1800 × 45% / 3, где 1 из 3 — терминал = ошибка).
+    // Терминал — устройство (телефон на стене), не сотрудник.
+    //
+    // ВАЖНО: используем teamLookup (allEmployees), а не employees!
+    // Если caller передал только одного emp в employees, остальные участники мойки
+    // НЕ нашлись бы и считались "kiosk" по ошибке → numEmployeesOnWash = 1 → 810₽
+    // вместо правильных 405₽ при делении 1800 × 45% / 2.
     const realEmployeeIds = event.employeeIds.filter((id) => {
-      const emp = employees.find((e) => e.id === id);
-      return emp && !isKiosk(emp);
+      const emp = teamLookup.find((e) => e.id === id);
+      // Если не нашли — это либо удалённый, либо kiosk (если teamLookup без kiosk).
+      // Чтобы делитель был корректным, caller ОБЯЗАН передать allEmployees
+      // (полный список включая kiosk) — тогда .find точно найдёт kiosk → isKiosk → отфильтруем.
+      if (!emp) return false;
+      return !isKiosk(emp);
     });
     if (realEmployeeIds.length === 0) continue;
 
     const numEmployeesOnWash = realEmployeeIds.length;
+    // employeesOnWash оставляем по `employees` — это те, для кого считаем зарплату
     const employeesOnWash = realEmployeeIds.map(id => employees.find(e => e.id === id)).filter(Boolean) as Employee[];
     if (employeesOnWash.length === 0) continue;
 
