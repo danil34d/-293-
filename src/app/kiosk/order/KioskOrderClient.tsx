@@ -95,12 +95,13 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
       />
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            <Truck className="mr-1 inline h-4 w-4" />
-            Неоформленные машины из камер
+        <div className="flex items-center justify-between rounded-xl bg-amber-50 ring-1 ring-amber-200 px-3 py-2">
+          <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2">
+            <Truck className="h-4 w-4 text-amber-700" />
+            <span>Машины из камер</span>
+            <span className="text-xs font-normal text-amber-700/70">ждут оформления</span>
           </h3>
-          <span className="text-sm font-medium text-amber-700">
+          <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
             {pendingVehicles.length}
           </span>
         </div>
