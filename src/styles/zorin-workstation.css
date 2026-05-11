@@ -335,6 +335,26 @@
   background: white !important;
 }
 
+/* 🔥 ФИКС 2026-05-11: kiosk-режим убирает scroll-in-scroll
+   (на телефоне внутренний скролл = смерть UX) */
+.kiosk-mode .zorin-service-list {
+  max-height: none !important;
+  overflow-y: visible !important;
+  padding: 4px !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.kiosk-mode .zorin-service-item {
+  padding: 12px !important;
+  margin-bottom: 6px !important;
+  border-width: 1px !important;
+}
+
+.kiosk-mode .zorin-service-item:hover {
+  transform: none !important;
+}
+
 .zorin-service-item {
   padding: 16px !important;
   border: 2px solid #e5e7eb !important;

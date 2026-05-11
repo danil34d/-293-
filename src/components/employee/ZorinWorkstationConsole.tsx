@@ -27,7 +27,9 @@ import {
   Timer,
   Coins,
   ArrowLeft,
-  Box
+  Box,
+  X,
+  ArrowRight,
 } from 'lucide-react';
 import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment } from '@/types';
 import { Badge } from '@/components/ui/badge';
@@ -1382,7 +1384,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   };
 
   return (
-    <div className="zorin-workstation">
+    <div className={`zorin-workstation${isKioskMode ? ' kiosk-mode' : ''}`}>
       {/* Navigation Header */}
       {/* Header — hide in kiosk mode (kiosk has its own layout) */}
       {!isKioskMode && (
@@ -1831,16 +1833,39 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 </div>
               )}
 
-              {/* Search */}
-              <div className="relative mb-4">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <input
-                  placeholder="Поиск по названию услуги..."
-                  value={serviceSearchQuery}
-                  onChange={(e) => setServiceSearchQuery(e.target.value)}
-                  className="zorin-input pl-8"
-                />
-              </div>
+              {/* Search — для kiosk скрываем если услуг ≤ 8
+                  (на маленьком экране листать быстрее чем печатать) */}
+              {(!isKioskMode || servicesToShow.length > 8 || serviceSearchQuery) && (
+                <div className="relative mb-4">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    placeholder="Поиск по названию услуги..."
+                    value={serviceSearchQuery}
+                    onChange={(e) => setServiceSearchQuery(e.target.value)}
+                    className="zorin-input pl-8"
+                  />
+                  {serviceSearchQuery && (
+                    <button
+                      onClick={() => setServiceSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 hover:bg-gray-100"
+                      title="Сбросить поиск"
+                    >
+                      <X className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {isKioskMode && servicesToShow.length <= 8 && !serviceSearchQuery && servicesToShow.length > 3 && (
+                <div className="mb-4 text-right">
+                  <button
+                    onClick={() => setServiceSearchQuery(' ')}
+                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-blue-600 hover:bg-blue-50"
+                  >
+                    <Search className="h-3 w-3" />
+                    Найти
+                  </button>
+                </div>
+              )}
 
               {/* Services List */}
               <div className="zorin-service-list mb-4">
@@ -1938,8 +1963,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 </div>
               )}
 
-              {/* Summary */}
-              {washServices.length > 0 && (
+              {/* Summary — для НЕ-kiosk режима inline сводка + кнопка */}
+              {washServices.length > 0 && !isKioskMode && (
                 <div className="text-right">
                   {showPrices ? (
                     <div className="flex flex-col items-end gap-1">
@@ -1965,6 +1990,47 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                     Далее к подтверждению
                   </button>
                 </div>
+              )}
+
+              {/* 🔥 ФИКС 2026-05-11: Kiosk-режим — sticky bottom-bar
+                  «Итого + Далее» всегда виден, оператор не теряет кнопку.
+                  Padding-bottom main-контента в kiosk layout = 80px чтоб эта плашка не перекрывала контент. */}
+              {washServices.length > 0 && isKioskMode && (
+                <>
+                  {/* Резервируем место чтобы контент не прятался под sticky-bar */}
+                  <div className="h-20" aria-hidden />
+                  <div
+                    className="fixed bottom-[64px] left-0 right-0 z-40 mx-auto"
+                    style={{ maxWidth: '672px' /* 2xl */, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+                  >
+                    <div className="bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] px-3 py-2.5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[10px] uppercase tracking-wider font-bold text-gray-500">
+                            Выбрано: {washServices.length} {washServices.length === 1 ? 'услуга' : 'услуг'}
+                          </div>
+                          {showPrices ? (
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-2xl font-extrabold tabular-nums bg-gradient-to-br from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                                {totalAmount.toLocaleString('ru-RU')}
+                              </span>
+                              <span className="text-sm font-bold text-emerald-700">₽</span>
+                            </div>
+                          ) : (
+                            <div className="text-base font-bold text-gray-700">По договору</div>
+                          )}
+                        </div>
+                        <button
+                          onClick={proceedToConfirmation}
+                          className="rounded-xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 px-5 py-3.5 text-white shadow-lg shadow-emerald-500/40 active:scale-[0.97] flex items-center gap-2 min-h-[56px]"
+                        >
+                          <span className="text-base font-extrabold">Далее</span>
+                          <ArrowRight className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -2016,20 +2082,46 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
 
                 {/* Чаевые */}
                 {showPrices && (
-                  <div className="flex items-center gap-3 pt-2">
-                    <label className="zorin-form-label flex items-center gap-1 mb-0 whitespace-nowrap">
+                  <div className="pt-2">
+                    <label className="zorin-form-label flex items-center gap-1 mb-2">
                       <Coins size={16} className="text-amber-500" />
                       Чаевые
+                      <span className="ml-auto text-xs text-muted-foreground italic font-normal">опционально</span>
                     </label>
-                    <input
-                      type="number"
-                      placeholder="0"
-                      value={tipsInput}
-                      onChange={(e) => setTipsInput(e.target.value)}
-                      className="zorin-input w-32"
-                      min="0"
-                    />
-                    <span className="text-sm text-muted-foreground">руб.</span>
+                    {/* 🔥 ФИКС 2026-05-11: quick-buttons +50/+100/+200/+500 + ручной ввод
+                        для kiosk-режима — не нужно вводить с экранной клавиатуры мокрыми руками */}
+                    {isKioskMode && (
+                      <div className="grid grid-cols-4 gap-1.5 mb-2">
+                        {[50, 100, 200, 500].map((amt) => {
+                          const cur = parseInt(tipsInput || '0', 10) || 0;
+                          const isActive = cur === amt;
+                          return (
+                            <button
+                              key={amt}
+                              onClick={() => setTipsInput(isActive ? '' : String(amt))}
+                              className={`rounded-xl py-3 text-base font-bold transition active:scale-95 ${
+                                isActive
+                                  ? 'bg-amber-100 ring-2 ring-amber-400 text-amber-800 shadow-sm'
+                                  : 'bg-gray-50 ring-1 ring-gray-200 text-gray-700'
+                              }`}
+                            >
+                              +{amt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        placeholder={isKioskMode ? "Своя сумма..." : "0"}
+                        value={tipsInput}
+                        onChange={(e) => setTipsInput(e.target.value)}
+                        className="zorin-input flex-1"
+                        min="0"
+                      />
+                      <span className="text-sm text-muted-foreground">руб.</span>
+                    </div>
                   </div>
                 )}
 
