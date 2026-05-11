@@ -32,6 +32,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment } from '@/types';
+import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -1799,8 +1800,72 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
             </div>
           )}
 
-          {/* Service Selection */}
-          {currentStep === "serviceSelection" && (
+          {/* Service Selection — Kiosk mode: новый компактный UI с прототипа.
+              Для не-kiosk (планшет админа, /employee/workstation) остаётся старый JSX ниже. */}
+          {currentStep === "serviceSelection" && isKioskMode && (
+            <KioskServiceSelectionStep
+              vehicleNumber={normalizedVehicleNumber || vehicleNumberInput}
+              boxNumber={selectedBoxNumber}
+              clientType={
+                selectedPaymentMethod === 'aggregator'
+                  ? 'aggregator'
+                  : selectedPaymentMethod === 'counterAgentContract'
+                    ? 'counterAgent'
+                    : 'retail'
+              }
+              clientTypeLabel={
+                selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent
+                  ? `Контрагент: ${foundCounterAgent.name} (по договору)`
+                  : selectedPaymentMethod === 'aggregator' && selectedAggregator
+                    ? `Агрегатор: ${selectedAggregator.name}`
+                    : selectedPaymentMethod && ['cash', 'card', 'transfer'].includes(selectedPaymentMethod)
+                      ? `Розница: ${paymentMethodLabels[selectedPaymentMethod] || 'оплата'}`
+                      : 'Розничный клиент'
+              }
+              paymentMethod={(selectedPaymentMethod ?? 'cash') as KioskPaymentMethod}
+              timerLabel={washTimerStart ? formatTimer(washTimerElapsed) : '00:00'}
+              services={servicesToShow}
+              selectedServices={washServices.map((s) => ({
+                id: s.id,
+                serviceName: s.serviceName,
+                price: s.price,
+              }))}
+              searchQuery={serviceSearchQuery}
+              onSearchChange={setServiceSearchQuery}
+              onServiceToggle={(service) => handleServiceSelect(service as any)}
+              onServiceRemove={handleRemoveService}
+              predefinedExtraServices={predefinedExtraServices}
+              lastWashServices={lastWashServices ?? undefined}
+              onRepeatLast={
+                lastWashServices && lastWashServices.length > 0
+                  ? () => {
+                      setWashServices(
+                        lastWashServices.map((s) => ({
+                          ...s,
+                          id: `service-${s.serviceName}-${Date.now()}-${Math.random()}`,
+                        })),
+                      );
+                      toast({
+                        title: 'Услуги добавлены',
+                        description: 'Выбраны услуги из предыдущего визита.',
+                      });
+                    }
+                  : undefined
+              }
+              canAddCustomServices={canAddCustomServices}
+              customExtraServiceName={customExtraServiceName}
+              customExtraServicePrice={customExtraServicePrice}
+              onCustomNameChange={setCustomExtraServiceName}
+              onCustomPriceChange={setCustomExtraServicePrice}
+              onAddCustomService={handleAddCustomExtraService}
+              totalAmount={totalAmount}
+              showPrices={showPrices}
+              onProceed={proceedToConfirmation}
+            />
+          )}
+
+          {/* Service Selection — старый UI для не-kiosk */}
+          {currentStep === "serviceSelection" && !isKioskMode && (
             <div className="zorin-form-section">
               <h4 className="flex items-center gap-2 mb-4">
                 <CheckCircle size={20} />
@@ -2012,46 +2077,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 </div>
               )}
 
-              {/* 🔥 ФИКС 2026-05-11: Kiosk-режим — sticky bottom-bar
-                  «Итого + Далее» всегда виден, оператор не теряет кнопку.
-                  Padding-bottom main-контента в kiosk layout = 80px чтоб эта плашка не перекрывала контент. */}
-              {washServices.length > 0 && isKioskMode && (
-                <>
-                  {/* Резервируем место чтобы контент не прятался под sticky-bar */}
-                  <div className="h-20" aria-hidden />
-                  <div
-                    className="fixed bottom-[64px] left-0 right-0 z-40 mx-auto"
-                    style={{ maxWidth: '672px' /* 2xl */, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-                  >
-                    <div className="bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] px-3 py-2.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[10px] uppercase tracking-wider font-bold text-gray-500">
-                            Выбрано: {washServices.length} {washServices.length === 1 ? 'услуга' : 'услуг'}
-                          </div>
-                          {showPrices ? (
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="text-2xl font-extrabold tabular-nums bg-gradient-to-br from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                                {totalAmount.toLocaleString('ru-RU')}
-                              </span>
-                              <span className="text-sm font-bold text-emerald-700">₽</span>
-                            </div>
-                          ) : (
-                            <div className="text-base font-bold text-gray-700">По договору</div>
-                          )}
-                        </div>
-                        <button
-                          onClick={proceedToConfirmation}
-                          className="rounded-xl bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 px-5 py-3.5 text-white shadow-lg shadow-emerald-500/40 active:scale-[0.97] flex items-center gap-2 min-h-[56px]"
-                        >
-                          <span className="text-base font-extrabold">Далее</span>
-                          <ArrowRight className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
+              {/* Sticky bottom-bar для kiosk теперь внутри KioskServiceSelectionStep
+                  (см. блок выше с условием isKioskMode). */}
             </div>
           )}
 
