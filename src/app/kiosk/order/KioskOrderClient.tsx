@@ -44,6 +44,10 @@ function EventRow({ event, employees }: { event: WashEvent; employees: Employee[
 export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, allEmployees, initialPendingVehicles }: KioskOrderClientProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [pendingVehicles, setPendingVehicles] = useState(initialPendingVehicles);
+  // 🔥 ФИКС 2026-05-11: когда оператор перешёл в активный wizard (выбор оплаты/услуг/подтверждение),
+  // скрываем вспомогательные panels — иначе они перекрывают форму на маленьком экране.
+  // Источник правды: ZorinWorkstationConsole сообщает через onWizardStateChange.
+  const [isInWizard, setIsInWizard] = useState(false);
 
   const sortByTime = (events: WashEvent[]) => [...events].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
 
@@ -92,8 +96,13 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
       <ZorinWorkstationConsole
         isKioskMode={true}
         scheduleByBox={{ box1: box1Employees, box2: box2Employees }}
+        onWizardStateChange={setIsInWizard}
       />
 
+      {/* 🔥 ФИКС 2026-05-11: Pending + History скрыты когда оператор в wizard
+          (выбор оплаты/услуг/подтверждение) — чтобы не наезжали на форму */}
+      {!isInWizard && (
+      <>
       <div className="space-y-2">
         <div className="flex items-center justify-between rounded-xl bg-amber-50 ring-1 ring-amber-200 px-3 py-2">
           <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2">
@@ -221,6 +230,8 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

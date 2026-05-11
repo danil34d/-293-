@@ -335,6 +335,15 @@
   background: white !important;
 }
 
+/* 🔥 ФИКС 2026-05-11: в kiosk-режиме убран scroll-in-scroll.
+   Безопасно потому что KioskOrderClient теперь скрывает Pending+History
+   когда оператор в активном wizard (см. onWizardStateChange callback).
+   Список услуг рендерится в полный размер, страница листается одним свайпом. */
+.kiosk-mode .zorin-service-list {
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+
 .zorin-service-item {
   padding: 16px !important;
   border: 2px solid #e5e7eb !important;

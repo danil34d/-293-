@@ -96,6 +96,14 @@ interface WorkstationProps {
   isKioskMode?: boolean;
   /** Pre-select box number (from URL param) */
   initialBoxNumber?: number;
+  /**
+   * 🔥 ФИКС 2026-05-11: callback вызывается когда оператор переходит
+   * в активный wizard (payment / aggregator / service / confirmation) —
+   * родитель скрывает вспомогательные panels (Pending vehicles, History)
+   * чтобы они не наезжали на список услуг.
+   * Передаёт false когда оператор на idle / vehicleInput (можно показывать всё).
+   */
+  onWizardStateChange?: (isInWizard: boolean) => void;
 }
 
 type BoxKey = 'box1' | 'box2';
@@ -115,7 +123,7 @@ function getBoxKey(boxNumber: number): BoxKey {
   return boxNumber === 2 ? 'box2' : 'box1';
 }
 
-export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKioskMode, initialBoxNumber }: WorkstationProps = {}) {
+export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKioskMode, initialBoxNumber, onWizardStateChange }: WorkstationProps = {}) {
   const { employee: loggedInEmployee } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -252,6 +260,18 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   }, [boxShiftStateByBox, isAdminMode, isKioskMode]);
 
   const [currentStep, setCurrentStep] = useState<CurrentStep>("idle");
+
+  // 🔥 ФИКС 2026-05-11: уведомляем родителя (KioskOrderClient) когда оператор
+  // перешёл в активный wizard. Родитель скрывает вспомогательные panels
+  // (Pending vehicles, History) чтобы они не наезжали на список услуг.
+  // Активные шаги: paymentSelection / aggregatorSelection / serviceSelection / confirmation.
+  // Пассивные: idle / vehicleInput — там panels видны, оператор может выбрать оттуда.
+  useEffect(() => {
+    const isInWizard =
+      currentStep !== 'idle' && currentStep !== 'vehicleInput';
+    onWizardStateChange?.(isInWizard);
+  }, [currentStep, onWizardStateChange]);
+
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const [allCounterAgents, setAllCounterAgents] = useState<CounterAgent[]>([]);
