@@ -76,6 +76,33 @@ export default async function KioskPage() {
   const box2Count = shiftEvents.filter((e) => e.boxNumber === 2).length;
   const shiftTotal = shiftEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
+  // 🔥 ДИЗАЙН 2026-05-10: разбивка кассы по 4 типам оплаты для Hero.
+  // Из design handoff: мойщику полезно видеть сразу сколько чего набрали.
+  const cashBreakdown = {
+    cash: 0,        // 'cash'                  → Наличные
+    card: 0,        // 'card'                  → Карта
+    transfer: 0,    // 'transfer'              → Перевод
+    cashless: 0,    // 'aggregator' + 'counterAgentContract' → Безнал
+  };
+  for (const e of shiftEvents) {
+    const amount = e.totalAmount || 0;
+    switch (e.paymentMethod) {
+      case 'cash':
+        cashBreakdown.cash += amount;
+        break;
+      case 'card':
+        cashBreakdown.card += amount;
+        break;
+      case 'transfer':
+        cashBreakdown.transfer += amount;
+        break;
+      case 'aggregator':
+      case 'counterAgentContract':
+        cashBreakdown.cashless += amount;
+        break;
+    }
+  }
+
   return (
     <KioskClient
       todayEmployeeIds={todayEmployeeIds}
@@ -85,6 +112,8 @@ export default async function KioskPage() {
       box2Count={box2Count}
       shiftTotal={shiftTotal}
       shiftLabel={isDayShift ? 'дневной смены' : 'ночной смены'}
+      isDayShift={isDayShift}
+      cashBreakdown={cashBreakdown}
       unprocessedCount={unprocessedCount}
     />
   );

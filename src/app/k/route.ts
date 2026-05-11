@@ -100,8 +100,15 @@ export async function GET(request: NextRequest) {
   const cookieValue = JSON.stringify(deviceData);
   const cookie = serializeEmployeeAuthCookie(request, cookieValue);
 
-  // 302 редирект на главную терминала
-  const redirectUrl = new URL('/kiosk', request.url);
+  // 302 редирект на главную терминала.
+  // 🔥 ФИКС 1.6.0: request.url отдаёт http://0.0.0.0:3000 (адрес биндинга,
+  // не клиентский) → WebView не мог подключиться → белый экран.
+  // Берём хост из заголовка Host, который клиент реально использовал.
+  const hostHeader = request.headers.get('host') || '192.168.1.150:3000';
+  const protocol = request.headers.get('x-forwarded-proto')
+    || (request.url.startsWith('https') ? 'https' : 'http');
+  const redirectUrl = `${protocol}://${hostHeader}/kiosk`;
+
   const response = NextResponse.redirect(redirectUrl, 302);
   response.headers.set('Set-Cookie', cookie);
   return response;

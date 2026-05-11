@@ -6,13 +6,23 @@ import {
   Users,
   AlertTriangle,
   ClipboardList,
-  Wallet,
   Sun,
   Moon,
   CarFront,
   ArrowRight,
+  Banknote,
+  CreditCard,
+  ArrowLeftRight,
+  Building2,
 } from 'lucide-react';
 import type { Employee } from '@/types';
+
+interface CashBreakdown {
+  cash: number;       // Наличные
+  card: number;       // Карта
+  transfer: number;   // Перевод
+  cashless: number;   // Безнал (агрегатор + контрагент)
+}
 
 interface KioskClientProps {
   todayEmployeeIds: string[];
@@ -22,6 +32,8 @@ interface KioskClientProps {
   box2Count: number;
   shiftTotal: number;              // только мойки текущей смены (приватность)
   shiftLabel: string;              // 'дневной смены' / 'ночной смены'
+  isDayShift: boolean;
+  cashBreakdown: CashBreakdown;
   unprocessedCount: number;
 }
 
@@ -63,20 +75,21 @@ export function KioskClient({
   box2Count,
   shiftTotal,
   shiftLabel,
+  isDayShift,
+  cashBreakdown,
   unprocessedCount,
 }: KioskClientProps) {
   const todayPeople = employees.filter((e) => todayEmployeeIds.includes(e.id));
-  const isDayShift = shiftLabel.includes('дневной');
 
-  // Живые часы (только клиент)
-  const [now, setNow] = useState<string>('');
+  // Живые часы (только клиент). Отдельные time + date для крупного отображения.
+  const [timeStr, setTimeStr] = useState<string>('');
+  const [dateStr, setDateStr] = useState<string>('');
   useEffect(() => {
     const tick = () => {
       const d = new Date();
-      setNow(
-        d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) +
-          ' · ' +
-          d.toLocaleDateString('ru-RU', { weekday: 'short', day: '2-digit', month: 'short' }),
+      setTimeStr(d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
+      setDateStr(
+        d.toLocaleDateString('ru-RU', { weekday: 'short', day: '2-digit', month: 'short' }),
       );
     };
     tick();
@@ -86,31 +99,59 @@ export function KioskClient({
 
   return (
     <div className="max-w-2xl mx-auto space-y-3 px-1">
-      {/* ─── HERO: контекстная плашка с временем и сменой ─────────────── */}
+      {/* ─── HERO: время + смена + разбивка кассы по 4 типам оплаты ─────── */}
       <section
-        className={`relative overflow-hidden rounded-2xl px-4 py-3 text-white shadow-md ${
+        className={`relative overflow-hidden rounded-3xl px-5 py-4 text-white shadow-lg ${
           isDayShift
             ? 'bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-700'
-            : 'bg-gradient-to-br from-slate-800 via-indigo-900 to-purple-900'
+            : 'bg-gradient-to-br from-slate-900 via-indigo-900 to-purple-900'
         }`}
       >
-        {/* Декоративные кружки в углу — глубина без тяжести */}
-        <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-xl" />
-        <div className="absolute -right-2 -bottom-2 h-16 w-16 rounded-full bg-white/5" />
-        <div className="relative flex items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/80">
-              {isDayShift ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+        {/* Большая декоративная sun/moon в углу (по handoff: 128px, opacity 20%) */}
+        <div className="pointer-events-none absolute -right-4 -top-4 opacity-20">
+          {isDayShift ? (
+            <Sun className="h-28 w-28 text-white" strokeWidth={1.5} />
+          ) : (
+            <Moon className="h-28 w-28 text-white" strokeWidth={1.5} />
+          )}
+        </div>
+
+        {/* Верх: caption + время + дата + (КАССА справа) */}
+        <div className="relative flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-white/90">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+              </span>
               <span>{isDayShift ? 'Дневная смена' : 'Ночная смена'}</span>
             </div>
-            <div className="mt-1 text-lg font-bold leading-tight">{now || '...'}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-[11px] uppercase tracking-wider text-white/80">Касса смены</div>
-            <div className="text-2xl font-extrabold leading-tight">
-              {shiftTotal.toLocaleString('ru-RU')} ₽
+            <div className="mt-1 text-[40px] font-extrabold leading-none tabular-nums">
+              {timeStr || '--:--'}
             </div>
+            <div className="mt-1 text-[13px] text-white/80">{dateStr}</div>
           </div>
+        </div>
+
+        {/* Разделитель */}
+        <div className="relative my-3 border-t border-white/15" />
+
+        {/* Касса смены — заголовок + крупная сумма */}
+        <div className="relative mb-2 flex items-baseline justify-between">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-white/90">
+            Касса смены
+          </div>
+          <div className="text-2xl font-extrabold tabular-nums">
+            {shiftTotal.toLocaleString('ru-RU')} ₽
+          </div>
+        </div>
+
+        {/* 4 плитки разбивки по типам оплаты (как в handoff) */}
+        <div className="relative grid grid-cols-4 gap-1.5">
+          <PaymentTile icon={<Banknote className="h-3.5 w-3.5" />} label="Нал" value={cashBreakdown.cash} />
+          <PaymentTile icon={<CreditCard className="h-3.5 w-3.5" />} label="Карта" value={cashBreakdown.card} />
+          <PaymentTile icon={<ArrowLeftRight className="h-3.5 w-3.5" />} label="Перевод" value={cashBreakdown.transfer} />
+          <PaymentTile icon={<Building2 className="h-3.5 w-3.5" />} label="Безнал" value={cashBreakdown.cashless} />
         </div>
       </section>
 
@@ -200,29 +241,6 @@ export function KioskClient({
           href="/kiosk/order?box=2"
         />
       </div>
-
-      {/* ─── Касса смены (детальная плашка с акцентом) ──────────────── */}
-      <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-50 via-emerald-50 to-teal-50 p-4 shadow-sm ring-1 ring-emerald-200/50">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 shadow-md shadow-emerald-500/30">
-              <Wallet className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wider text-emerald-700/80">
-                Касса {shiftLabel}
-              </div>
-              <div className="text-xs text-emerald-700/60">только текущая смена</div>
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 bg-clip-text text-3xl font-extrabold text-transparent">
-              {shiftTotal.toLocaleString('ru-RU')}
-            </div>
-            <div className="text-xs font-semibold text-emerald-600">рублей</div>
-          </div>
-        </div>
-      </section>
 
       {/* ─── Алерт о неоформленных (с пульсом если есть) ─────────────── */}
       {unprocessedCount > 0 && (
@@ -322,4 +340,39 @@ function SummaryTile({
     );
   }
   return <div className={className}>{Inner}</div>;
+}
+
+/**
+ * Плитка типа оплаты внутри Hero (Нал / Карта / Перевод / Безнал).
+ * Активная (есть сумма) — bg более яркий, иначе приглушённая.
+ * По handoff: rounded-xl px-2 py-1.5, число 12px extrabold tabular-nums.
+ */
+function PaymentTile({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+}) {
+  const hasValue = value > 0;
+  return (
+    <div
+      className={`flex flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 transition ${
+        hasValue ? 'bg-white/14' : 'bg-white/6 opacity-55'
+      }`}
+      style={{
+        backgroundColor: hasValue ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)',
+      }}
+    >
+      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-white/85">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="text-xs font-extrabold tabular-nums leading-tight">
+        {value.toLocaleString('ru-RU')}
+      </div>
+    </div>
+  );
 }
