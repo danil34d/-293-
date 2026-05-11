@@ -326,21 +326,17 @@
 }
 
 /* Service Selection */
-/* 🔥 ФИКС 2026-05-11: убран max-height — внутренний scroll-in-scroll
-   ломал UX на телефоне kiosk (оператор застревал прокручивая список
-   вместо страницы). Теперь и для /employee/workstation тоже —
-   на планшете тоже один свайп проходит весь список без двух уровней скролла. */
 .zorin-service-list {
-  max-height: none !important;
-  overflow-y: visible !important;
+  max-height: 400px !important;
+  overflow-y: auto !important;
   border: 1px solid #e5e7eb !important;
   border-radius: 12px !important;
-  padding: 8px !important;
+  padding: 16px !important;
   background: white !important;
 }
 
 .zorin-service-item {
-  padding: 12px !important;
+  padding: 16px !important;
   border: 2px solid #e5e7eb !important;
   border-radius: 10px !important;
   margin-bottom: 12px !important;
