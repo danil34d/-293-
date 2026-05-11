@@ -1832,7 +1832,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
               }))}
               searchQuery={serviceSearchQuery}
               onSearchChange={setServiceSearchQuery}
-              onServiceToggle={(service) => handleServiceSelect(service as any)}
+              onServiceToggle={handleServiceSelect}
               onServiceRemove={handleRemoveService}
               predefinedExtraServices={predefinedExtraServices}
               lastWashServices={lastWashServices ?? undefined}
