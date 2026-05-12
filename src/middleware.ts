@@ -13,6 +13,8 @@ const PUBLIC_API_PREFIXES = [
   '/api/auth/',          // включает /api/auth/kiosk-init
   '/api/wallboard',
   '/api/device-heartbeat',
+  '/api/app-version',    // UpdateChecker в APK (может вызывать без cookie на первом старте)
+  '/api/download',       // Скачивание APK (через apkUrl из app-version)
 ];
 
 function isStaticAsset(pathname: string): boolean {
