@@ -68,6 +68,8 @@ export const getChemicalConfig: () => Promise<any> = adapter.getChemicalConfig;
 export const getVehicleTypes: () => Promise<any> = adapter.getVehicleTypes;
 export const getViolationsData: () => Promise<Violation[]> = adapter.getViolationsData;
 export const getShiftReportsData: () => Promise<any[]> = adapter.getShiftReportsData;
+export const getAppVersion: () => Promise<any> = adapter.getAppVersion;
+export const saveAppVersion: (data: any) => Promise<void> = adapter.saveAppVersion;
 
 // ─── Cache invalidation (no-ops for PG, real for JSON) ──────
 
