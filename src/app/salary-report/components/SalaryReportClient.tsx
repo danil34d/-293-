@@ -390,12 +390,25 @@ export function SalaryReportClient() {
                                             <TableHead className="text-right text-xs uppercase tracking-wider font-semibold text-gray-500">Выплачено</TableHead>
                                             <TableHead className="text-right text-xs uppercase tracking-wider font-semibold text-gray-500">Прочее</TableHead>
                                             <TableHead className="text-right text-xs uppercase tracking-wider font-semibold text-gray-500 pr-4">Итого</TableHead>
+                                            <TableHead className="w-[110px] text-center text-xs uppercase tracking-wider font-semibold text-gray-500">Статус</TableHead>
                                             <TableHead className="w-[160px] text-center text-xs uppercase tracking-wider font-semibold text-gray-500"></TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {displayedEmployees.map((data, idx) => {
                                             const isInactive = inactiveEmployees.includes(data);
+                                            // Phase 4D-3: compute status
+                                            const payable = data.balanceAtStart + data.earningsForPeriod + data.otherOperationsTotal - data.paymentsForPeriod;
+                                            // Check if any wash in period has editHistory entries
+                                            const hasEdits = periodWashEvents.some(w =>
+                                                w.employeeIds?.includes(data.employee.id) &&
+                                                Array.isArray(w.editHistory) && w.editHistory.length > 0
+                                            );
+                                            let status: 'ready' | 'overpaid' | 'paid' | 'idle' | 'edited' = 'idle';
+                                            if (payable < 0) status = 'overpaid';
+                                            else if (hasEdits) status = 'edited';
+                                            else if (payable > 0) status = 'ready';
+                                            else if (data.earningsForPeriod > 0 && data.paymentsForPeriod > 0 && Math.abs(payable) < 1) status = 'paid';
                                             return (
                                                 <SalaryReportRow
                                                     key={data.employee.id}
@@ -408,6 +421,7 @@ export function SalaryReportClient() {
                                                     onActionSuccess={fetchAndProcessData}
                                                     isInactive={isInactive}
                                                     rank={!isInactive ? idx + 1 : undefined}
+                                                    status={status}
                                                 />
                                             );
                                         })}
@@ -430,6 +444,7 @@ export function SalaryReportClient() {
                                             <TableCell className="text-right pr-4 text-base tabular-nums font-bold text-gray-900">
                                                 {tableTotals.payable.toLocaleString('ru-RU')}
                                             </TableCell>
+                                            <TableCell></TableCell>
                                             <TableCell></TableCell>
                                         </TableRowUI>
                                     </TableFooter>

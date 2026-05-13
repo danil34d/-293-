@@ -17,8 +17,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DangerGate } from "@/components/admin";
+import { DangerGate, SafetyBar } from "@/components/admin";
 import { ConfirmCriticalChangesModal, type CriticalChange } from "./ConfirmCriticalChangesModal";
+import { SchemeImpactPreview } from "./SchemeImpactPreview";
+import { useWatch } from "react-hook-form";
 
 
 const employeeFormSchema = z.object({
@@ -68,6 +70,23 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
     changes: CriticalChange[];
     data: EmployeeFormValues;
   } | null>(null);
+
+  // Phase 4D-1: последняя выплата ЗП (для Live Impact Preview warning о расхождении).
+  // Источник: ищем последнюю EmployeeTransaction.type='payment' для этого сотрудника.
+  const [lastPaidPeriod, setLastPaidPeriod] = useState<string | null>(null);
+  useEffect(() => {
+    if (!employeeId) return;
+    fetch(`/api/employees/${employeeId}/transactions`)
+      .then(r => r.ok ? r.json() : [])
+      .then((txns: any[]) => {
+        const payments = (txns || []).filter(t => t.type === 'payment');
+        if (payments.length === 0) return;
+        // Берём самый поздний платёж
+        const latest = payments.reduce((max, t) => new Date(t.date) > new Date(max.date) ? t : max);
+        setLastPaidPeriod(new Date(latest.date).toISOString().slice(0, 7));
+      })
+      .catch(() => { /* silent */ });
+  }, [employeeId]);
 
   useEffect(() => {
     async function fetchSchemes() {
@@ -285,9 +304,54 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
     await performSave(data);
   }
 
+  // Phase 4D-2: SafetyBar сверху на edit-странице.
+  // Tracks current dirty/dangerous changes vs initialData в реальном времени.
+  // Используем useWatch для отслеживания изменений без re-render всей формы.
+  const watchedScheme = useWatch({ control: form.control, name: 'salarySchemeId' });
+  const watchedRole = useWatch({ control: form.control, name: 'role' });
+  const watchedUsername = useWatch({ control: form.control, name: 'username' });
+
+  const lockedCount = [
+    !schemeUnlocked,
+    !roleUnlocked,
+    !usernameUnlocked,
+  ].filter(Boolean).length;
+
+  const dangerousChangesCount = isExisting ? (
+    (watchedScheme !== (initialData?.salarySchemeId || 'unassigned') ? 1 : 0) +
+    (watchedRole !== normalizeEmployeeFormRole(initialData?.role) ? 1 : 0) +
+    ((watchedUsername || '') !== (initialData?.username || '') ? 1 : 0)
+  ) : 0;
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 md:space-y-8">
+        {/* Phase 4D-2: SafetyBar сверху (только на edit) */}
+        {isExisting && (
+          <SafetyBar
+            level={dangerousChangesCount > 0 ? 'critical' : 'info'}
+            items={[
+              {
+                icon: 'lock',
+                label: 'Опасных полей залочено',
+                value: `${lockedCount} из 3`,
+              },
+              {
+                icon: 'banknote',
+                label: 'Последняя выплата ЗП',
+                value: lastPaidPeriod || 'не было',
+              },
+              {
+                icon: 'edit-3',
+                label: 'Несохранённых изменений',
+                value: dangerousChangesCount > 0
+                  ? `${dangerousChangesCount} критичных`
+                  : 'нет',
+              },
+            ]}
+          />
+        )}
+
         <Card className="shadow-md">
           <CardHeader>
             <CardTitle className="font-headline text-xl flex items-center gap-2">
@@ -453,6 +517,14 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
                   <FormMessage />
                 </FormItem>
               )}
+            />
+
+            {/* Phase 4D-1: Live Impact Preview прямо под Select */}
+            <SchemeImpactPreview
+              oldSchemeId={initialData?.salarySchemeId}
+              newSchemeId={watchedScheme || 'unassigned'}
+              schemes={salarySchemes}
+              lastPaidPeriod={lastPaidPeriod}
             />
           </DangerGate>
         ) : (

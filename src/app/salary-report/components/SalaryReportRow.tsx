@@ -20,6 +20,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+/**
+ * Phase 4D-3: status badge для колонки «Статус» — даёт быстрое визуальное
+ * понимание состояния расчёта без чтения чисел.
+ */
+export type SalaryRowStatus = 'ready' | 'overpaid' | 'paid' | 'idle' | 'edited';
+
 interface SalaryReportRowProps {
     employeeId: string;
     employeeName: string;
@@ -30,6 +36,8 @@ interface SalaryReportRowProps {
     onActionSuccess: () => void;
     isInactive?: boolean;
     rank?: number;
+    /** Pre-computed status from parent (knows about editHistory in period). */
+    status?: SalaryRowStatus;
 }
 
 const transactionTypeDetails: Record<Exclude<EmployeeTransactionType, 'payment'>, { label: string; icon: React.ElementType, sign: number, color: string }> = {
@@ -136,7 +144,27 @@ function AddTransactionDialog({ employeeId, employeeName, onActionSuccess, route
     );
 }
 
-export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earningsForPeriod, paymentsForPeriod, otherOperationsTotal, onActionSuccess, isInactive, rank }: SalaryReportRowProps) {
+/** Phase 4D-3 — render status pill для колонки «Статус». */
+function StatusBadge({ status }: { status: SalaryRowStatus }) {
+    const cfg: Record<SalaryRowStatus, { label: string; bg: string; text: string }> = {
+        ready:    { label: 'готов',      bg: '#dbeafe', text: '#1d4ed8' },
+        overpaid: { label: 'переплата',  bg: '#fee2e2', text: '#b91c1c' },
+        paid:     { label: 'выплачено',  bg: '#dcfce7', text: '#15803d' },
+        idle:     { label: '—',          bg: '#f1f5f9', text: '#94a3b8' },
+        edited:   { label: 'правки',     bg: '#fef3c7', text: '#92400e' },
+    };
+    const c = cfg[status];
+    return (
+        <span
+            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+            style={{ background: c.bg, color: c.text }}
+        >
+            {c.label}
+        </span>
+    );
+}
+
+export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earningsForPeriod, paymentsForPeriod, otherOperationsTotal, onActionSuccess, isInactive, rank, status }: SalaryReportRowProps) {
     const { toast } = useToast();
     const router = useRouter();
     const [isPaying, setIsPaying] = useState(false);
@@ -261,6 +289,14 @@ export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earn
                 )}>
                     {payableTotal !== 0 ? formatMoney(payableTotal) : '0'}
                 </span>
+            </TableCell>
+
+            {/* Phase 4D-3: Колонка «Статус» */}
+            <TableCell className="text-center py-3">
+                {status && <StatusBadge status={
+                    // override: если только что выплатил — показываем 'paid'
+                    justPaid ? 'paid' : status
+                } />}
             </TableCell>
 
             {/* Actions */}
