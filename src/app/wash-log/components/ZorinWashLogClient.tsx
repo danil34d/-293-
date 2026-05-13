@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,8 @@ import { format, isToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
+import { WashDeleteRowButton } from './WashDeleteModal';
+import { SafetyBar } from '@/components/admin';
 import { Pagination } from '@/components/common/Pagination';
 import { normalizeLicensePlate } from '@/lib/utils';
 import { EditConsumptionDialog } from './EditConsumptionDialog';
@@ -155,6 +157,64 @@ export function ZorinWashLogClient({
   const [cameraPreview, setCameraPreview] = useState<CameraPreviewState | null>(null);
 
   const paginatedEvents = washEvents;
+
+  // Phase 6.1: fetch closed periods для всех уникальных месяцев в списке моек.
+  // Используется чтобы показать lock-иконку вместо trash для wash-events
+  // из закрытых периодов (защита 423 Locked страхует на backend).
+  const uniqueMonths = useMemo(() => {
+    const months = new Set<string>();
+    paginatedEvents.forEach(e => {
+      if (e.timestamp) {
+        try {
+          months.add(new Date(e.timestamp).toISOString().slice(0, 7));
+        } catch { /* skip invalid */ }
+      }
+    });
+    return Array.from(months);
+  }, [paginatedEvents]);
+
+  const [closedMonths, setClosedMonths] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchPeriods() {
+      const results = await Promise.allSettled(
+        uniqueMonths.map(m =>
+          fetch(`/api/salary-period?month=${m}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(d => (d && d.closed ? m : null))
+        )
+      );
+      if (cancelled) return;
+      const closed = results
+        .filter((r): r is PromiseFulfilledResult<string | null> => r.status === 'fulfilled' && r.value !== null)
+        .map(r => r.value as string);
+      setClosedMonths(new Set(closed));
+    }
+    if (uniqueMonths.length > 0) fetchPeriods();
+    return () => { cancelled = true; };
+  }, [uniqueMonths.join(',')]);
+
+  function getEventMonth(e: WashEvent): string {
+    try { return new Date(e.timestamp).toISOString().slice(0, 7); } catch { return ''; }
+  }
+  function isEventInClosedPeriod(e: WashEvent): boolean {
+    const m = getEventMonth(e);
+    return m !== '' && closedMonths.has(m);
+  }
+  function hasEditsAfterPaid(e: WashEvent): boolean {
+    if (!isEventInClosedPeriod(e)) return false;
+    return Array.isArray(e.editHistory) && e.editHistory.length > 0;
+  }
+  function hasAnyEdits(e: WashEvent): boolean {
+    return Array.isArray(e.editHistory) && e.editHistory.length > 0;
+  }
+
+  // Phase 6.1: SafetyBar counters
+  const openCount = paginatedEvents.filter(e => !isEventInClosedPeriod(e)).length;
+  const lockedCount = paginatedEvents.filter(e => isEventInClosedPeriod(e)).length;
+  const editedAfterPaidCount = paginatedEvents.filter(hasEditsAfterPaid).length;
+  const editedCount = paginatedEvents.filter(e => hasAnyEdits(e) && !isEventInClosedPeriod(e)).length;
 
   const handlePrint = () => {
     window.print();
@@ -375,6 +435,26 @@ export function ZorinWashLogClient({
         </div>
       </div>
 
+      {/* Phase 6.1: SafetyBar — статус периодов */}
+      {paginatedEvents.length > 0 && (
+        <div className="mb-4">
+          <SafetyBar
+            level={editedAfterPaidCount > 0 ? 'critical' : (editedCount > 0 ? 'warn' : 'info')}
+            items={[
+              { icon: 'check-circle-2', label: 'Открытый период', value: `${openCount} моек` },
+              { icon: 'lock', label: 'Закрытый период', value: lockedCount > 0 ? `${lockedCount} (правки запрещены)` : '—' },
+              {
+                icon: 'edit-3',
+                label: 'С правками',
+                value: editedAfterPaidCount > 0
+                  ? `${editedAfterPaidCount} после оплаты ⚠`
+                  : (editedCount > 0 ? `${editedCount} в открытом периоде` : 'нет'),
+              },
+            ]}
+          />
+        </div>
+      )}
+
       {/* Main Table */}
       <div className="zorin-table-card">
         <div className="overflow-x-auto">
@@ -386,6 +466,7 @@ export function ZorinWashLogClient({
                 <th>Услуги</th>
                 <th>Исполнители</th>
                 <th className="text-right">Сумма</th>
+                <th className="text-center w-[100px]">Период</th>
                 <th className="text-right w-[120px]">Действия</th>
               </tr>
             </thead>
@@ -406,8 +487,21 @@ export function ZorinWashLogClient({
                 const lastEdit = event.editHistory && event.editHistory.length > 0 ? event.editHistory[event.editHistory.length - 1] : null;
                 const hasCameraSession = Boolean(getCameraMediaUrls(event));
 
+                // Phase 6.1: period status per row
+                const eventMonth = getEventMonth(event);
+                const isInClosed = isEventInClosedPeriod(event);
+                const editedAfterPaid = isInClosed && Array.isArray(event.editHistory) && event.editHistory.length > 0;
+                const editedInOpen = !isInClosed && Array.isArray(event.editHistory) && event.editHistory.length > 0;
+
+                // Highlight: rose if edited after paid, amber if just edited
+                const rowStyle: React.CSSProperties = editedAfterPaid
+                  ? { background: 'rgba(254, 242, 242, 0.6)' }  // rose-50/60
+                  : editedInOpen
+                    ? { background: 'rgba(255, 251, 235, 0.6)' }  // amber-50/60
+                    : {};
+
                 return (
-                  <tr key={event.id} className="zorin-table-row">
+                  <tr key={event.id} className="zorin-table-row" style={rowStyle}>
                     {/* Date Cell */}
                     <td className="zorin-table-cell zorin-date-cell">
                       <div className="flex items-start gap-1.5">
@@ -624,6 +718,43 @@ export function ZorinWashLogClient({
                       )}
                     </td>
 
+                    {/* Phase 6.1: Period status cell */}
+                    <td className="zorin-table-cell text-center">
+                      {editedAfterPaid ? (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                          style={{ background: '#fee2e2', color: '#b91c1c' }}
+                          title={`Правки после оплаты — ZP может расходиться`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
+                          правки⚠
+                        </span>
+                      ) : isInClosed ? (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                          style={{ background: '#dcfce7', color: '#15803d' }}
+                          title={`Период ${eventMonth} закрыт`}
+                        >
+                          закрыт
+                        </span>
+                      ) : editedInOpen ? (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                          style={{ background: '#fef3c7', color: '#92400e' }}
+                          title="Редактировалось"
+                        >
+                          правки
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                          style={{ background: '#eff6ff', color: '#1d4ed8' }}
+                        >
+                          открыт
+                        </span>
+                      )}
+                    </td>
+
                     {/* Actions Cell */}
                     <td className="zorin-table-cell zorin-actions-cell">
                       <div className="zorin-action-buttons">
@@ -645,18 +776,24 @@ export function ZorinWashLogClient({
                             <Edit className="h-4 w-4" />
                           </Link>
                         </Button>
-                        <DeleteConfirmationButton
-                          apiPath="/api/wash-events"
-                          entityId={event.id}
-                          entityName={`${event.vehicleNumber} от ${formattedDate}`}
-                          toastTitle="Запись о мойке удалена"
-                          toastDescription={`Запись о мойке для машины ${event.vehicleNumber} от ${formattedDate} успешно удалена.`}
-                          description={
-                            <>
-                              Вы собираетесь безвозвратно удалить запись о мойке для машины <strong className="font-mono text-foreground">{event.vehicleNumber}</strong> от <strong className="text-foreground">{formattedDate}</strong>.
-                              Это действие нельзя отменить.
-                            </>
+                        <WashDeleteRowButton
+                          eventId={event.id}
+                          vehicleNumber={event.vehicleNumber}
+                          eventDate={formattedDate}
+                          totalAmount={event.totalAmount || 0}
+                          paymentLabel={
+                            event.paymentMethod === 'cash' ? 'Наличные' :
+                            event.paymentMethod === 'card' ? 'Карта' :
+                            event.paymentMethod === 'transfer' ? 'Перевод' :
+                            event.paymentMethod === 'aggregator' ? `Агрегатор${event.sourceName ? ' · ' + event.sourceName : ''}` :
+                            event.paymentMethod === 'counterAgentContract' ? `Договор${event.sourceName ? ' · ' + event.sourceName : ''}` :
+                            String(event.paymentMethod)
                           }
+                          employeeNames={(event.employeeIds || []).map(id => employeeMap.get(id) || id)}
+                          counterAgentName={event.paymentMethod === 'counterAgentContract' ? event.sourceName : undefined}
+                          aggregatorName={event.paymentMethod === 'aggregator' ? event.sourceName : undefined}
+                          periodLocked={isEventInClosedPeriod(event)}
+                          month={getEventMonth(event)}
                         />
                       </div>
                     </td>
