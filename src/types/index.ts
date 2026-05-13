@@ -181,6 +181,12 @@ export interface Employee {
     note?: string; // Комментарий менеджера
     updatedAt?: string; // Когда менеджер обновил
   };
+
+  // UX-safety: soft delete (Phase 6.2).
+  // Архивные сотрудники скрыты из активных списков и графиков,
+  // но история WashEvent / EmployeeTransaction / Shift сохраняется.
+  archived?: boolean;
+  archivedAt?: string; // ISO timestamp
 }
 
 export interface SalaryRate {

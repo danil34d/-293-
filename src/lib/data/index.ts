@@ -90,6 +90,20 @@ export const appendEmployeeSchemeHistory: (
 ) => Promise<void> =
   adapter.appendEmployeeSchemeHistory ?? (async () => { /* no-op for JSON */ });
 
+// Phase 6.2: employee archive / impact pre-check
+export const archiveEmployee: (id: string) => Promise<void> =
+  adapter.archiveEmployee ?? (async () => { throw new Error('archiveEmployee requires DATA_SOURCE=postgres'); });
+export const unarchiveEmployee: (id: string) => Promise<void> =
+  adapter.unarchiveEmployee ?? (async () => { throw new Error('unarchiveEmployee requires DATA_SOURCE=postgres'); });
+export const getEmployeeImpact: (id: string) => Promise<{
+  washEvents: number;
+  transactions: number;
+  shifts: number;
+  violations: number;
+  canisters: number;
+  dayStatuses: number;
+}> = adapter.getEmployeeImpact ?? (async () => ({ washEvents: 0, transactions: 0, shifts: 0, violations: 0, canisters: 0, dayStatuses: 0 }));
+
 // ─── Cache invalidation (no-ops for PG, real for JSON) ──────
 
 export const invalidateWashEventsCache: () => Promise<void> = adapter.invalidateWashEventsCache;

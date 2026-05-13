@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { Employee, EmployeeRole } from '@/types';
-import { appendEmployeeSchemeHistory, getEmployeesData, invalidateEmployeesCache } from '@/lib/data';
+import { appendEmployeeSchemeHistory, getEmployeeImpact, getEmployeesData, invalidateEmployeesCache } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { hashPassword } from '@/lib/password-hash';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
@@ -121,9 +121,34 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     if (!existing) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
     }
+
+    // UX-safety pre-check: блокируем hard DELETE если есть история (Phase 6.2).
+    // Cascade удалит WashEventEmployee, ShiftEmployee, EmployeeTransaction,
+    // EmployeeDayStatus, EmployeeCanister, Violation — это ВСЯ история работы.
+    // Архивация (POST /archive) сохраняет данные и решает 99% случаев.
+    const impact = await getEmployeeImpact(id);
+    const hasHistory =
+      impact.washEvents > 0 ||
+      impact.transactions > 0 ||
+      impact.shifts > 0 ||
+      impact.violations > 0;
+
+    // Опциональный bypass для очень осознанного hard-delete: header X-Confirm-Hard-Delete
+    // Frontend в UI требует ввод ФИО + 2 чек-листа перед таким запросом.
+    const url = new URL(request.url);
+    const force = url.searchParams.get('force') === 'true';
+
+    if (hasHistory && !force) {
+      return NextResponse.json({
+        error: 'У сотрудника есть история (мойки, транзакции, смены). Используйте Archive вместо Delete.',
+        impact,
+        suggestArchive: true,
+      }, { status: 409 });
+    }
+
     await deleteEntity('employee', id);
     invalidateEmployeesCache();
-    return NextResponse.json({ message: 'Employee deleted successfully' });
+    return NextResponse.json({ message: 'Employee deleted successfully', impact });
   } catch (error: any) {
     console.error(`Error deleting employee data for ID ${id}:`, error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

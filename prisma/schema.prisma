@@ -48,6 +48,11 @@ model Employee {
   targetShiftsPerMonth      Int?
   wantsMoreShifts           Boolean?
 
+  // UX-safety: soft delete вместо hard delete с cascade на 7 таблиц.
+  // См. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #1 + Phase 6.2.
+  archived   Boolean @default(false)
+  archivedAt String?
+
   salaryScheme         SalaryScheme?         @relation(fields: [salarySchemeId], references: [id], onDelete: SetNull)
   washEvents           WashEventEmployee[]
   employeeTransactions EmployeeTransaction[]
@@ -61,6 +66,7 @@ model Employee {
   updatedAt DateTime @updatedAt
 
   @@index([salarySchemeId])
+  @@index([archived])
 }
 
 // ─── Клиенты ──────────────────────────────────────────────────

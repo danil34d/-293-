@@ -80,6 +80,8 @@ function employeeFromPrisma(row: any): Employee {
     weekendPreferredShiftType: row.weekendPreferredShiftType ?? undefined,
     targetShiftsPerMonth: row.targetShiftsPerMonth ?? undefined,
     wantsMoreShifts: row.wantsMoreShifts ?? undefined,
+    archived: row.archived ?? false,
+    archivedAt: row.archivedAt ?? undefined,
   };
 }
 
@@ -705,6 +707,8 @@ export async function saveEmployee(data: any): Promise<void> {
       weekendPreferredShiftType: data.weekendPreferredShiftType ?? null,
       targetShiftsPerMonth: data.targetShiftsPerMonth ?? null,
       wantsMoreShifts: data.wantsMoreShifts ?? null,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
     create: {
       id: data.id,
@@ -723,12 +727,57 @@ export async function saveEmployee(data: any): Promise<void> {
       weekendPreferredShiftType: data.weekendPreferredShiftType ?? null,
       targetShiftsPerMonth: data.targetShiftsPerMonth ?? null,
       wantsMoreShifts: data.wantsMoreShifts ?? null,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
   });
 }
 
 export async function deleteEmployee(id: string): Promise<void> {
   await prisma.employee.delete({ where: { id } });
+}
+
+/**
+ * UX-safety: soft-delete сотрудника (Phase 6.2).
+ * Архивные пропадают из активных списков и графиков, но история сохраняется.
+ * См. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #1 (cascade 7 таблиц).
+ */
+export async function archiveEmployee(id: string): Promise<void> {
+  await prisma.employee.update({
+    where: { id },
+    data: { archived: true, archivedAt: new Date().toISOString() },
+  });
+}
+
+/** Возвращает сотрудника обратно из архива. */
+export async function unarchiveEmployee(id: string): Promise<void> {
+  await prisma.employee.update({
+    where: { id },
+    data: { archived: false, archivedAt: null },
+  });
+}
+
+/**
+ * Подсчёт реальных связей сотрудника — для pre-check перед hard DELETE.
+ * Возвращает количество записей в каскадных таблицах.
+ */
+export async function getEmployeeImpact(id: string): Promise<{
+  washEvents: number;
+  transactions: number;
+  shifts: number;
+  violations: number;
+  canisters: number;
+  dayStatuses: number;
+}> {
+  const [washEvents, transactions, shifts, violations, canisters, dayStatuses] = await Promise.all([
+    prisma.washEventEmployee.count({ where: { employeeId: id } }),
+    prisma.employeeTransaction.count({ where: { employeeId: id } }),
+    prisma.shiftEmployee.count({ where: { employeeId: id } }),
+    prisma.violation.count({ where: { employeeId: id } }),
+    prisma.employeeCanister.count({ where: { employeeId: id } }),
+    prisma.employeeDayStatus.count({ where: { employeeId: id } }),
+  ]);
+  return { washEvents, transactions, shifts, violations, canisters, dayStatuses };
 }
 
 // --- Aggregators ---
