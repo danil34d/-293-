@@ -203,6 +203,32 @@ export interface SalaryScheme {
   fixedDeduction?: number;
   rateSource?: RateSource;
   rates?: SalaryRate[];
+  // UX-safety: soft delete (см. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #1).
+  // Schemes with archived=true скрыты из основной таблицы /salary-schemes
+  // и не могут быть назначены сотруднику, но история ZP сохраняется.
+  archived?: boolean;
+  archivedAt?: string; // ISO timestamp
+}
+
+/** Закрытый период ЗП — блокирует правки WashEvent после выплаты (423 Locked). */
+export interface SalaryPeriod {
+  id: string;
+  month: string;       // "2026-05"
+  closed: boolean;
+  closedBy?: string;   // employeeId admin'а
+  closedAt?: string;   // ISO
+  createdAt: string;
+}
+
+/** История смены salaryScheme — для эффективного расчёта ZP по периоду. */
+export interface EmployeeSalarySchemeHistoryEntry {
+  id: string;
+  employeeId: string;
+  schemeId: string | null;
+  effectiveFrom: string; // ISO
+  effectiveTo: string | null;
+  changedBy: string;     // employeeId admin'а
+  createdAt: string;
 }
 
 export interface WashEventEditHistory {

@@ -71,6 +71,25 @@ export const getShiftReportsData: () => Promise<any[]> = adapter.getShiftReports
 export const getAppVersion: () => Promise<any> = adapter.getAppVersion;
 export const saveAppVersion: (data: any) => Promise<void> = adapter.saveAppVersion;
 
+// ─── UX-safety v1 (Postgres-only — на JSON-fallback стабы выбрасывают error) ──
+
+export const archiveSalaryScheme: (id: string) => Promise<void> =
+  adapter.archiveSalaryScheme ?? (async () => { throw new Error('archiveSalaryScheme requires DATA_SOURCE=postgres'); });
+export const unarchiveSalaryScheme: (id: string) => Promise<void> =
+  adapter.unarchiveSalaryScheme ?? (async () => { throw new Error('unarchiveSalaryScheme requires DATA_SOURCE=postgres'); });
+export const getSalaryPeriod: (month: string) => Promise<any | null> =
+  adapter.getSalaryPeriod ?? (async () => null);
+export const isSalaryPeriodClosed: (month: string) => Promise<boolean> =
+  adapter.isSalaryPeriodClosed ?? (async () => false);
+export const closeSalaryPeriod: (month: string, closedBy: string) => Promise<void> =
+  adapter.closeSalaryPeriod ?? (async () => { throw new Error('closeSalaryPeriod requires DATA_SOURCE=postgres'); });
+export const openSalaryPeriod: (month: string) => Promise<void> =
+  adapter.openSalaryPeriod ?? (async () => { throw new Error('openSalaryPeriod requires DATA_SOURCE=postgres'); });
+export const appendEmployeeSchemeHistory: (
+  employeeId: string, schemeId: string | null, changedBy: string
+) => Promise<void> =
+  adapter.appendEmployeeSchemeHistory ?? (async () => { /* no-op for JSON */ });
+
 // ─── Cache invalidation (no-ops for PG, real for JSON) ──────
 
 export const invalidateWashEventsCache: () => Promise<void> = adapter.invalidateWashEventsCache;

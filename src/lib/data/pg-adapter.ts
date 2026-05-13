@@ -182,6 +182,8 @@ function salarySchemeFromPrisma(row: any): SalaryScheme {
     fixedDeduction: row.fixedDeduction ?? undefined,
     rateSource: parseJsonField(row.rateSource, undefined),
     rates: parseJsonField(row.rates, undefined),
+    archived: row.archived ?? false,
+    archivedAt: row.archivedAt ?? undefined,
   };
 }
 
@@ -854,6 +856,8 @@ export async function saveSalaryScheme(data: any): Promise<void> {
       fixedDeduction: data.fixedDeduction ?? null,
       rateSource: data.rateSource ?? undefined,
       rates: data.rates ?? undefined,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
     create: {
       id: data.id,
@@ -863,12 +867,93 @@ export async function saveSalaryScheme(data: any): Promise<void> {
       fixedDeduction: data.fixedDeduction ?? null,
       rateSource: data.rateSource ?? undefined,
       rates: data.rates ?? undefined,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
   });
 }
 
 export async function deleteSalaryScheme(id: string): Promise<void> {
   await prisma.salaryScheme.delete({ where: { id } });
+}
+
+/**
+ * UX-safety: soft-delete схемы (archived=true, archivedAt=now).
+ * Используется в POST /api/salary-schemes/[id]/archive вместо hard DELETE.
+ * Сотрудники с archived schemeId сохраняют связь — история ZP не теряется.
+ */
+export async function archiveSalaryScheme(id: string): Promise<void> {
+  await prisma.salaryScheme.update({
+    where: { id },
+    data: { archived: true, archivedAt: new Date().toISOString() },
+  });
+}
+
+/** Возвращает схему обратно из архива (отмена archive). */
+export async function unarchiveSalaryScheme(id: string): Promise<void> {
+  await prisma.salaryScheme.update({
+    where: { id },
+    data: { archived: false, archivedAt: null },
+  });
+}
+
+// ─── SalaryPeriod (UX-safety: блокировка правок WashEvent) ───
+
+export async function getSalaryPeriod(month: string): Promise<any | null> {
+  return prisma.salaryPeriod.findUnique({ where: { month } });
+}
+
+export async function isSalaryPeriodClosed(month: string): Promise<boolean> {
+  const period = await prisma.salaryPeriod.findUnique({ where: { month } });
+  return !!period?.closed;
+}
+
+/**
+ * Закрыть период ЗП. После этого PUT/DELETE /api/wash-events/[id]
+ * с timestamp.slice(0,7) === month вернёт 423 Locked.
+ * Если период уже существует — обновляет closed/closedBy/closedAt.
+ */
+export async function closeSalaryPeriod(month: string, closedBy: string): Promise<void> {
+  const closedAt = new Date();
+  await prisma.salaryPeriod.upsert({
+    where: { month },
+    create: { month, closed: true, closedBy, closedAt },
+    update: { closed: true, closedBy, closedAt },
+  });
+}
+
+/** Открыть период обратно (для исключений). */
+export async function openSalaryPeriod(month: string): Promise<void> {
+  await prisma.salaryPeriod.upsert({
+    where: { month },
+    create: { month, closed: false },
+    update: { closed: false, closedAt: null },
+  });
+}
+
+// ─── EmployeeSalarySchemeHistory ────────────────────────────
+
+/**
+ * Закрыть текущую активную запись истории (effectiveTo=now) + создать новую
+ * с effectiveFrom=now и переданным schemeId.
+ * Используется в PUT /api/employees/[id] когда salarySchemeId меняется.
+ * Транзакционно, чтобы не было дубликатов "активных" записей.
+ */
+export async function appendEmployeeSchemeHistory(
+  employeeId: string,
+  schemeId: string | null,
+  changedBy: string
+): Promise<void> {
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.employeeSalarySchemeHistory.updateMany({
+      where: { employeeId, effectiveTo: null },
+      data: { effectiveTo: now },
+    }),
+    prisma.employeeSalarySchemeHistory.create({
+      data: { employeeId, schemeId, effectiveFrom: now, changedBy },
+    }),
+  ]);
 }
 
 // --- Employee Transactions ---

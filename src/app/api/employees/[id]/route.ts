@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { Employee, EmployeeRole } from '@/types';
-import { getEmployeesData, invalidateEmployeesCache } from '@/lib/data';
+import { appendEmployeeSchemeHistory, getEmployeesData, invalidateEmployeesCache } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { hashPassword } from '@/lib/password-hash';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
@@ -61,19 +61,42 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     // Password handling: if empty — keep old, if provided — hash it
+    let oldDataForHistory: Employee | null = null;
     if (!updatedData.password) {
       try {
         const oldData = await readEntity<Employee>('employee', id);
         if (oldData) {
           updatedData.password = oldData.password;
+          oldDataForHistory = oldData;
         }
       } catch { /* new employee or not found — leave empty */ }
     } else {
+      // Need oldData for scheme history even if password is being changed
+      try {
+        oldDataForHistory = await readEntity<Employee>('employee', id);
+      } catch { /* not found */ }
       updatedData.password = await hashPassword(updatedData.password);
     }
 
     await saveEntity('employee', updatedData);
     invalidateEmployeesCache();
+
+    // UX-safety: append EmployeeSalarySchemeHistory если salarySchemeId изменился.
+    // Это позволит позже считать ZP по схеме, действовавшей на момент мойки,
+    // вместо ретроактивного пересчёта (см. АРХИТЕКТУРНЫЕ-НАХОДКИ #2).
+    if (oldDataForHistory && oldDataForHistory.salarySchemeId !== updatedData.salarySchemeId) {
+      try {
+        await appendEmployeeSchemeHistory(
+          id,
+          updatedData.salarySchemeId ?? null,
+          (auth as any).id
+        );
+      } catch (histErr: any) {
+        // History — best-effort, не блокируем основной save.
+        console.warn(`[scheme-history] failed for employee ${id}:`, histErr?.message);
+      }
+    }
+
     return NextResponse.json({ message: 'Data updated successfully', employee: updatedData });
   } catch (error) {
     console.error(`Error writing employee data for ID ${id}:`, error);
