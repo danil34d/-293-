@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { DateRange } from "react-day-picker";
-import { startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns";
+import { startOfMonth, endOfMonth, startOfDay, endOfDay, format } from "date-fns";
 import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, EmployeeTransactionType, SalaryReportData } from '@/types';
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,6 +17,8 @@ import { isEmployeeAdmin, isKiosk } from "@/lib/employee-role";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TableCell, TableRow as TableRowUI, TableFooter } from "@/components/ui/table";
+import { SafetyBar } from "@/components/admin";
+import { ClosePeriodButton } from "./ClosePeriodButton";
 
 
 interface FullEmployeeData {
@@ -38,6 +40,38 @@ export function SalaryReportClient() {
     const [periodWashEvents, setPeriodWashEvents] = useState<WashEvent[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showInactive, setShowInactive] = useState(false);
+
+    // UX-safety (Phase 4C3): статус закрытия периода ЗП.
+    // Используется в /api/wash-events/[id] для 423 Locked при попытке правки.
+    // Период определяется по месяцу dateRange.from.
+    const reportMonth = useMemo(() => {
+        if (!dateRange?.from) return null;
+        return format(dateRange.from, "yyyy-MM");
+    }, [dateRange]);
+    const [periodStatus, setPeriodStatus] = useState<{ closed: boolean; closedBy?: string | null; closedAt?: string | null } | null>(null);
+
+    const fetchPeriodStatus = async () => {
+        if (!reportMonth) {
+            setPeriodStatus(null);
+            return;
+        }
+        try {
+            const response = await fetch(`/api/salary-period?month=${reportMonth}`);
+            if (response.ok) {
+                const data = await response.json();
+                setPeriodStatus(data);
+            } else {
+                setPeriodStatus({ closed: false });
+            }
+        } catch {
+            setPeriodStatus({ closed: false });
+        }
+    };
+
+    useEffect(() => {
+        fetchPeriodStatus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reportMonth]);
 
     // Define transactionTypeDetails here
     const transactionTypeDetails: Record<EmployeeTransactionType, { sign: number }> = {
@@ -222,10 +256,53 @@ export function SalaryReportClient() {
 
     return (
         <div className="space-y-4">
-            {/* Date range picker */}
-            <div className="mb-2">
+            {/* Date range picker + Close-period button */}
+            <div className="mb-2 flex items-center justify-between gap-3 flex-wrap">
                 <DateRangePicker date={dateRange} setDate={setDateRange} />
+                {reportMonth && (
+                    <ClosePeriodButton
+                        month={reportMonth}
+                        periodStatus={periodStatus}
+                        onChange={fetchPeriodStatus}
+                    />
+                )}
             </div>
+
+            {/* UX-safety: SafetyBar со статусом периода ЗП */}
+            {!isLoading && reportMonth && (
+                <SafetyBar
+                    level={periodStatus?.closed ? "safe" : "warn"}
+                    items={[
+                        {
+                            icon: "calendar",
+                            label: "Период",
+                            value: reportMonth,
+                        },
+                        {
+                            icon: periodStatus?.closed ? "lock" : "unlock",
+                            label: "Статус",
+                            value: periodStatus?.closed ? "Закрыт (правки моек заблокированы)" : "Открыт (правки моек разрешены)",
+                        },
+                        {
+                            icon: "banknote",
+                            label: "К выплате",
+                            value: `${summaryStats.totalPayable.toLocaleString("ru-RU")} ₽`,
+                        },
+                    ]}
+                />
+            )}
+
+            {/* Recommendation banner — пока период не закрыт и есть выплаты */}
+            {!isLoading && reportMonth && !periodStatus?.closed && summaryStats.totalPayable !== 0 && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+                    <div className="text-[12px] text-amber-900 leading-snug flex-1">
+                        <b>Перед выплатой ЗП</b> рекомендуется закрыть период кнопкой <b>«Закрыть период»</b> сверху —
+                        это запретит правки моек за <code className="bg-white px-1 rounded text-[11px]">{reportMonth}</code>,
+                        чтобы факт vs выплачено не разошлись.
+                    </div>
+                </div>
+            )}
 
             {/* Summary stats strip */}
             {!isLoading && allEmployeeData.length > 0 && (
