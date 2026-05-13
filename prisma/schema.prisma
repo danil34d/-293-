@@ -10,39 +10,45 @@ datasource db {
 // ─── Справочники ──────────────────────────────────────────────
 
 model SalaryScheme {
-  id             String  @id
+  id             String @id
   name           String
-  type           String  // 'percentage' | 'rate'
+  type           String // 'percentage' | 'rate'
   percentage     Float?
   fixedDeduction Float?
-  rateSource     Json?   // { type, id, priceListName }
-  rates          Json?   // [{ serviceName, rate, deduction }]
+  rateSource     Json? // { type, id, priceListName }
+  rates          Json? // [{ serviceName, rate, deduction }]
+
+  // UX-safety: soft delete via Archive (см. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #1)
+  archived   Boolean @default(false)
+  archivedAt String?
 
   employees Employee[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([archived])
 }
 
 model Employee {
-  id                        String  @id
+  id                        String   @id
   fullName                  String
-  phone                     String  @default("")
-  paymentDetails            String  @default("")
-  hasCar                    Boolean @default(false)
-  role                      String  @default("employee")
+  phone                     String   @default("")
+  paymentDetails            String   @default("")
+  hasCar                    Boolean  @default(false)
+  role                      String   @default("employee")
   telegramChatId            String?
-  username                  String? @unique
+  username                  String?  @unique
   password                  String?
   salarySchemeId            String?
-  canSwapShifts             Boolean @default(true)
+  canSwapShifts             Boolean  @default(true)
   preferredShiftType        String?
   weekdayPreferredShiftType String?
   weekendPreferredShiftType String?
   targetShiftsPerMonth      Int?
   wantsMoreShifts           Boolean?
 
-  salaryScheme         SalaryScheme?        @relation(fields: [salarySchemeId], references: [id], onDelete: SetNull)
+  salaryScheme         SalaryScheme?         @relation(fields: [salarySchemeId], references: [id], onDelete: SetNull)
   washEvents           WashEventEmployee[]
   employeeTransactions EmployeeTransaction[]
   shifts               ShiftEmployee[]
@@ -60,12 +66,12 @@ model Employee {
 // ─── Клиенты ──────────────────────────────────────────────────
 
 model Aggregator {
-  id                  String @id
+  id                  String  @id
   name                String
-  balance             Float  @default(0)
-  companies           Json   @default("[]")
-  cars                Json   @default("[]")
-  priceLists          Json   @default("[]")
+  balance             Float   @default(0)
+  companies           Json    @default("[]")
+  cars                Json    @default("[]")
+  priceLists          Json    @default("[]")
   activePriceListName String?
 
   washEvents         WashEvent[]
@@ -109,13 +115,13 @@ model WashEvent {
   totalAmount              Float
   netAmount                Float?
   acquiringFee             Float?
-  services                 Json     // { main, additional }
+  services                 Json // { main, additional }
   driverComments           Json?
   editHistory              Json?
   photos                   Json?
   chemicalConsumptionGrams Float?
   chemicalCostRub          Float?
-  status                   String?  // 'in_progress' | 'completed' | 'cancelled'
+  status                   String? // 'in_progress' | 'completed' | 'cancelled'
   completedAt              String?
   refundedAt               String?
   refundReason             String?
@@ -126,8 +132,8 @@ model WashEvent {
   dismissal                Json?
   restoration              Json?
 
-  aggregator   Aggregator?   @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
-  counterAgent CounterAgent? @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
+  aggregator   Aggregator?         @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
+  counterAgent CounterAgent?       @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
   employees    WashEventEmployee[]
 
   createdAt DateTime @default(now())
@@ -158,7 +164,7 @@ model EmployeeTransaction {
   id          String   @id
   employeeId  String
   date        DateTime
-  type        String   // 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off'
+  type        String // 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off'
   amount      Float
   description String   @default("")
 
@@ -172,7 +178,7 @@ model EmployeeTransaction {
 
 model ClientTransaction {
   id             String   @id
-  clientId       String   // backward compat: agg_xxx or agent_xxx
+  clientId       String // backward compat: agg_xxx or agent_xxx
   aggregatorId   String?
   counterAgentId String?
   date           DateTime
@@ -211,10 +217,10 @@ model Expense {
 
 model Shift {
   id                 String    @id
-  date               String    // YYYY-MM-DD
+  date               String // YYYY-MM-DD
   washId             String    @default("wash_1") // 'wash_1' | 'wash_2'
   boxNumber          Int
-  shiftType          String    // 'day' | 'night'
+  shiftType          String // 'day' | 'night'
   startTime          String    @default("08:00")
   endTime            String    @default("20:00")
   releasedEmployeeId String?
@@ -246,12 +252,12 @@ model ShiftEmployee {
 
 model ShiftSwapRequest {
   id               String    @id
-  type             String    // 'giveaway' | 'swap'
+  type             String // 'giveaway' | 'swap'
   requesterId      String
   requesterShiftId String
   targetEmployeeId String?
   targetShiftId    String?
-  status           String    // 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  status           String // 'pending' | 'accepted' | 'rejected' | 'cancelled'
   resolvedAt       DateTime?
 
   createdAt DateTime @default(now())
@@ -260,10 +266,10 @@ model ShiftSwapRequest {
 model ShiftAssignmentRequest {
   id         String    @id
   employeeId String
-  date       String    // YYYY-MM-DD
-  shiftType  String    // 'day' | 'night'
+  date       String // YYYY-MM-DD
+  shiftType  String // 'day' | 'night'
   boxNumber  Int
-  status     String    // 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  status     String // 'pending' | 'accepted' | 'rejected' | 'cancelled'
   resolvedAt DateTime?
   resolvedBy String?
   comment    String?
@@ -274,8 +280,8 @@ model ShiftAssignmentRequest {
 model EmployeeDayStatus {
   id         String  @id
   employeeId String
-  date       String  // YYYY-MM-DD
-  status     String  // 'free' | 'doesnt_want' | 'vacation_sick' | 'must_work' | 'auto_assigned'
+  date       String // YYYY-MM-DD
+  status     String // 'free' | 'doesnt_want' | 'vacation_sick' | 'must_work' | 'auto_assigned'
   shiftType  String?
   boxNumber  Int?
 
@@ -286,15 +292,15 @@ model EmployeeDayStatus {
 }
 
 model SchedulePlan {
-  id                String   @id
+  id                String  @id
   name              String
-  month             String   // "2025-12"
+  month             String // "2025-12"
   createdBy         String
   clonedFrom        String?
-  isActive          Boolean  @default(false)
+  isActive          Boolean @default(false)
   washId            String?
-  employeeConfigs   Json     @default("[]")
-  dailyRequirements Json     @default("[]")
+  employeeConfigs   Json    @default("[]")
+  dailyRequirements Json    @default("[]")
   weeklyPattern     Json?
 
   createdAt DateTime @default(now())
@@ -308,8 +314,8 @@ model SchedulePlan {
 model InventoryMaterial {
   id           String  @id
   name         String
-  category     String  // 'chemical' | 'consumable' | 'equipment' | 'other'
-  unit         String  // 'grams' | 'kg' | 'liters' | 'pieces' | 'sets'
+  category     String // 'chemical' | 'consumable' | 'equipment' | 'other'
+  unit         String // 'grams' | 'kg' | 'liters' | 'pieces' | 'sets'
   currentStock Float   @default(0)
   minStock     Float?
   pricePerUnit Float?
@@ -325,7 +331,7 @@ model InventoryMaterial {
 model StockMovement {
   id                String   @id
   materialId        String
-  type              String   // 'purchase' | 'consumption' | 'issue' | 'return' | 'adjustment' | 'write_off'
+  type              String // 'purchase' | 'consumption' | 'issue' | 'return' | 'adjustment' | 'write_off'
   amount            Float
   balanceAfter      Float
   date              DateTime
@@ -352,7 +358,7 @@ model EmployeeCanister {
   initialAmountGrams   Float
   remainingAmountGrams Float
   priceRub             Float
-  status               String   // 'active' | 'empty' | 'returned'
+  status               String // 'active' | 'empty' | 'returned'
   transactionId        String?
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -373,7 +379,7 @@ model AppConfig {
 // ─── Отчёты по сменам ─────────────────────────────────────────
 
 model ShiftReport {
-  id        String   @id
+  id        String  @id
   date      String
   shiftType String
   boxNumber Int
@@ -386,18 +392,53 @@ model ShiftReport {
   @@index([shiftId])
 }
 
+// ─── UX-safety редизайн v1 (admin_safety pilot, 2026-05-13) ──
+
+/// Закрытый период ЗП — блокирует правки WashEvent после выплаты.
+/// Создаётся при «Закрыть период» в /salary-report.
+/// Используется в PUT/DELETE /api/wash-events/[id] → 423 Locked.
+/// См. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #6.
+model SalaryPeriod {
+  id        String    @id @default(uuid())
+  month     String    @unique // "2026-05"
+  closed    Boolean   @default(false)
+  closedBy  String? // employeeId
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([month])
+  @@index([closed])
+}
+
+/// История смены salaryScheme сотрудника.
+/// Запись создаётся в PUT /api/employees/[id] когда salarySchemeId меняется.
+/// Позволяет считать ZP по схеме, действовавшей на момент мойки (effective_from/to).
+/// См. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #2, тех-долг #16/#19.
+model EmployeeSalarySchemeHistory {
+  id            String    @id @default(uuid())
+  employeeId    String
+  schemeId      String? // null = снят со схемы
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  changedBy     String // employeeId (admin)
+  createdAt     DateTime  @default(now())
+
+  @@index([employeeId])
+  @@index([effectiveFrom])
+}
+
 // ─── Нарушения ───────────────────────────────────────────────
 
 model Violation {
-  id              String   @id
+  id              String  @id
   employeeId      String
-  date            String   // YYYY-MM-DD
-  type            String   // lateness | early_leave | no_show | equipment_damage | client_complaint | quality_issue | safety_violation | other
-  description     String   @default("")
+  date            String // YYYY-MM-DD
+  type            String // lateness | early_leave | no_show | equipment_damage | client_complaint | quality_issue | safety_violation | other
+  description     String  @default("")
   penaltyAmount   Float?
   shiftId         String?
   createdBy       String
-  resolved        Boolean  @default(false)
+  resolved        Boolean @default(false)
   resolvedComment String?
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
