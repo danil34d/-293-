@@ -422,6 +422,10 @@ export function SalaryReportClient() {
                                                     isInactive={isInactive}
                                                     rank={!isInactive ? idx + 1 : undefined}
                                                     status={status}
+                                                    // Phase 13: контекст для PayModal
+                                                    currentMonth={reportMonth ?? undefined}
+                                                    isPeriodClosed={Boolean(periodStatus?.closed)}
+                                                    hasUnpaidEdits={hasEdits}
                                                 />
                                             );
                                         })}
