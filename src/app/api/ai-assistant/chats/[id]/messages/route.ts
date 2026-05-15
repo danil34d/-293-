@@ -4,6 +4,7 @@ import { getGLMClient } from '@/lib/ai/glm-client';
 import { mcpTools, executeMCPTool } from '@/lib/ai/mcp-tools';
 import type { GLMMessage, GLMToolDefinition } from '@/types/ai-assistant';
 import { requireAuth } from '@/lib/server-auth';
+import { checkAndIncrementAIQuota } from '@/lib/ai/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,6 +62,27 @@ export async function POST(
 ) {
   const auth = requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  // Phase 18 / finding #22: rate-limit перед дорогим GLM API call.
+  // Защита от случайных циклов / абуза AI assistant.
+  // Лимиты в env: AI_RATE_LIMIT_PER_HOUR (default 100), AI_RATE_LIMIT_DAILY_TOTAL (default 1000).
+  const quota = checkAndIncrementAIQuota(auth.id);
+  if (!quota.allowed) {
+    return NextResponse.json(
+      {
+        error: 'AI rate-limit exceeded',
+        reason: quota.reason,
+        retryAfter: quota.retryAfter,
+        message: quota.reason === 'per-employee-hour'
+          ? `Достигнут личный лимит AI-запросов (макс 100/час). Подождите ~${Math.ceil((quota.retryAfter ?? 60) / 60)} мин.`
+          : `Достигнут глобальный дневной лимит AI-запросов (1000/день). Попробуйте завтра.`,
+      },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(quota.retryAfter ?? 60) },
+      }
+    );
+  }
 
   try {
     const chatId = params.id;
