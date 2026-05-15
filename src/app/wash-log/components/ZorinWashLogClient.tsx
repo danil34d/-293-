@@ -233,25 +233,10 @@ export function ZorinWashLogClient({
   async function handleRestoreDismissed(event: WashEvent) {
     setRestoringEventId(event.id);
     try {
-      const response = await fetch(`/api/wash-events/${event.id}`, {
-        cache: 'no-store',
-      });
-
-      if (!response.ok) {
-        throw new Error('Не удалось прочитать запись перед восстановлением.');
-      }
-
-      const eventToUpdate = await response.json();
-      const updateResponse = await fetch(`/api/wash-events/${event.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...eventToUpdate,
-          status: 'restored',
-          restoration: {
-            restoredAt: new Date().toISOString(),
-          },
-        }),
+      // Phase 12 / finding #41: используем dedicated POST /restore endpoint
+      // вместо PUT (который блокируется 423 при closed period). requireAdmin.
+      const updateResponse = await fetch(`/api/wash-events/${event.id}/restore`, {
+        method: 'POST',
       });
 
       if (!updateResponse.ok) {
@@ -264,8 +249,8 @@ export function ZorinWashLogClient({
       }
 
       toast({
-        title: 'Запись возвращена',
-        description: `Сессия ${event.vehicleNumber} снова может появиться в очереди на оформление.`,
+        title: 'Запись восстановлена',
+        description: `Сессия ${event.vehicleNumber} переведена в restored. Откройте Edit для заполнения услуги/суммы.`,
       });
       router.refresh();
     } catch (error: any) {
