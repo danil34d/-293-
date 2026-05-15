@@ -57,6 +57,9 @@ function washEventFromPrisma(row: any): WashEvent {
     cameraSession: parseJsonField(row.cameraSession, undefined),
     dismissal: parseJsonField(row.dismissal, undefined),
     restoration: parseJsonField(row.restoration, undefined),
+    // Phase 8 / finding #38
+    createdInClosedPeriod: row.createdInClosedPeriod ?? false,
+    closedPeriodAtCreate: row.closedPeriodAtCreate ?? undefined,
   };
 }
 
@@ -636,6 +639,9 @@ export async function saveWashEvent(data: any): Promise<void> {
       cameraSession: data.cameraSession ?? undefined,
       dismissal: data.dismissal ?? undefined,
       restoration: data.restoration ?? undefined,
+      // Phase 8 / finding #38
+      createdInClosedPeriod: data.createdInClosedPeriod ?? false,
+      closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
     },
     create: {
       id: data.id,
@@ -666,6 +672,9 @@ export async function saveWashEvent(data: any): Promise<void> {
       cameraSession: data.cameraSession ?? undefined,
       dismissal: data.dismissal ?? undefined,
       restoration: data.restoration ?? undefined,
+      // Phase 8 / finding #38
+      createdInClosedPeriod: data.createdInClosedPeriod ?? false,
+      closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
     },
   });
 

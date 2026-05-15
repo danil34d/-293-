@@ -5,6 +5,7 @@ import {
   invalidateStockMovementsCache,
   invalidateWashEventsCache,
   getEmployeesData,
+  isSalaryPeriodClosed,
 } from '@/lib/data';
 import { createWashEventAtomic, readEntity } from '@/lib/data/write-helpers';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
@@ -98,6 +99,31 @@ export async function createWashEvent(washEvent: WashEvent): Promise<WashEvent> 
         }
       }
     }
+  }
+
+  // 🔥 Phase 8 / finding #38: проверка SalaryPeriod для retroactive POST.
+  // PUT/DELETE wash-events уже блокируются 423 при closed period (Phase 4B).
+  // Но POST с timestamp в прошлом обходил защиту — мог сломать выплаченный ZP.
+  //
+  // Решение владельца: НЕ блокировать (сотрудник может оформить вчерашнюю мойку
+  // даже если месяц закрыт), но пометить флагом + написать какой период был закрыт.
+  // Админ видит amber-бэйдж в /wash-log → решает вручную пересчитать ZP.
+  try {
+    const ts = washEvent.timestamp;
+    if (ts) {
+      const month = new Date(ts).toISOString().slice(0, 7);
+      const closed = await isSalaryPeriodClosed(month);
+      if (closed) {
+        washEvent.createdInClosedPeriod = true;
+        washEvent.closedPeriodAtCreate = month;
+        console.warn(
+          `[wash-event] retroactive POST в закрытый период ${month} — флаг createdInClosedPeriod=true. Wash ID: ${washEvent.id}`
+        );
+      }
+    }
+  } catch (err) {
+    // Best-effort — если SalaryPeriod check упал, не блокируем создание мойки.
+    console.warn('[wash-event] SalaryPeriod check failed:', err);
   }
 
   // 🔥 ФИКС 2026-05-05: Защита от попадания терминалов (kiosk/kiosk1) в employeeIds.

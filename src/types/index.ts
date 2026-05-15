@@ -316,6 +316,12 @@ export interface WashEvent {
   status?: 'completed' | 'dismissed' | 'restored';
   dismissal?: WashEventDismissalMeta;
   restoration?: WashEventRestorationMeta;
+  /** Phase 8 / finding #38: true если мойка создана с timestamp в уже закрытый SalaryPeriod.
+   *  Не блокирует POST, но даёт админу видимый сигнал (amber-бэйдж в /wash-log).
+   *  Используется для post-hoc пересчёта ZP за выплаченный период. */
+  createdInClosedPeriod?: boolean;
+  /** YYYY-MM месяца закрытого периода на момент создания (для аудита). */
+  closedPeriodAtCreate?: string;
 }
 
 export type EmployeeTransactionType = 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off';

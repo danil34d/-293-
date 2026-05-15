@@ -215,6 +215,8 @@ export function ZorinWashLogClient({
   const lockedCount = paginatedEvents.filter(e => isEventInClosedPeriod(e)).length;
   const editedAfterPaidCount = paginatedEvents.filter(hasEditsAfterPaid).length;
   const editedCount = paginatedEvents.filter(e => hasAnyEdits(e) && !isEventInClosedPeriod(e)).length;
+  // Phase 8: счётчик ретро-моек в закрытом периоде (finding #38)
+  const createdInClosedCount = paginatedEvents.filter(e => Boolean((e as any).createdInClosedPeriod)).length;
 
   const handlePrint = () => {
     window.print();
@@ -439,7 +441,7 @@ export function ZorinWashLogClient({
       {paginatedEvents.length > 0 && (
         <div className="mb-4">
           <SafetyBar
-            level={editedAfterPaidCount > 0 ? 'critical' : (editedCount > 0 ? 'warn' : 'info')}
+            level={(editedAfterPaidCount > 0 || createdInClosedCount > 0) ? 'critical' : (editedCount > 0 ? 'warn' : 'info')}
             items={[
               { icon: 'check-circle-2', label: 'Открытый период', value: `${openCount} моек` },
               { icon: 'lock', label: 'Закрытый период', value: lockedCount > 0 ? `${lockedCount} (правки запрещены)` : '—' },
@@ -449,6 +451,11 @@ export function ZorinWashLogClient({
                 value: editedAfterPaidCount > 0
                   ? `${editedAfterPaidCount} после оплаты ⚠`
                   : (editedCount > 0 ? `${editedCount} в открытом периоде` : 'нет'),
+              },
+              {
+                icon: 'alert-triangle',
+                label: 'Ретро в закрытом',
+                value: createdInClosedCount > 0 ? `${createdInClosedCount} ⚠ пересчёт ZP` : 'нет',
               },
             ]}
           />
@@ -493,8 +500,14 @@ export function ZorinWashLogClient({
                 const editedAfterPaid = isInClosed && Array.isArray(event.editHistory) && event.editHistory.length > 0;
                 const editedInOpen = !isInClosed && Array.isArray(event.editHistory) && event.editHistory.length > 0;
 
-                // Highlight: rose if edited after paid, amber if just edited
-                const rowStyle: React.CSSProperties = editedAfterPaid
+                // Phase 8 / finding #38: мойка создана в уже закрытый период.
+                // Не блокируется, но админ видит amber-бэйдж и решает пересчёт ZP вручную.
+                const createdInClosedPeriod = Boolean((event as any).createdInClosedPeriod);
+                const closedPeriodAtCreate = (event as any).closedPeriodAtCreate ?? eventMonth;
+
+                // Highlight: rose если edit после оплаты ИЛИ создано в закрытый период,
+                // amber если просто edited.
+                const rowStyle: React.CSSProperties = (editedAfterPaid || createdInClosedPeriod)
                   ? { background: 'rgba(254, 242, 242, 0.6)' }  // rose-50/60
                   : editedInOpen
                     ? { background: 'rgba(255, 251, 235, 0.6)' }  // amber-50/60
@@ -517,6 +530,28 @@ export function ZorinWashLogClient({
                                 <p>Запись была изменена {event.editHistory?.length} раз(а).</p>
                                 <p>Последнее изменение: {format(new Date(lastEdit.editedAt), 'dd.MM.yy HH:mm')}
                                    ({employeeMap.get(lastEdit.editedBy) || 'Неизвестно'})
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {/* Phase 8: бэйдж «создано в закрытый период» (finding #38) */}
+                        {createdInClosedPeriod && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <div
+                                  className="rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+                                  style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}
+                                >
+                                  ⚠ ретро
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent className="zorin-tooltip max-w-[260px]">
+                                <p className="font-semibold">Мойка создана в закрытый период</p>
+                                <p className="text-[11px] mt-1">
+                                  Период <b>{closedPeriodAtCreate}</b> был закрыт на момент создания этой мойки.
+                                  ZP за этот месяц уже выплачен — пересчёт нужно сделать вручную (новый платёж сотруднику).
                                 </p>
                               </TooltipContent>
                             </Tooltip>

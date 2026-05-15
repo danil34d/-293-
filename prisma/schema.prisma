@@ -134,7 +134,9 @@ model WashEvent {
   photos                   Json?
   chemicalConsumptionGrams Float?
   chemicalCostRub          Float?
-  status                   String? // 'in_progress' | 'completed' | 'cancelled'
+  /// Реальный enum в коде: 'completed' | 'dismissed' | 'restored' (см. types/index.ts).
+  /// Prisma хранит String? для гибкости, валидация на уровне TypeScript.
+  status                   String?
   completedAt              String?
   refundedAt               String?
   refundReason             String?
@@ -144,6 +146,12 @@ model WashEvent {
   cameraSession            Json?
   dismissal                Json?
   restoration              Json?
+  /// Phase 8 (finding #38): true если мойка создана в уже закрытый SalaryPeriod.
+  /// Сотрудник не блокируется, но админ видит amber-бэйдж в /wash-log
+  /// и может вручную пересчитать ZP за уже выплаченный месяц.
+  createdInClosedPeriod    Boolean  @default(false)
+  /// YYYY-MM закрытого периода на момент создания (для аудита, кто и когда).
+  closedPeriodAtCreate     String?
 
   aggregator   Aggregator?         @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
   counterAgent CounterAgent?       @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
@@ -158,6 +166,7 @@ model WashEvent {
   @@index([vehicleNumber])
   @@index([status])
   @@index([shiftId])
+  @@index([createdInClosedPeriod])
 }
 
 model WashEventEmployee {
