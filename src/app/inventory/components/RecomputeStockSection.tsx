@@ -10,10 +10,192 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, RefreshCcw, ArrowRight, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, RefreshCcw, ArrowRight, AlertTriangle, CheckCircle2, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { CheckItem, HazardPill, SafetyBar } from "@/components/admin";
+
+interface BackfillCandidate {
+  expenseId: string;
+  date: string;
+  category: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  grams: number;
+  skipReason?: string;
+}
+
+interface BackfillResponse {
+  candidates: BackfillCandidate[];
+  alreadyBackfilled: number;
+  willCreate: number;
+  skipped: number;
+  applied: boolean;
+}
+
+/** Phase 16 / finding #35: backfill StockMovement.purchase из Expense. */
+function BackfillPurchasesButton() {
+  const { toast } = useToast();
+  const router = useRouter();
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [data, setData] = React.useState<BackfillResponse | null>(null);
+  const [check, setCheck] = React.useState(false);
+
+  const fetchPreview = async () => {
+    setIsLoading(true);
+    setData(null);
+    setCheck(false);
+    try {
+      const r = await fetch("/api/inventory/backfill-purchases");
+      if (!r.ok) throw new Error(await r.text());
+      const json: BackfillResponse = await r.json();
+      setData(json);
+      setIsOpen(true);
+    } catch (err: any) {
+      toast({ title: "Ошибка", description: err.message ?? "preview failed", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const apply = async () => {
+    if (!check) return;
+    setIsLoading(true);
+    try {
+      const r = await fetch("/api/inventory/backfill-purchases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apply: true }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const json: BackfillResponse = await r.json();
+      toast({
+        title: "Backfill применён",
+        description: `Создано ${json.willCreate} StockMovement.purchase. Запустите «Проверить расхождение» → «Применить».`,
+      });
+      setIsOpen(false);
+      router.refresh();
+    } catch (err: any) {
+      toast({ title: "Ошибка", description: err.message ?? "apply failed", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <Button variant="outline" onClick={fetchPreview} disabled={isLoading} className="gap-2">
+        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
+        Backfill закупок химии (#35)
+      </Button>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Восстановление закупок химии из Expense
+              {data && (
+                <HazardPill level={data.willCreate > 0 ? "warn" : "safe"}>
+                  {data.willCreate > 0 ? `${data.willCreate} к созданию` : "ничего нет"}
+                </HazardPill>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Сканирует все Expense с категорией «химия» и создаёт соответствующие
+              StockMovement.purchase. Дедупликация по relatedEntityId — повторный
+              запуск безопасен.
+            </DialogDescription>
+          </DialogHeader>
+
+          {data && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2 text-sm">
+                <div className="rounded p-2 bg-emerald-50 border border-emerald-200">
+                  <div className="text-xs text-emerald-700 uppercase">К созданию</div>
+                  <div className="text-2xl font-bold text-emerald-800">{data.willCreate}</div>
+                </div>
+                <div className="rounded p-2 bg-gray-50 border border-gray-200">
+                  <div className="text-xs text-gray-600 uppercase">Уже</div>
+                  <div className="text-2xl font-bold text-gray-700">{data.alreadyBackfilled}</div>
+                </div>
+                <div className="rounded p-2 bg-amber-50 border border-amber-200">
+                  <div className="text-xs text-amber-700 uppercase">Пропущено</div>
+                  <div className="text-2xl font-bold text-amber-800">{data.skipped}</div>
+                </div>
+              </div>
+
+              <table className="w-full text-xs border rounded-lg overflow-hidden">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="px-2 py-1 text-left">Дата</th>
+                    <th className="px-2 py-1 text-left">Категория · Описание</th>
+                    <th className="px-2 py-1 text-right">Кол-во</th>
+                    <th className="px-2 py-1 text-right">Граммов</th>
+                    <th className="px-2 py-1 text-left">Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.candidates.map((c) => (
+                    <tr key={c.expenseId} className={c.skipReason ? "bg-gray-50/50" : "bg-emerald-50/30"}>
+                      <td className="px-2 py-1 tabular-nums">{c.date.slice(0, 10)}</td>
+                      <td className="px-2 py-1">
+                        <div className="font-medium">{c.category}</div>
+                        <div className="text-gray-500 text-[10px]">{c.description}</div>
+                      </td>
+                      <td className="px-2 py-1 text-right tabular-nums">{c.quantity} {c.unit}</td>
+                      <td className="px-2 py-1 text-right tabular-nums font-bold">
+                        {c.skipReason ? "—" : c.grams.toLocaleString("ru-RU")}
+                      </td>
+                      <td className="px-2 py-1 text-[10px]">
+                        {c.skipReason ? (
+                          <span className="text-amber-700">⊘ {c.skipReason}</span>
+                        ) : (
+                          <span className="text-emerald-700">✓ создать</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {data.candidates.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-2 py-4 text-center text-gray-500">
+                        Не найдено Expense с категорией «химия»
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+
+              {data.willCreate > 0 && (
+                <CheckItem
+                  checked={check}
+                  onCheck={setCheck}
+                  icon="check"
+                  title={`Готов создать ${data.willCreate} StockMovement.purchase`}
+                  desc="Безопасно: relatedEntityId дедуплицирует, повторный запуск ничего не сделает. После apply прогоните «Проверить расхождение остатков» → «Применить»."
+                  level="warn"
+                />
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsOpen(false)} disabled={isLoading}>
+              Закрыть
+            </Button>
+            {data && data.willCreate > 0 && (
+              <Button onClick={apply} disabled={!check || isLoading} className="gap-2">
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Применить backfill
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 interface RecomputeMaterial {
   id: string;
@@ -125,15 +307,18 @@ export function RecomputeStockSection() {
         ]}
       />
 
-      <Button
-        variant="outline"
-        onClick={fetchPreview}
-        disabled={isLoading}
-        className="gap-2"
-      >
-        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-        Проверить расхождение остатков
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          onClick={fetchPreview}
+          disabled={isLoading}
+          className="gap-2"
+        >
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+          Проверить расхождение остатков
+        </Button>
+        <BackfillPurchasesButton />
+      </div>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="max-w-2xl">

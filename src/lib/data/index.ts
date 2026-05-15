@@ -174,6 +174,25 @@ export const getEmployeesMetrics: () => Promise<Map<string, {
 }>> =
   adapter.getEmployeesMetrics ?? (async () => new Map());
 
+// Phase 16 / finding #35: backfill StockMovement.purchase из исторических Expense
+export const backfillChemicalPurchasesFromExpenses: (apply: boolean) => Promise<{
+  candidates: Array<{
+    expenseId: string;
+    date: string;
+    category: string;
+    description: string;
+    quantity: number;
+    unit: string;
+    grams: number;
+    skipReason?: string;
+  }>;
+  alreadyBackfilled: number;
+  willCreate: number;
+  skipped: number;
+  applied: boolean;
+}> =
+  adapter.backfillChemicalPurchasesFromExpenses ?? (async () => { throw new Error('backfillChemicalPurchasesFromExpenses requires DATA_SOURCE=postgres'); });
+
 // ─── Cache invalidation (no-ops for PG, real for JSON) ──────
 
 export const invalidateWashEventsCache: () => Promise<void> = adapter.invalidateWashEventsCache;

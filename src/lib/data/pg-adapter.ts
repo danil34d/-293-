@@ -774,6 +774,159 @@ export async function unarchiveEmployee(id: string): Promise<void> {
 }
 
 /**
+ * Phase 16 / finding #35: backfill StockMovement.purchase из исторических Expense.
+ *
+ * Симптом: на проде 22 движения химии — все consumption, 0 purchase.
+ * Причина — operational: сотрудники не оформляли закупки через UI «Закупка химии»
+ * (которая корректно создавала бы StockMovement.purchase).
+ *
+ * Решение: пройти по Expense с category matching "хими" → создать соответствующий
+ * StockMovement.purchase. Дедупликация: пропускаем Expense у которых уже есть
+ * StockMovement с relatedEntityType='expense' + relatedEntityId=expense.id.
+ *
+ * Поддерживаемые единицы:
+ *  - 'кг' / 'kg' → grams = quantity * 1000
+ *  - 'г' / 'g' → grams = quantity
+ *  - 'л' / 'l' (для химии — приблизительно 1л ≈ 1000г) → grams = quantity * 1000
+ *  - other → skip + report
+ *
+ * apply=false → preview, apply=true → создание.
+ */
+export async function backfillChemicalPurchasesFromExpenses(apply: boolean): Promise<{
+  candidates: Array<{
+    expenseId: string;
+    date: string;
+    category: string;
+    description: string;
+    quantity: number;
+    unit: string;
+    grams: number;
+    skipReason?: string;
+  }>;
+  alreadyBackfilled: number;
+  willCreate: number;
+  skipped: number;
+  applied: boolean;
+}> {
+  // 1. Найти все Expense с категорией матчащей "хими"
+  const expenses = await prisma.expense.findMany({
+    where: {
+      OR: [
+        { category: { contains: 'хими', mode: 'insensitive' } },
+        { category: { contains: 'chem', mode: 'insensitive' } },
+      ],
+      quantity: { not: null },
+      unit: { not: null },
+    },
+    orderBy: { date: 'asc' },
+  });
+
+  // 2. Дедупликация — какие Expense уже зафиксированы в StockMovement
+  const existingMovements = await prisma.stockMovement.findMany({
+    where: { relatedEntityType: 'expense', type: 'purchase' },
+    select: { relatedEntityId: true },
+  });
+  const backfilled = new Set(existingMovements.map(m => m.relatedEntityId).filter(Boolean));
+
+  // 3. Анализ кандидатов
+  const candidates: Array<{
+    expenseId: string;
+    date: string;
+    category: string;
+    description: string;
+    quantity: number;
+    unit: string;
+    grams: number;
+    skipReason?: string;
+  }> = [];
+
+  let willCreate = 0;
+  let skipped = 0;
+
+  for (const exp of expenses) {
+    const unit = (exp.unit || '').toLowerCase().trim();
+    const quantity = exp.quantity ?? 0;
+    let grams = 0;
+    let skipReason: string | undefined;
+
+    if (backfilled.has(exp.id)) {
+      skipReason = 'уже backfilled';
+      skipped++;
+    } else if (quantity <= 0) {
+      skipReason = 'quantity ≤ 0';
+      skipped++;
+    } else if (unit === 'кг' || unit === 'kg') {
+      grams = quantity * 1000;
+      willCreate++;
+    } else if (unit === 'г' || unit === 'g') {
+      grams = quantity;
+      willCreate++;
+    } else if (unit === 'л' || unit === 'l') {
+      grams = quantity * 1000;
+      willCreate++;
+    } else {
+      skipReason = `unsupported unit "${exp.unit}"`;
+      skipped++;
+    }
+
+    candidates.push({
+      expenseId: exp.id,
+      date: exp.date.toISOString(),
+      category: exp.category,
+      description: exp.description,
+      quantity,
+      unit: exp.unit ?? '',
+      grams,
+      skipReason,
+    });
+  }
+
+  // 4. Apply — создаём StockMovement.purchase для валидных кандидатов
+  if (apply) {
+    const toCreate = candidates.filter(c => !c.skipReason && c.grams > 0);
+    if (toCreate.length > 0) {
+      // Убедимся что mat_chemical_main существует
+      await prisma.inventoryMaterial.upsert({
+        where: { id: 'mat_chemical_main' },
+        update: {},
+        create: {
+          id: 'mat_chemical_main',
+          name: 'Химия (основная)',
+          category: 'chemical',
+          unit: 'grams',
+          currentStock: 0,
+        },
+      });
+
+      // Создаём movements хронологически (важно для balanceAfter если будет recompute)
+      for (const c of toCreate) {
+        await prisma.stockMovement.create({
+          data: {
+            id: `mov_backfill_${c.expenseId}`,
+            materialId: 'mat_chemical_main',
+            type: 'purchase',
+            amount: c.grams,
+            balanceAfter: 0, // будет пересчитано при recomputeInventoryStock(apply:true)
+            date: new Date(c.date),
+            description: `[backfill #35] ${c.description || c.category}`,
+            relatedEntityType: 'expense',
+            relatedEntityId: c.expenseId,
+          },
+        });
+      }
+    }
+  }
+
+  return {
+    candidates,
+    alreadyBackfilled: backfilled.size,
+    willCreate,
+    skipped,
+    applied: apply,
+  };
+}
+
+/**
  * Phase 14 / UX полировка: метрики для /employees таблицы (Моек/мес + Последняя активность).
  *
  * Возвращает Map<employeeId, {washesThisMonth, lastWashAt}> за один batch-запрос.
