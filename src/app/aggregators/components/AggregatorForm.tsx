@@ -19,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { CompanyAccordion, companySchema, baseCompany } from "@/components/common/CompanyAccordion";
 import { PriceListEditor, priceListItemSchema } from "@/components/common/PriceListEditor";
+import { DangerGate } from "@/components/admin";
 
 const namedPriceListSchema = z.object({
   name: z.string().min(1, "Название прайс-листа не может быть пустым."),
@@ -54,6 +55,9 @@ interface AggregatorFormProps {
 export function AggregatorForm({ initialData, aggregatorId }: AggregatorFormProps) {
   const router = useRouter();
   const { toast } = useToast();
+  // Phase 6.3: balance под DangerGate-замком на edit (на create — открыт)
+  const isExisting = !!aggregatorId;
+  const [balanceUnlocked, setBalanceUnlocked] = React.useState(!isExisting);
 
   const preparedDefaultValues = React.useMemo(() => {
     if (initialData) {
@@ -209,22 +213,56 @@ export function AggregatorForm({ initialData, aggregatorId }: AggregatorFormProp
                 </FormItem>
               )}
             />
-             <FormField
-              control={form.control}
-              name="balance"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Текущий баланс (руб.)</FormLabel>
-                  <FormControl>
-                    <Input type="number" placeholder="0" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Отрицательное значение означает долг агрегатора перед вами. Вы можете вручную изменить это значение для регистрации оплаты.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+             {/* Phase 6.3: balance под DangerGate.
+                 Прямая правка обходит ClientTransaction (нет audit trail). */}
+             {isExisting ? (
+               <DangerGate
+                 label="Текущий баланс"
+                 level="warn"
+                 locked={!balanceUnlocked}
+                 currentValue={`${(initialData?.balance ?? 0).toLocaleString("ru-RU")} ₽`}
+                 impact="Прямая правка баланса обходит ClientTransaction — нет audit trail. Используйте /finance → платёж."
+                 onUnlock={() => setBalanceUnlocked(true)}
+                 onRelock={() => {
+                   setBalanceUnlocked(false);
+                   form.setValue("balance", initialData?.balance ?? 0);
+                 }}
+               >
+                 <FormField
+                   control={form.control}
+                   name="balance"
+                   render={({ field }) => (
+                     <FormItem>
+                       <FormLabel className="text-[12px] text-amber-700">Новое значение баланса</FormLabel>
+                       <FormControl>
+                         <Input type="number" placeholder="0" {...field} className="border-amber-400 bg-amber-50/40" />
+                       </FormControl>
+                       <FormDescription className="text-[11px]">
+                         Отрицательное = долг агрегатора, положительное = предоплата.
+                       </FormDescription>
+                       <FormMessage />
+                     </FormItem>
+                   )}
+                 />
+               </DangerGate>
+             ) : (
+               <FormField
+                 control={form.control}
+                 name="balance"
+                 render={({ field }) => (
+                   <FormItem>
+                     <FormLabel>Стартовый баланс (руб.)</FormLabel>
+                     <FormControl>
+                       <Input type="number" placeholder="0" {...field} />
+                     </FormControl>
+                     <FormDescription>
+                       Отрицательное значение = долг агрегатора. Можно изменить позже через /finance.
+                     </FormDescription>
+                     <FormMessage />
+                   </FormItem>
+                 )}
+               />
+             )}
           </CardContent>
         </Card>
 

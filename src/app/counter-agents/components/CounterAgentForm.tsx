@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CompanyAccordion, companySchema, baseCompany } from "@/components/common/CompanyAccordion";
 import { PriceListEditor, priceListItemSchema } from "@/components/common/PriceListEditor";
 import { Cog, Copy, Save, X } from "lucide-react";
+import { DangerGate } from "@/components/admin";
 
 const schema = z.object({
   name: z.string().min(2, "Имя агента должно содержать не менее 2 символов."),
@@ -122,6 +123,9 @@ export function CounterAgentForm({
   const [quickCarInput, setQuickCarInput] = React.useState("");
   const [bulkCarsInput, setBulkCarsInput] = React.useState("");
   const [balanceAdjustment, setBalanceAdjustment] = React.useState("1000");
+  // Phase 6.3: balance под DangerGate-замком на edit (на create — открыт)
+  const isExisting = !!agentId;
+  const [balanceUnlocked, setBalanceUnlocked] = React.useState(!isExisting);
 
   const defaults = React.useMemo(() => ({
     name: initialData?.name || "",
@@ -493,34 +497,67 @@ export function CounterAgentForm({
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem><FormLabel>Имя агента</FormLabel><FormControl><Input placeholder="например, ООО 'Авто Коммерц'" {...field} className="text-base" /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="balance" render={({ field }) => (
-                  <FormItem><FormLabel>Текущий баланс (руб.)</FormLabel><FormControl><Input type="number" placeholder="0" {...field} /></FormControl><FormDescription>Отрицательное значение означает долг клиента, положительное — предоплату.</FormDescription><FormMessage /></FormItem>
-                )} />
-                <div className="rounded-lg border bg-muted/20 p-4">
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <div className="text-sm text-muted-foreground">Статус баланса</div>
-                        <div className="mt-2 flex flex-wrap items-center gap-3">
-                          <div className="text-2xl font-semibold">{watchedBalance.toLocaleString("ru-RU")} ₽</div>
-                          <Badge variant="outline" className={balanceMeta.className}>{balanceMeta.label}</Badge>
+                {/* Phase 6.3: balance под DangerGate.
+                    Прямая правка обходит ClientTransaction (нет audit trail).
+                    Лучше пользоваться /counter-agents/[id]/finance → платёж. */}
+                {isExisting ? (
+                  <DangerGate
+                    label="Текущий баланс"
+                    level="warn"
+                    locked={!balanceUnlocked}
+                    currentValue={`${(initialData?.balance ?? 0).toLocaleString("ru-RU")} ₽`}
+                    impact="Прямая правка баланса обходит ClientTransaction — нет audit trail. Рекомендуется использовать /finance → платёж."
+                    onUnlock={() => setBalanceUnlocked(true)}
+                    onRelock={() => {
+                      setBalanceUnlocked(false);
+                      form.setValue("balance", initialData?.balance ?? 0);
+                    }}
+                  >
+                    <FormField control={form.control} name="balance" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-[12px] text-amber-700">Новое значение баланса</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="0" {...field} className="border-amber-400 bg-amber-50/40" />
+                        </FormControl>
+                        <FormDescription className="text-[11px]">
+                          Отрицательное = долг клиента, положительное = предоплата.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
+                    {/* Кнопки корректировки тоже под замком */}
+                    <div className="rounded-lg border bg-muted/20 p-4 mt-3">
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <div className="text-sm text-muted-foreground">Статус нового баланса</div>
+                            <div className="mt-2 flex flex-wrap items-center gap-3">
+                              <div className="text-2xl font-semibold">{watchedBalance.toLocaleString("ru-RU")} ₽</div>
+                              <Badge variant="outline" className={balanceMeta.className}>{balanceMeta.label}</Badge>
+                            </div>
+                            <div className="mt-2 text-sm text-muted-foreground">{balanceMeta.hint}</div>
+                          </div>
+                          {agentId ? <Button type="button" variant="outline" onClick={() => router.push(`/counter-agents/${agentId}/finance`)}>Открыть финансы</Button> : null}
                         </div>
-                        <div className="mt-2 text-sm text-muted-foreground">{balanceMeta.hint}</div>
-                      </div>
-                      {agentId ? <Button type="button" variant="outline" onClick={() => router.push(`/counter-agents/${agentId}/finance`)}>Открыть финансы</Button> : null}
-                    </div>
-                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                      <Input type="number" value={balanceAdjustment} onChange={(event) => setBalanceAdjustment(event.target.value)} placeholder="Сумма корректировки" className="xl:w-56" />
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" onClick={() => applyBalance("increase")}>Прибавить сумму</Button>
-                        <Button type="button" variant="outline" onClick={() => applyBalance("decrease")}>Списать сумму</Button>
-                        <Button type="button" variant="outline" onClick={() => setBalanceValue(0)}>Обнулить</Button>
-                        <Button type="button" variant="ghost" onClick={() => setBalanceValue(Math.abs(watchedBalance || 0))}>Сделать предоплатой</Button>
-                        <Button type="button" variant="ghost" onClick={() => setBalanceValue(-Math.abs(watchedBalance || 0))}>Сделать долгом</Button>
+                        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                          <Input type="number" value={balanceAdjustment} onChange={(event) => setBalanceAdjustment(event.target.value)} placeholder="Сумма корректировки" className="xl:w-56" />
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" variant="outline" onClick={() => applyBalance("increase")}>Прибавить сумму</Button>
+                            <Button type="button" variant="outline" onClick={() => applyBalance("decrease")}>Списать сумму</Button>
+                            <Button type="button" variant="outline" onClick={() => setBalanceValue(0)}>Обнулить</Button>
+                            <Button type="button" variant="ghost" onClick={() => setBalanceValue(Math.abs(watchedBalance || 0))}>Сделать предоплатой</Button>
+                            <Button type="button" variant="ghost" onClick={() => setBalanceValue(-Math.abs(watchedBalance || 0))}>Сделать долгом</Button>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </DangerGate>
+                ) : (
+                  <FormField control={form.control} name="balance" render={({ field }) => (
+                    <FormItem><FormLabel>Стартовый баланс (руб.)</FormLabel><FormControl><Input type="number" placeholder="0" {...field} /></FormControl><FormDescription>Отрицательное значение = долг клиента, положительное = предоплата.</FormDescription><FormMessage /></FormItem>
+                  )} />
+                )}
               </CardContent>
             </Card>
           </TabsContent>
