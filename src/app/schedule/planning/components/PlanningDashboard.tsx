@@ -12,12 +12,15 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ToastAction } from '@/components/ui/toast';
-import { Plus, Copy, CheckCircle, Calendar, Users, Trash2, Sparkles, Settings } from 'lucide-react';
+import { Plus, Copy, CheckCircle, Calendar, Users, Trash2, Sparkles, Settings, ShieldAlert, AlertTriangle, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import type { DailyRequirement, SchedulePlan, Employee, WashId } from '@/types';
 import { DEFAULT_WASH_ID, normalizeWashId } from '@/lib/wash';
+import { CheckItem, HazardPill, SafetyBar } from '@/components/admin';
+
+const AUTOFILL_MAGIC = 'ПЕРЕЗАПИСАТЬ';
 
 interface PlanningDashboardProps {
   initialPlans: SchedulePlan[];
@@ -64,6 +67,20 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
   const [autoFillClearExisting, setAutoFillClearExisting] = useState(false);
   const [autoFillSyncEmployeeConfigs, setAutoFillSyncEmployeeConfigs] = useState(true);
   const [autoFillSubmitting, setAutoFillSubmitting] = useState(false);
+
+  // Phase 6.4: UX-safety для autofill clearExisting + activate + delete
+  const [autoFillCheck1, setAutoFillCheck1] = useState(false);
+  const [autoFillCheck2, setAutoFillCheck2] = useState(false);
+  const [autoFillCheck3, setAutoFillCheck3] = useState(false);
+  const [autoFillMagic, setAutoFillMagic] = useState('');
+
+  const [activatePlanModal, setActivatePlanModal] = useState<SchedulePlan | null>(null);
+  const [activateCheck, setActivateCheck] = useState(false);
+  const [activateSubmitting, setActivateSubmitting] = useState(false);
+
+  const [deletePlanModal, setDeletePlanModal] = useState<SchedulePlan | null>(null);
+  const [deleteCheck, setDeleteCheck] = useState(false);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   // Filter plans by selected wash, then group by month
   const filteredPlans = plans.filter(p => normalizeWashId(p.washId) === selectedWashId);
@@ -270,7 +287,16 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
     }
   };
 
-  const handleActivatePlan = async (plan: SchedulePlan) => {
+  // Phase 6.4: handleActivatePlan теперь открывает confirm-modal с CheckItem
+  const openActivateModal = (plan: SchedulePlan) => {
+    setActivatePlanModal(plan);
+    setActivateCheck(false);
+  };
+
+  const submitActivatePlan = async () => {
+    const plan = activatePlanModal;
+    if (!plan || !activateCheck) return;
+    setActivateSubmitting(true);
     try {
       const response = await fetch(`/api/schedule-plans/${plan.id}`, {
         method: 'PUT',
@@ -282,54 +308,46 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
 
       const { plan: updatedPlan } = await response.json();
 
-      // Update local state - deactivate other plans in the same month and wash
       setPlans(plans.map(p =>
         p.month === updatedPlan.month && normalizeWashId(p.washId) === normalizeWashId(updatedPlan.washId)
           ? (p.id === updatedPlan.id ? { ...p, isActive: true } : { ...p, isActive: false })
           : p
       ));
 
-      toast({
-        title: 'План активирован',
-        description: `План "${plan.name}" теперь активен`
-      });
-
+      toast({ title: 'План активирован', description: `План "${plan.name}" теперь активен` });
+      setActivatePlanModal(null);
       router.refresh();
     } catch (error) {
       console.error('Error activating plan:', error);
-      toast({
-        title: 'Ошибка активации',
-        description: 'Не удалось активировать план',
-        variant: 'destructive'
-      });
+      toast({ title: 'Ошибка активации', description: 'Не удалось активировать план', variant: 'destructive' });
+    } finally {
+      setActivateSubmitting(false);
     }
   };
 
-  const handleDeletePlan = async (plan: SchedulePlan) => {
-    if (!confirm(`Удалить план "${plan.name}"?`)) return;
+  // Phase 6.4: handleDeletePlan теперь открывает confirm-modal вместо native confirm
+  const openDeleteModal = (plan: SchedulePlan) => {
+    setDeletePlanModal(plan);
+    setDeleteCheck(false);
+  };
 
+  const submitDeletePlan = async () => {
+    const plan = deletePlanModal;
+    if (!plan || !deleteCheck) return;
+    setDeleteSubmitting(true);
     try {
-      const response = await fetch(`/api/schedule-plans/${plan.id}`, {
-        method: 'DELETE'
-      });
-
+      const response = await fetch(`/api/schedule-plans/${plan.id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete plan');
 
       setPlans(plans.filter(p => p.id !== plan.id));
-
-      toast({
-        title: 'План удалён',
-        description: `План "${plan.name}" План успешно удалён`
-      });
-
+      toast({ title: 'План удалён', description: `План "${plan.name}" успешно удалён` });
+      setDeletePlanModal(null);
       router.refresh();
     } catch (error) {
       console.error('Error deleting plan:', error);
-      toast({
-        title: 'Ошибка удаления',
-        description: 'Не удалось удалить план',
-        variant: 'destructive'
-      });
+      toast({ title: 'Ошибка удаления', description: 'Не удалось удалить план', variant: 'destructive' });
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
@@ -373,6 +391,11 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
       setAutoFillDialogOpen(false);
       setAutoFillPlan(null);
       setAutoFillClearExisting(false);
+      // Phase 6.4: reset safety state
+      setAutoFillCheck1(false);
+      setAutoFillCheck2(false);
+      setAutoFillCheck3(false);
+      setAutoFillMagic('');
       router.refresh();
     } catch (error) {
       console.error('Error auto-filling shifts:', error);
@@ -478,7 +501,7 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleActivatePlan(plan)}
+                            onClick={() => openActivateModal(plan)}
                             className="flex-1"
                           >
                             Активировать
@@ -522,7 +545,7 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleDeletePlan(plan)}
+                          onClick={() => openDeleteModal(plan)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -711,18 +734,41 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
       </Dialog>
 
       {/* Auto-Fill Dialog */}
-      <Dialog open={autoFillDialogOpen} onOpenChange={setAutoFillDialogOpen}>
-        <DialogContent>
+      {/* Phase 6.4: Autofill dialog с UX-safety paragraphs (CheckItem + magic word
+          для clearExisting). */}
+      <Dialog open={autoFillDialogOpen} onOpenChange={(o) => {
+        setAutoFillDialogOpen(o);
+        if (!o) {
+          setAutoFillCheck1(false); setAutoFillCheck2(false); setAutoFillCheck3(false);
+          setAutoFillMagic('');
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Автозаполнение смен</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Автозаполнение смен
+              {autoFillClearExisting && <HazardPill level="critical">CRITICAL</HazardPill>}
+            </DialogTitle>
             <DialogDescription>
               {autoFillPlan
-                ? `План: "${autoFillPlan.name}" (${format(new Date(autoFillPlan.month + '-01'), 'LLLL yyyy', { locale: ru })})`
+                ? `План: "${autoFillPlan.name}" (${format(new Date(autoFillPlan.month + '-01'), 'LLLL yyyy', { locale: ru })}, ${getWashLabel(autoFillPlan.washId)})`
                 : 'Выберите план для автозаполнения.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
+            {autoFillClearExisting && (
+              <SafetyBar
+                level="critical"
+                items={[
+                  { icon: 'shield-alert', label: 'Уровень', value: 'CRITICAL' },
+                  { icon: 'trash-2', label: 'Действие', value: 'DELETE+CREATE 30+ Shift' },
+                  { icon: 'lock', label: 'Защита', value: 'magic word' },
+                ]}
+              />
+            )}
+
             <div className="text-sm text-gray-600">
               По умолчанию автозаполнение:
               <ul className="list-disc pl-5 mt-1 space-y-1">
@@ -737,14 +783,21 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                 <Checkbox
                   id="autoFillClearExisting"
                   checked={autoFillClearExisting}
-                  onCheckedChange={(v) => setAutoFillClearExisting(Boolean(v))}
+                  onCheckedChange={(v) => {
+                    setAutoFillClearExisting(Boolean(v));
+                    // Reset safety state когда снимаем галку
+                    if (!v) {
+                      setAutoFillCheck1(false); setAutoFillCheck2(false); setAutoFillCheck3(false);
+                      setAutoFillMagic('');
+                    }
+                  }}
                 />
                 <div className="space-y-1">
                   <Label htmlFor="autoFillClearExisting" className="text-sm font-medium">
                     Удалить существующие смены этого месяца и создать заново
                   </Label>
                   <div className="text-xs text-gray-600">
-                    Опция опасная: удалит все смены за выбранный месяц только для {autoFillPlan ? getWashLabel(autoFillPlan.washId) : 'Мойка 1'} в <code>data/shifts</code>.
+                    <b>Опция опасная:</b> удалит ВСЕ смены за выбранный месяц только для {autoFillPlan ? getWashLabel(autoFillPlan.washId) : 'Мойка 1'}. Сотрудники потеряют свой подтверждённый график, swap-запросы, привязку к WashEvent (через shiftId).
                   </div>
                 </div>
               </div>
@@ -768,6 +821,66 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                 </div>
               </div>
             </div>
+
+            {/* UX-safety чек-лист (только для clearExisting) */}
+            {autoFillClearExisting && (
+              <div className="space-y-2 pt-2 border-t border-red-200">
+                <CheckItem
+                  checked={autoFillCheck1}
+                  onCheck={setAutoFillCheck1}
+                  icon="users"
+                  title="Сотрудники предупреждены об удалении графика"
+                  desc="Их подтверждённые смены и swap-запросы исчезнут — нужно сообщить."
+                  level="critical"
+                />
+                <CheckItem
+                  checked={autoFillCheck2}
+                  onCheck={setAutoFillCheck2}
+                  icon="link"
+                  title="Понимаю что WashEvent.shiftId станет orphan"
+                  desc="Существующие мойки потеряют связь со сменой. Отчёты по сменам станут неполными."
+                  level="warn"
+                />
+                <CheckItem
+                  checked={autoFillCheck3}
+                  onCheck={setAutoFillCheck3}
+                  icon="check"
+                  title="Готов перезаписать план"
+                  desc="После apply откатить можно только восстановлением через /schedule вручную."
+                  level="critical"
+                />
+
+                <div className="pt-2 space-y-2">
+                  <label className="text-sm font-medium text-red-700 flex items-center gap-2">
+                    <Lock className="h-4 w-4" />
+                    Введите слово{' '}
+                    <code className="bg-red-100 px-1.5 py-0.5 rounded font-mono">
+                      {AUTOFILL_MAGIC}
+                    </code>
+                    {' '}для подтверждения:
+                  </label>
+                  <Input
+                    value={autoFillMagic}
+                    onChange={(e) => setAutoFillMagic(e.target.value)}
+                    placeholder={AUTOFILL_MAGIC}
+                    className={
+                      autoFillMagic && autoFillMagic.trim() !== AUTOFILL_MAGIC
+                        ? 'border-red-500 bg-red-50'
+                        : autoFillMagic.trim() === AUTOFILL_MAGIC
+                        ? 'border-emerald-500 bg-emerald-50'
+                        : ''
+                    }
+                    autoComplete="off"
+                    disabled={!(autoFillCheck1 && autoFillCheck2 && autoFillCheck3)}
+                  />
+                  {!(autoFillCheck1 && autoFillCheck2 && autoFillCheck3) && (
+                    <p className="text-[11px] text-amber-700">
+                      Сначала отметьте 3 чек-листа выше — поле ввода активируется.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -783,16 +896,135 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
               Отмена
             </Button>
             <Button
-              onClick={() => {
-                if (autoFillClearExisting) {
-                  if (!confirm('ВНИМАНИЕ: Все существующие смены за этот месяц будут удалены и созданы заново. Продолжить?')) return;
-                }
-                submitAutoFill();
-              }}
-              disabled={!autoFillPlan || autoFillSubmitting}
+              onClick={submitAutoFill}
+              disabled={
+                !autoFillPlan
+                || autoFillSubmitting
+                || (autoFillClearExisting && !(autoFillCheck1 && autoFillCheck2 && autoFillCheck3 && autoFillMagic.trim() === AUTOFILL_MAGIC))
+              }
               className={autoFillClearExisting ? 'bg-red-600 hover:bg-red-700' : ''}
             >
               {autoFillSubmitting ? 'Заполняем...' : autoFillClearExisting ? 'Удалить и заполнить' : 'Заполнить'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Phase 6.4: Activate plan confirm-modal с CheckItem */}
+      <Dialog
+        open={!!activatePlanModal}
+        onOpenChange={(o) => { if (!o) { setActivatePlanModal(null); setActivateCheck(false); } }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-emerald-600" />
+              Активировать план
+              <HazardPill level="warn">WARN</HazardPill>
+            </DialogTitle>
+            <DialogDescription>
+              {activatePlanModal && (
+                <>План: <b>"{activatePlanModal.name}"</b> ({format(new Date(activatePlanModal.month + '-01'), 'LLLL yyyy', { locale: ru })}, {getWashLabel(activatePlanModal.washId)})</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div>
+                <b>Активация автоматически деактивирует другие планы</b> того же месяца и мойки.
+                Только один план может быть активным одновременно.
+              </div>
+            </div>
+
+            <CheckItem
+              checked={activateCheck}
+              onCheck={setActivateCheck}
+              icon="check"
+              title="Понимаю последствия активации"
+              desc="Все остальные планы за этот же месяц/мойку перестанут быть активными. Шаблон для смен возьмётся из этого плана."
+              level="warn"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setActivatePlanModal(null)}
+              disabled={activateSubmitting}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={submitActivatePlan}
+              disabled={!activateCheck || activateSubmitting}
+            >
+              {activateSubmitting ? 'Активация...' : 'Активировать'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Phase 6.4: Delete plan confirm-modal с CheckItem (вместо native confirm) */}
+      <Dialog
+        open={!!deletePlanModal}
+        onOpenChange={(o) => { if (!o) { setDeletePlanModal(null); setDeleteCheck(false); } }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700">
+              <ShieldAlert className="h-5 w-5" />
+              Удалить план
+              <HazardPill level={deletePlanModal?.isActive ? 'critical' : 'warn'}>
+                {deletePlanModal?.isActive ? 'CRITICAL (активный план!)' : 'WARN'}
+              </HazardPill>
+            </DialogTitle>
+            <DialogDescription>
+              {deletePlanModal && (
+                <>План: <b>"{deletePlanModal.name}"</b> ({format(new Date(deletePlanModal.month + '-01'), 'LLLL yyyy', { locale: ru })}, {getWashLabel(deletePlanModal.washId)})</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {deletePlanModal?.isActive && (
+              <div className="rounded-md border-2 border-rose-300 bg-rose-50 p-3 text-sm text-rose-900 flex items-start gap-2">
+                <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+                <div>
+                  <b>Этот план активен!</b> После удаления у месяца не останется активного плана. Создание/редактирование смен будет работать как раньше — но шаблон для AI-автозаполнения исчезнет.
+                </div>
+              </div>
+            )}
+
+            <div className="text-sm text-gray-700">
+              План — это <b>шаблон требований</b> (сколько людей в день, в каком слоте). Удаление шаблона <b>не удаляет существующие Shift</b> в графике. Удалятся только настройки employeeConfigs и dailyRequirements.
+            </div>
+
+            <CheckItem
+              checked={deleteCheck}
+              onCheck={setDeleteCheck}
+              icon="trash-2"
+              title="Понимаю что удаляется только шаблон"
+              desc="Существующие смены в /schedule останутся. Удалить шаблон безопасно если месяц закончился или план не использовался."
+              level={deletePlanModal?.isActive ? 'critical' : 'warn'}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeletePlanModal(null)}
+              disabled={deleteSubmitting}
+            >
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={submitDeletePlan}
+              disabled={!deleteCheck || deleteSubmitting}
+            >
+              {deleteSubmitting ? 'Удаление...' : 'Удалить план'}
             </Button>
           </DialogFooter>
         </DialogContent>
