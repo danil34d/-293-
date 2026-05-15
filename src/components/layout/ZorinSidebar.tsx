@@ -99,7 +99,7 @@ export function ZorinSidebar({ onLogout, newServicesCount, isOpen = true, onTogg
     <div className={cn(
       "zorin-sidebar",
       "flex flex-col h-full",
-      isOpen ? "w-[280px]" : "w-[80px]"
+      isOpen ? "w-[220px]" : "w-[64px]"
     )} data-state={isOpen ? "open" : "collapsed"}>
 
       {/* Sidebar Header */}

@@ -18,16 +18,37 @@ export function AppLayout({ children, newServicesCount = 0 }: { children: ReactN
   const { isAuthenticated, employee, isLoading, logout } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpenState] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const isPublicPath = isPublicAppPath(pathname);
 
-  // Handle mobile detection
+  // Phase 15: persist sidebar state в localStorage (desktop only).
+  // Mobile state не сохраняем — на мобильном sidebar всегда стартует свёрнутым.
+  const setIsSidebarOpen = React.useCallback((open: boolean | ((prev: boolean) => boolean)) => {
+    setIsSidebarOpenState(prev => {
+      const next = typeof open === 'function' ? open(prev) : open;
+      try {
+        if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+          window.localStorage.setItem('admin-sidebar-open', next ? '1' : '0');
+        }
+      } catch { /* localStorage может быть disabled */ }
+      return next;
+    });
+  }, []);
+
+  // Handle mobile detection + восстановление сохранённого состояния
   React.useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-      if (window.innerWidth < 768) {
-        setIsSidebarOpen(false);
+      const isMobileNow = window.innerWidth < 768;
+      setIsMobile(isMobileNow);
+      if (isMobileNow) {
+        setIsSidebarOpenState(false);
+      } else {
+        // Phase 15: на desktop восстанавливаем из localStorage (default open)
+        try {
+          const saved = window.localStorage.getItem('admin-sidebar-open');
+          if (saved !== null) setIsSidebarOpenState(saved === '1');
+        } catch { /* ignore */ }
       }
     };
 
@@ -101,7 +122,7 @@ export function AppLayout({ children, newServicesCount = 0 }: { children: ReactN
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col zorin-main-content transition-all duration-300 print:!ml-0"
-           style={{ marginLeft: isMobile ? 0 : (sidebarIsEffectivelyOpen ? '280px' : '80px') }}>
+           style={{ marginLeft: isMobile ? 0 : (sidebarIsEffectivelyOpen ? '220px' : '64px') }}>
 
         {/* Top Bar */}
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-white/90 px-4 backdrop-blur-sm md:px-6 shadow-sm print:hidden">
