@@ -174,6 +174,29 @@ export const getEmployeesMetrics: () => Promise<Map<string, {
 }>> =
   adapter.getEmployeesMetrics ?? (async () => new Map());
 
+// Phase 20 / finding #8 АРХ-НАХОДКИ: scan orphan StockMovement (soft FK без проверки)
+export const findOrphanedStockMovements: () => Promise<{
+  total: number;
+  orphans: Array<{
+    id: string;
+    materialId: string;
+    type: string;
+    amount: number;
+    date: string;
+    description: string;
+    relatedEntityType: string;
+    relatedEntityId: string;
+    reason: string;
+  }>;
+  summary: {
+    totalMovements: number;
+    withSoftFK: number;
+    orphanCount: number;
+    byReason: Record<string, number>;
+  };
+}> =
+  adapter.findOrphanedStockMovements ?? (async () => ({ total: 0, orphans: [], summary: { totalMovements: 0, withSoftFK: 0, orphanCount: 0, byReason: {} } }));
+
 // Phase 16 / finding #35: backfill StockMovement.purchase из исторических Expense
 export const backfillChemicalPurchasesFromExpenses: (apply: boolean) => Promise<{
   candidates: Array<{

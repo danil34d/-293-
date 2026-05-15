@@ -10,7 +10,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, RefreshCcw, ArrowRight, AlertTriangle, CheckCircle2, History } from "lucide-react";
+import { Loader2, RefreshCcw, ArrowRight, AlertTriangle, CheckCircle2, History, Link2Off } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 import { CheckItem, HazardPill, SafetyBar } from "@/components/admin";
@@ -318,6 +318,7 @@ export function RecomputeStockSection() {
           Проверить расхождение остатков
         </Button>
         <BackfillPurchasesButton />
+        <OrphanStockButton />
       </div>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -444,6 +445,147 @@ export function RecomputeStockSection() {
                 Применить пересчёт
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+interface OrphanResponse {
+  total: number;
+  orphans: Array<{
+    id: string;
+    materialId: string;
+    type: string;
+    amount: number;
+    date: string;
+    description: string;
+    relatedEntityType: string;
+    relatedEntityId: string;
+    reason: string;
+  }>;
+  summary: {
+    totalMovements: number;
+    withSoftFK: number;
+    orphanCount: number;
+    byReason: Record<string, number>;
+  };
+}
+
+/** Phase 20 / finding #8 АРХ: scan orphan StockMovement. */
+function OrphanStockButton() {
+  const { toast } = useToast();
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [data, setData] = React.useState<OrphanResponse | null>(null);
+
+  const fetchScan = async () => {
+    setIsLoading(true);
+    setData(null);
+    try {
+      const r = await fetch("/api/inventory/orphan-stock");
+      if (!r.ok) throw new Error(await r.text());
+      const json: OrphanResponse = await r.json();
+      setData(json);
+      setIsOpen(true);
+    } catch (err: any) {
+      toast({ title: "Ошибка", description: err.message ?? "scan failed", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <Button variant="outline" onClick={fetchScan} disabled={isLoading} className="gap-2">
+        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2Off className="h-4 w-4" />}
+        Orphan-связи склада (#8)
+      </Button>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2Off className="h-5 w-5" />
+              Orphan StockMovement (связь утеряна)
+              {data && (
+                <HazardPill level={data.total > 0 ? "warn" : "safe"}>
+                  {data.total > 0 ? `${data.total} orphan'ов` : "всё ОК"}
+                </HazardPill>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              StockMovement.relatedEntityId хранится без FK-констрейнта (soft FK). DELETE WashEvent/Expense оставляет
+              «висящие» движения склада. Этот scan ищет их через batch-проверку существования связанных записей.
+              <br />
+              <b>Не удаляет</b> — только репортит. История ценна, удалять вручную (или оставить как audit).
+            </DialogDescription>
+          </DialogHeader>
+
+          {data && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2 text-sm">
+                <div className="rounded p-2 bg-gray-50 border border-gray-200">
+                  <div className="text-xs text-gray-600 uppercase">Всего движений</div>
+                  <div className="text-2xl font-bold text-gray-700">{data.summary.totalMovements}</div>
+                </div>
+                <div className="rounded p-2 bg-sky-50 border border-sky-200">
+                  <div className="text-xs text-sky-700 uppercase">C soft FK</div>
+                  <div className="text-2xl font-bold text-sky-800">{data.summary.withSoftFK}</div>
+                </div>
+                <div className="rounded p-2 bg-amber-50 border border-amber-200">
+                  <div className="text-xs text-amber-700 uppercase">Orphan'ов</div>
+                  <div className="text-2xl font-bold text-amber-800">{data.summary.orphanCount}</div>
+                </div>
+              </div>
+
+              {Object.keys(data.summary.byReason).length > 0 && (
+                <div className="rounded-lg p-3 bg-amber-50 border border-amber-200 text-sm">
+                  <div className="font-semibold mb-1 text-amber-900">По типу связи:</div>
+                  <ul className="space-y-0.5 text-amber-800">
+                    {Object.entries(data.summary.byReason).map(([reason, count]) => (
+                      <li key={reason}>
+                        <code className="bg-amber-100 px-1 rounded">{reason}</code>: {count}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {data.total > 0 ? (
+                <table className="w-full text-xs border rounded-lg overflow-hidden">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Дата</th>
+                      <th className="px-2 py-1 text-left">Тип</th>
+                      <th className="px-2 py-1 text-right">Сумма</th>
+                      <th className="px-2 py-1 text-left">Описание</th>
+                      <th className="px-2 py-1 text-left">Утрачено</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.orphans.map((o) => (
+                      <tr key={o.id} className="bg-amber-50/30">
+                        <td className="px-2 py-1 tabular-nums">{o.date.slice(0, 10)}</td>
+                        <td className="px-2 py-1">{o.type}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{o.amount.toLocaleString("ru-RU")}</td>
+                        <td className="px-2 py-1 max-w-[280px] truncate" title={o.description}>{o.description}</td>
+                        <td className="px-2 py-1 text-amber-700">{o.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-emerald-800 text-sm">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Все StockMovement.relatedEntityId соответствуют существующим записям.
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsOpen(false)}>Закрыть</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

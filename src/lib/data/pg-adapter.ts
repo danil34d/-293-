@@ -774,6 +774,153 @@ export async function unarchiveEmployee(id: string): Promise<void> {
 }
 
 /**
+ * Phase 20 / finding #8 АРХ-НАХОДКИ: scan orphan StockMovement.
+ *
+ * `StockMovement.relatedEntityType` + `relatedEntityId` — soft FK без БД-констрейнта.
+ * DELETE WashEvent / Expense оставляет StockMovement с битой ссылкой.
+ *
+ * Функция сканирует все StockMovement с relatedEntityType='wash_event'/'expense'
+ * и проверяет существование связанной записи. Возвращает orphan'ы с метаданными.
+ *
+ * Не удаляет (история ценна) — только репортит. Endpoint /api/inventory/orphan-stock
+ * предоставляет результат, UI показывает badge «связь утеряна» рядом со строкой.
+ */
+export async function findOrphanedStockMovements(): Promise<{
+  total: number;
+  orphans: Array<{
+    id: string;
+    materialId: string;
+    type: string;
+    amount: number;
+    date: string;
+    description: string;
+    relatedEntityType: string;
+    relatedEntityId: string;
+    reason: string;
+  }>;
+  summary: {
+    totalMovements: number;
+    withSoftFK: number;
+    orphanCount: number;
+    byReason: Record<string, number>;
+  };
+}> {
+  // 1. Забираем все movements с soft FK (relatedEntityType + relatedEntityId)
+  const movements = await prisma.stockMovement.findMany({
+    where: {
+      relatedEntityType: { not: null },
+      relatedEntityId: { not: null },
+    },
+    select: {
+      id: true,
+      materialId: true,
+      type: true,
+      amount: true,
+      date: true,
+      description: true,
+      relatedEntityType: true,
+      relatedEntityId: true,
+    },
+  });
+
+  const totalAll = await prisma.stockMovement.count();
+  const withSoftFK = movements.length;
+
+  // 2. Группируем по relatedEntityType
+  const byType = new Map<string, Set<string>>();
+  for (const m of movements) {
+    const t = m.relatedEntityType!;
+    if (!byType.has(t)) byType.set(t, new Set());
+    byType.get(t)!.add(m.relatedEntityId!);
+  }
+
+  // 3. Проверяем существование связанных записей batch'ами
+  const existingIds = new Map<string, Set<string>>();
+
+  for (const [type, ids] of byType) {
+    const idsArray = Array.from(ids);
+    const existing = new Set<string>();
+
+    if (type === 'wash_event') {
+      const rows = await prisma.washEvent.findMany({
+        where: { id: { in: idsArray } },
+        select: { id: true },
+      });
+      for (const r of rows) existing.add(r.id);
+    } else if (type === 'expense') {
+      const rows = await prisma.expense.findMany({
+        where: { id: { in: idsArray } },
+        select: { id: true },
+      });
+      for (const r of rows) existing.add(r.id);
+    } else if (type === 'employee') {
+      const rows = await prisma.employee.findMany({
+        where: { id: { in: idsArray } },
+        select: { id: true },
+      });
+      for (const r of rows) existing.add(r.id);
+    } else if (type === 'canister') {
+      const rows = await prisma.employeeCanister.findMany({
+        where: { id: { in: idsArray } },
+        select: { id: true },
+      });
+      for (const r of rows) existing.add(r.id);
+    }
+    // Other types — без проверки, не считаем orphan'ом
+
+    existingIds.set(type, existing);
+  }
+
+  // 4. Собираем orphan'ы
+  const orphans: Array<{
+    id: string;
+    materialId: string;
+    type: string;
+    amount: number;
+    date: string;
+    description: string;
+    relatedEntityType: string;
+    relatedEntityId: string;
+    reason: string;
+  }> = [];
+  const byReason: Record<string, number> = {};
+
+  for (const m of movements) {
+    const type = m.relatedEntityType!;
+    const checkedTypes = new Set(['wash_event', 'expense', 'employee', 'canister']);
+    if (!checkedTypes.has(type)) continue; // unknown type — skip
+
+    const existing = existingIds.get(type) ?? new Set();
+    if (!existing.has(m.relatedEntityId!)) {
+      const reason = `${type} ${m.relatedEntityId} удалён`;
+      byReason[type] = (byReason[type] ?? 0) + 1;
+      orphans.push({
+        id: m.id,
+        materialId: m.materialId,
+        type: m.type,
+        amount: m.amount,
+        date: m.date.toISOString(),
+        description: m.description,
+        relatedEntityType: type,
+        relatedEntityId: m.relatedEntityId!,
+        reason,
+      });
+    }
+  }
+
+  return {
+    total: orphans.length,
+    orphans,
+    summary: {
+      totalMovements: totalAll,
+      withSoftFK,
+      orphanCount: orphans.length,
+      byReason,
+    },
+  };
+}
+
+/**
  * Phase 16 / finding #35: backfill StockMovement.purchase из исторических Expense.
  *
  * Симптом: на проде 22 движения химии — все consumption, 0 purchase.
