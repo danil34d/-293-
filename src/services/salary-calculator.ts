@@ -3,6 +3,7 @@
 
 import type { WashEvent, Employee, SalaryScheme, SalaryRate, SalaryReportData, SalaryBreakdownItem, Violation, SalaryPenaltyItem } from '@/types';
 import { isKiosk } from '@/lib/employee-role';
+import { isCompletedWashEvent } from '@/lib/wash-event-status';
 
 // Helper to determine the source type from a wash event
 function getWashSourceType(washEvent: WashEvent): 'retail' | 'aggregator' | 'counterAgent' | null {
@@ -167,6 +168,12 @@ export async function generateSalaryReport(
   }
 
   for (const event of washEvents) {
+    // 🔥 Phase 9 / finding #37: исключаем dismissed (отказанные клиентом) мойки
+    // из ZP-расчёта. Раньше сотрудник получал деньги за мойку, которая физически
+    // не была сделана (status='dismissed' = «уехал не помывшись»).
+    // restored — это снова валидная мойка, она пройдёт isCompletedWashEvent.
+    if (!isCompletedWashEvent(event)) continue;
+
     if (!event.employeeIds || event.employeeIds.length === 0) continue;
 
     // 🔥 ФИКС 2026-05-05: исключаем терминалы (kiosk/kiosk1) из расчёта зарплаты.
