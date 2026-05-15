@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { CounterAgent } from '@/types';
-import { invalidateCounterAgentsCache } from '@/lib/data';
+import { invalidateCounterAgentsCache, getCounterAgentImpact } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
 
@@ -126,9 +126,32 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       );
     }
 
+    // Phase 7 / Finding #25: pre-check на каскадные связи + rateSource.
+    // Без этого DELETE молча обнулит counterAgentId в WashEvent (SetNull),
+    // удалит ClientTransaction каскадом и сломает ZP по схемам с этим rateSource.
+    const impact = await getCounterAgentImpact(id);
+    const hasHistory =
+      impact.washEvents > 0 ||
+      impact.clientTransactions > 0 ||
+      impact.schemesUsingAsRateSource.length > 0;
+
+    const url = new URL(request.url);
+    const force = url.searchParams.get('force') === 'true';
+
+    if (hasHistory && !force) {
+      return NextResponse.json({
+        error: 'У контрагента есть история. Удаление каскадно затронет связанные записи.',
+        impact,
+        cascadeWarning: impact.clientTransactions > 0
+          ? `ClientTransaction × ${impact.clientTransactions} будет УДАЛЕНО каскадно`
+          : null,
+        suggestForce: true,
+      }, { status: 409 });
+    }
+
     await deleteEntity('counterAgent', id);
     invalidateCounterAgentsCache();
-    return NextResponse.json({ message: 'Counter agent deleted successfully' });
+    return NextResponse.json({ message: 'Counter agent deleted successfully', impact });
   } catch (error: any) {
     console.error(`Error deleting counter agent data for ID ${id}:`, error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { Aggregator } from '@/types';
-import { invalidateAggregatorsCache } from '@/lib/data';
+import { invalidateAggregatorsCache, getAggregatorImpact } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
 
@@ -103,11 +103,38 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       return NextResponse.json({ error: 'Aggregator not found' }, { status: 404 });
     }
     if (!existing.archived) {
-      return NextResponse.json({ error: 'Сначала нужно архивировать агрегатора' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Сначала архивируйте агрегатора, затем удаляйте окончательно.' },
+        { status: 409 }
+      );
     }
+
+    // Phase 7 / Finding #25: pre-check на каскадные связи + rateSource.
+    // Без этого DELETE молча обнулит aggregatorId в WashEvent (SetNull),
+    // удалит ClientTransaction каскадом и сломает ZP по схемам с этим rateSource.
+    const impact = await getAggregatorImpact(id);
+    const hasHistory =
+      impact.washEvents > 0 ||
+      impact.clientTransactions > 0 ||
+      impact.schemesUsingAsRateSource.length > 0;
+
+    const url = new URL(request.url);
+    const force = url.searchParams.get('force') === 'true';
+
+    if (hasHistory && !force) {
+      return NextResponse.json({
+        error: 'У агрегатора есть история. Удаление каскадно затронет связанные записи.',
+        impact,
+        cascadeWarning: impact.clientTransactions > 0
+          ? `ClientTransaction × ${impact.clientTransactions} будет УДАЛЕНО каскадно`
+          : null,
+        suggestForce: true,
+      }, { status: 409 });
+    }
+
     await deleteEntity('aggregator', id);
     invalidateAggregatorsCache();
-    return NextResponse.json({ message: 'Aggregator deleted successfully' });
+    return NextResponse.json({ message: 'Aggregator deleted successfully', impact });
   } catch (error: any) {
     console.error(`Error deleting aggregator data for ID ${id}:`, error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

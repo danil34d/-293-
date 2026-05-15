@@ -1,22 +1,28 @@
 "use client";
 
 import * as React from "react";
-import { AlertOctagon, Calculator, Lock } from "lucide-react";
+import { AlertOctagon, Calculator, Lock, Loader2 } from "lucide-react";
 
 import type { SalaryScheme } from "@/types";
 
 interface SchemeImpactPreviewProps {
+  /**
+   * Сотрудник, для которого считается impact. Если задан — компонент сделает
+   * fetch /api/employees/[id]/scheme-impact и подставит реальные monthsWorked +
+   * monthlyTurnover из WashEvent. Если не задан — будут показаны placeholder
+   * значения из props (legacy fallback для NEW employee).
+   */
+  employeeId?: string;
   oldSchemeId: string | undefined;
   newSchemeId: string;
   schemes: SalaryScheme[];
   /**
-   * Сколько месяцев сотрудник работает на старой схеме.
-   * Используется для оценки накопленного эффекта (deltaPercent × months × turnover).
+   * Сколько месяцев сотрудник работает на старой схеме (placeholder).
+   * Используется только если employeeId не передан или fetch ещё в loading.
    */
   monthsWorked?: number;
   /**
-   * Средний оборот моек сотрудника в месяц (₽).
-   * Если не передан — используется placeholder.
+   * Средний оборот моек сотрудника в месяц (₽), placeholder.
    */
   monthlyTurnover?: number;
   /**
@@ -26,34 +32,62 @@ interface SchemeImpactPreviewProps {
   lastPaidPeriod?: string | null;
 }
 
+interface SchemeImpactResponse {
+  monthsWorked: number;
+  monthlyTurnover: number;
+  washEventsCount: number;
+  firstWashAt: string | null;
+  lastWashAt: string | null;
+  currentMonthTurnover: number;
+  projection: {
+    deltaPercent: number | null;
+    monthlyDeltaRub: number | null;
+    totalDeltaRub: number | null;
+    reason?: string;
+  } | null;
+}
+
 /**
  * Inline «Превью пересчёта ZP» внутри DangerGate когда админ меняет
- * salarySchemeId. Показывает в рублях сколько изменится ZP за весь период.
- *
- * Работает только для type='percentage' схем — для rate-схем дельта не считается
- * напрямую (зависит от конкретных услуг).
- *
- * Mock-данные (monthsWorked, monthlyTurnover) пока берутся из props или placeholder.
- * В реальной prod-версии можно подключить GET /api/employees/[id]/scheme-impact
- * который посчитает реальный оборот за период работы.
- *
- * См. дизайн-образец: prototype/employee-edit.jsx (Phase 4D-1).
+ * salarySchemeId. Phase 7: подключён GET /api/employees/[id]/scheme-impact —
+ * показывает реальный оборот сотрудника и месяцы работы вместо placeholder.
  */
 export function SchemeImpactPreview({
+  employeeId,
   oldSchemeId,
   newSchemeId,
   schemes,
-  monthsWorked = 8,
-  monthlyTurnover = 78000,
+  monthsWorked: monthsWorkedProp = 8,
+  monthlyTurnover: monthlyTurnoverProp = 78000,
   lastPaidPeriod,
 }: SchemeImpactPreviewProps) {
   const oldScheme = schemes.find((s) => s.id === oldSchemeId);
   const newScheme = schemes.find((s) => s.id === newSchemeId);
 
+  // Phase 7: fetch реальные метрики если есть employeeId и есть изменение схемы.
+  const [realImpact, setRealImpact] = React.useState<SchemeImpactResponse | null>(null);
+  const [isFetching, setIsFetching] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!employeeId || oldSchemeId === newSchemeId) {
+      setRealImpact(null);
+      return;
+    }
+    let cancelled = false;
+    setIsFetching(true);
+    fetch(`/api/employees/${employeeId}/scheme-impact?newSchemeId=${encodeURIComponent(newSchemeId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: SchemeImpactResponse | null) => {
+        if (!cancelled && data) setRealImpact(data);
+      })
+      .catch(() => { /* silent — UI fallback на placeholder */ })
+      .finally(() => { if (!cancelled) setIsFetching(false); });
+    return () => { cancelled = true; };
+  }, [employeeId, oldSchemeId, newSchemeId]);
+
   // Если нет изменения — ничего не показываем
   if (oldSchemeId === newSchemeId) return null;
-  // Если новая схема "unassigned" — она = снятие схемы (totalImpact = -100% earnings)
-  // Если старая schemе была не percentage — не считаем (нет % для дельты)
+
   const oldPercent = oldScheme?.type === "percentage" ? oldScheme.percentage ?? 0 : null;
   const newPercent = newScheme?.type === "percentage" ? newScheme.percentage ?? 0 : null;
 
@@ -78,11 +112,17 @@ export function SchemeImpactPreview({
   const deltaPercent = newPercent - oldPercent;
   if (deltaPercent === 0) return null;
 
-  const monthlyImpact = Math.round((monthlyTurnover * deltaPercent) / 100);
-  const totalImpact = monthlyImpact * monthsWorked;
+  // Реальные значения, если есть; иначе placeholder из props
+  const monthsWorked = realImpact?.monthsWorked ?? monthsWorkedProp;
+  const monthlyTurnover = realImpact?.monthlyTurnover ?? monthlyTurnoverProp;
+  const isRealData = !!realImpact && realImpact.washEventsCount > 0;
+
+  const monthlyImpact = realImpact?.projection?.monthlyDeltaRub
+    ?? Math.round((monthlyTurnover * deltaPercent) / 100);
+  const totalImpact = realImpact?.projection?.totalDeltaRub
+    ?? (monthlyImpact * monthsWorked);
   const willAffectPaidPeriod = !!lastPaidPeriod;
 
-  // Цвет: critical если затрагивает выплаченный период, иначе warn если delta != 0
   const isCritical = willAffectPaidPeriod;
   const bg = isCritical ? "#fef2f2" : "#fffbeb";
   const border = isCritical ? "#fecaca" : "#fde68a";
@@ -100,11 +140,12 @@ export function SchemeImpactPreview({
           <Calculator className="w-4 h-4" style={{ color: accentColor }} />
         )}
         <span
-          className="text-[11px] uppercase tracking-wider font-bold"
+          className="text-[11px] uppercase tracking-wider font-bold flex-1"
           style={{ color: accentColor }}
         >
           Превью пересчёта ZP за период работы
         </span>
+        {isFetching && <Loader2 className="w-3 h-3 animate-spin text-gray-500" />}
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -126,9 +167,15 @@ export function SchemeImpactPreview({
       </div>
 
       <div className="mt-3 text-[11px] text-gray-700 leading-snug">
-        По оценке ~{monthlyTurnover.toLocaleString("ru-RU")} ₽/мес обороту каждый месяц
+        По {isRealData ? "реальному обороту" : "приблизительной оценке"}{" "}
+        ~{monthlyTurnover.toLocaleString("ru-RU")} ₽/мес каждый месяц
         даст <b>{monthlyImpact > 0 ? "+" : ""}{monthlyImpact.toLocaleString("ru-RU")} ₽</b> к
         начислению.
+        {realImpact && realImpact.washEventsCount > 0 && (
+          <span className="text-gray-500">
+            {" "}(на основе {realImpact.washEventsCount} моек)
+          </span>
+        )}
       </div>
 
       {willAffectPaidPeriod && (
@@ -146,9 +193,11 @@ export function SchemeImpactPreview({
       )}
 
       <div className="mt-2 text-[10px] text-gray-500 leading-snug">
-        💡 Расчёт приблизительный (оборот {monthlyTurnover.toLocaleString("ru-RU")} ₽/мес и{" "}
-        {monthsWorked} мес работы — placeholder). Реальный пересчёт произойдёт после
-        сохранения через EmployeeSalarySchemeHistory.
+        {isRealData ? (
+          <>✓ Реальные данные. Расчёт по фактическим мойкам сотрудника. После сохранения создастся запись в EmployeeSalarySchemeHistory.</>
+        ) : (
+          <>💡 Расчёт приблизительный (placeholder — у сотрудника нет моек или данные ещё грузятся).</>
+        )}
       </div>
     </div>
   );

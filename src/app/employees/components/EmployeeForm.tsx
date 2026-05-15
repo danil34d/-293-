@@ -519,8 +519,10 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
               )}
             />
 
-            {/* Phase 4D-1: Live Impact Preview прямо под Select */}
+            {/* Phase 4D-1 + Phase 7: Live Impact Preview с реальными данными
+                из /api/employees/[id]/scheme-impact (если employeeId есть). */}
             <SchemeImpactPreview
+              employeeId={employeeId}
               oldSchemeId={initialData?.salarySchemeId}
               newSchemeId={watchedScheme || 'unassigned'}
               schemes={salarySchemes}

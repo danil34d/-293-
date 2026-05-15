@@ -80,11 +80,18 @@ model Aggregator {
   priceLists          Json    @default("[]")
   activePriceListName String?
 
+  // UX-safety: soft delete (Phase 7 / finding #26).
+  // До этого PATCH archived молча терялся — поля не было в БД.
+  archived   Boolean @default(false)
+  archivedAt String?
+
   washEvents         WashEvent[]
   clientTransactions ClientTransaction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([archived])
 }
 
 model CounterAgent {

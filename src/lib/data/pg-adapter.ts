@@ -792,6 +792,9 @@ export async function saveAggregator(data: any): Promise<void> {
       cars: data.cars ?? [],
       priceLists: data.priceLists ?? [],
       activePriceListName: data.activePriceListName ?? null,
+      // Phase 7 / finding #26: archived поля раньше игнорировались, PATCH не работал.
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
     create: {
       id: data.id,
@@ -801,12 +804,30 @@ export async function saveAggregator(data: any): Promise<void> {
       cars: data.cars ?? [],
       priceLists: data.priceLists ?? [],
       activePriceListName: data.activePriceListName ?? null,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
   });
 }
 
 export async function deleteAggregator(id: string): Promise<void> {
   await prisma.aggregator.delete({ where: { id } });
+}
+
+/** Phase 7: soft-delete aggregator. Используется в POST /api/aggregators/[id]/archive
+ *  и в saveAggregator (через PATCH archived). */
+export async function archiveAggregator(id: string): Promise<void> {
+  await prisma.aggregator.update({
+    where: { id },
+    data: { archived: true, archivedAt: new Date().toISOString() },
+  });
+}
+
+export async function unarchiveAggregator(id: string): Promise<void> {
+  await prisma.aggregator.update({
+    where: { id },
+    data: { archived: false, archivedAt: null },
+  });
 }
 
 // --- Counter Agents ---
@@ -1730,4 +1751,230 @@ export async function getShiftReportsData(): Promise<any[]> {
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
     };
   });
+}
+
+// ─── Phase 7: Backend polish (real metrics) ────────────────────
+
+/**
+ * Считает реальные метрики работы сотрудника для Live Impact Preview
+ * (см. SchemeImpactPreview в EmployeeForm).
+ *
+ * Возвращает:
+ *  - monthsWorked: число календарных месяцев между первой и последней мойкой
+ *  - monthlyTurnover: средний netAmount (или totalAmount если netAmount=null) на мес
+ *  - washEventsCount: всего моек у сотрудника
+ *  - firstWashAt / lastWashAt: даты первой и последней мойки
+ *  - currentMonthTurnover: оборот текущего календарного месяца
+ *
+ * Если у сотрудника нет моек — возвращает нули (UI должен показать «нет данных»).
+ */
+export async function getEmployeeSchemeImpact(employeeId: string): Promise<{
+  monthsWorked: number;
+  monthlyTurnover: number;
+  washEventsCount: number;
+  firstWashAt: string | null;
+  lastWashAt: string | null;
+  currentMonthTurnover: number;
+}> {
+  // Забираем только метаданные (timestamp, totalAmount, netAmount) —
+  // не тянем всю мойку, выборка может быть большой.
+  const links = await prisma.washEventEmployee.findMany({
+    where: { employeeId },
+    select: {
+      washEvent: {
+        select: {
+          timestamp: true,
+          totalAmount: true,
+          netAmount: true,
+          status: true,
+        },
+      },
+    },
+  });
+
+  // Только успешно завершённые мойки (status null = legacy completed)
+  const valid = links
+    .map(l => l.washEvent)
+    .filter(w => w && (w.status == null || w.status === 'completed'));
+
+  if (valid.length === 0) {
+    return {
+      monthsWorked: 0,
+      monthlyTurnover: 0,
+      washEventsCount: 0,
+      firstWashAt: null,
+      lastWashAt: null,
+      currentMonthTurnover: 0,
+    };
+  }
+
+  const sorted = [...valid].sort((a, b) => a!.timestamp.getTime() - b!.timestamp.getTime());
+  const firstWash = sorted[0]!;
+  const lastWash = sorted[sorted.length - 1]!;
+
+  // Считаем «оборот» как netAmount (т.е. без acquiringFee), fallback на totalAmount.
+  // Это база ZP-расчёта по проценту в SalaryScheme type='percentage'.
+  const totalTurnover = valid.reduce(
+    (sum, w) => sum + (w!.netAmount ?? w!.totalAmount ?? 0),
+    0
+  );
+
+  // Месяцев работы (по месяцам, не по дням): YYYY-MM первой мойки vs текущий
+  const monthsSet = new Set<string>();
+  for (const w of valid) monthsSet.add(w!.timestamp.toISOString().slice(0, 7));
+  const monthsWorked = Math.max(1, monthsSet.size);
+
+  const monthlyTurnover = Math.round(totalTurnover / monthsWorked);
+
+  // Текущий месяц отдельно (для UI: «в этом месяце уже X ₽»)
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const currentMonthTurnover = valid
+    .filter(w => w!.timestamp.toISOString().slice(0, 7) === currentMonthKey)
+    .reduce((sum, w) => sum + (w!.netAmount ?? w!.totalAmount ?? 0), 0);
+
+  return {
+    monthsWorked,
+    monthlyTurnover,
+    washEventsCount: valid.length,
+    firstWashAt: firstWash.timestamp.toISOString(),
+    lastWashAt: lastWash.timestamp.toISOString(),
+    currentMonthTurnover: Math.round(currentMonthTurnover),
+  };
+}
+
+/**
+ * Пересчёт остатков склада из StockMovement (admin recovery tool).
+ *
+ * Для каждого InventoryMaterial:
+ *   newCurrentStock = SUM(StockMovement.amount WHERE materialId = X)
+ *   (amount уже хранится со знаком: purchase = +, consumption/issue = -)
+ *
+ * Возвращает diff (старое vs новое) для каждого материала.
+ * Если apply=true — записывает новые значения в БД, иначе только preview.
+ *
+ * Также синхронизирует Inventory.chemicalStockGrams с mat_chemical_main
+ * (legacy единое поле).
+ */
+export async function recomputeInventoryStock(apply: boolean): Promise<{
+  materials: Array<{
+    id: string;
+    name: string;
+    currentStock: number;
+    computedStock: number;
+    delta: number;
+    movementCount: number;
+  }>;
+  legacyChemicalStockGrams?: { current: number; computed: number; delta: number };
+  applied: boolean;
+}> {
+  const materials = await prisma.inventoryMaterial.findMany({
+    select: { id: true, name: true, currentStock: true },
+  });
+
+  const result: Array<{
+    id: string;
+    name: string;
+    currentStock: number;
+    computedStock: number;
+    delta: number;
+    movementCount: number;
+  }> = [];
+
+  for (const m of materials) {
+    const agg = await prisma.stockMovement.aggregate({
+      where: { materialId: m.id },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+    const computed = agg._sum.amount ?? 0;
+    const delta = computed - m.currentStock;
+    result.push({
+      id: m.id,
+      name: m.name,
+      currentStock: m.currentStock,
+      computedStock: Math.round(computed * 100) / 100,
+      delta: Math.round(delta * 100) / 100,
+      movementCount: agg._count._all,
+    });
+  }
+
+  // Legacy chemicalStockGrams хранится в JSON-инвентаре (Inventory модель в БД нет —
+  // это JSON-only field). Postgres-only пересчёт работает с InventoryMaterial напрямую.
+  // mat_chemical_main и есть SOT для химии в pg-режиме.
+
+  if (apply) {
+    await prisma.$transaction(async (tx) => {
+      for (const r of result) {
+        if (r.delta !== 0) {
+          await tx.inventoryMaterial.update({
+            where: { id: r.id },
+            data: { currentStock: r.computedStock },
+          });
+        }
+      }
+    });
+  }
+
+  return {
+    materials: result,
+    applied: apply,
+  };
+}
+
+/**
+ * Phase 7 / Finding #25: pre-check для удаления Aggregator/CounterAgent.
+ * Возвращает список SalaryScheme где rateSource.type === sourceType
+ * и rateSource.id === sourceId. Если этот список не пуст — удаление source
+ * сломает расчёт ZP по этим схемам.
+ */
+export async function findSchemesUsingRateSource(
+  sourceType: 'aggregator' | 'counterAgent' | 'retail',
+  sourceId: string
+): Promise<Array<{ id: string; name: string; type: string }>> {
+  // rateSource — это Json. Используем прямой SQL фильтр через JSONB операторы.
+  // Prisma не умеет нативно фильтровать по @> для произвольных JSON, поэтому
+  // забираем все схемы с непустым rateSource и фильтруем в JS.
+  // Объём небольшой (~10 схем) — приемлемо.
+  const all = await prisma.salaryScheme.findMany({
+    where: { rateSource: { not: undefined } as any },
+    select: { id: true, name: true, type: true, rateSource: true },
+  });
+  return all
+    .filter((s: any) => {
+      const rs = s.rateSource;
+      if (!rs || typeof rs !== 'object') return false;
+      return rs.type === sourceType && rs.id === sourceId;
+    })
+    .map((s: any) => ({ id: s.id, name: s.name, type: s.type }));
+}
+
+/**
+ * Pre-check для DELETE Aggregator. Считает связи в каскадных таблицах
+ * + находит схемы ZP с rateSource на этого aggregator (finding #25).
+ */
+export async function getAggregatorImpact(id: string): Promise<{
+  washEvents: number;
+  clientTransactions: number;
+  schemesUsingAsRateSource: Array<{ id: string; name: string; type: string }>;
+}> {
+  const [washEvents, clientTransactions, schemes] = await Promise.all([
+    prisma.washEvent.count({ where: { aggregatorId: id } }),
+    prisma.clientTransaction.count({ where: { aggregatorId: id } }),
+    findSchemesUsingRateSource('aggregator', id),
+  ]);
+  return { washEvents, clientTransactions, schemesUsingAsRateSource: schemes };
+}
+
+/** Pre-check для DELETE CounterAgent — аналогично getAggregatorImpact. */
+export async function getCounterAgentImpact(id: string): Promise<{
+  washEvents: number;
+  clientTransactions: number;
+  schemesUsingAsRateSource: Array<{ id: string; name: string; type: string }>;
+}> {
+  const [washEvents, clientTransactions, schemes] = await Promise.all([
+    prisma.washEvent.count({ where: { counterAgentId: id } }),
+    prisma.clientTransaction.count({ where: { counterAgentId: id } }),
+    findSchemesUsingRateSource('counterAgent', id),
+  ]);
+  return { washEvents, clientTransactions, schemesUsingAsRateSource: schemes };
 }

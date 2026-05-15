@@ -104,6 +104,62 @@ export const getEmployeeImpact: (id: string) => Promise<{
   dayStatuses: number;
 }> = adapter.getEmployeeImpact ?? (async () => ({ washEvents: 0, transactions: 0, shifts: 0, violations: 0, canisters: 0, dayStatuses: 0 }));
 
+// Phase 7: Backend polish — реальные метрики, recompute, aggregator/agent pre-check
+export const getEmployeeSchemeImpact: (id: string) => Promise<{
+  monthsWorked: number;
+  monthlyTurnover: number;
+  washEventsCount: number;
+  firstWashAt: string | null;
+  lastWashAt: string | null;
+  currentMonthTurnover: number;
+}> =
+  adapter.getEmployeeSchemeImpact ?? (async () => ({
+    monthsWorked: 0,
+    monthlyTurnover: 0,
+    washEventsCount: 0,
+    firstWashAt: null,
+    lastWashAt: null,
+    currentMonthTurnover: 0,
+  }));
+
+export const recomputeInventoryStock: (apply: boolean) => Promise<{
+  materials: Array<{
+    id: string;
+    name: string;
+    currentStock: number;
+    computedStock: number;
+    delta: number;
+    movementCount: number;
+  }>;
+  applied: boolean;
+}> =
+  adapter.recomputeInventoryStock ?? (async () => { throw new Error('recomputeInventoryStock requires DATA_SOURCE=postgres'); });
+
+export const archiveAggregator: (id: string) => Promise<void> =
+  adapter.archiveAggregator ?? (async () => { throw new Error('archiveAggregator requires DATA_SOURCE=postgres'); });
+export const unarchiveAggregator: (id: string) => Promise<void> =
+  adapter.unarchiveAggregator ?? (async () => { throw new Error('unarchiveAggregator requires DATA_SOURCE=postgres'); });
+
+export const getAggregatorImpact: (id: string) => Promise<{
+  washEvents: number;
+  clientTransactions: number;
+  schemesUsingAsRateSource: Array<{ id: string; name: string; type: string }>;
+}> =
+  adapter.getAggregatorImpact ?? (async () => ({ washEvents: 0, clientTransactions: 0, schemesUsingAsRateSource: [] }));
+
+export const getCounterAgentImpact: (id: string) => Promise<{
+  washEvents: number;
+  clientTransactions: number;
+  schemesUsingAsRateSource: Array<{ id: string; name: string; type: string }>;
+}> =
+  adapter.getCounterAgentImpact ?? (async () => ({ washEvents: 0, clientTransactions: 0, schemesUsingAsRateSource: [] }));
+
+export const findSchemesUsingRateSource: (
+  sourceType: 'aggregator' | 'counterAgent' | 'retail',
+  sourceId: string
+) => Promise<Array<{ id: string; name: string; type: string }>> =
+  adapter.findSchemesUsingRateSource ?? (async () => []);
+
 // ─── Cache invalidation (no-ops for PG, real for JSON) ──────
 
 export const invalidateWashEventsCache: () => Promise<void> = adapter.invalidateWashEventsCache;
