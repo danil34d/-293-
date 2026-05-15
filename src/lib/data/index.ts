@@ -160,6 +160,13 @@ export const findSchemesUsingRateSource: (
 ) => Promise<Array<{ id: string; name: string; type: string }>> =
   adapter.findSchemesUsingRateSource ?? (async () => []);
 
+// Phase 11 / finding #39: shift lookup для retroactive POST WashEvent
+export const findShiftForTimestamp: (
+  timestamp: Date | string,
+  boxNumber: 1 | 2
+) => Promise<string | null> =
+  adapter.findShiftForTimestamp ?? (async () => null);
+
 // ─── Cache invalidation (no-ops for PG, real for JSON) ──────
 
 export const invalidateWashEventsCache: () => Promise<void> = adapter.invalidateWashEventsCache;

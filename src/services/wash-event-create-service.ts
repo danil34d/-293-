@@ -6,6 +6,7 @@ import {
   invalidateWashEventsCache,
   getEmployeesData,
   isSalaryPeriodClosed,
+  findShiftForTimestamp,
 } from '@/lib/data';
 import { createWashEventAtomic, readEntity } from '@/lib/data/write-helpers';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
@@ -99,6 +100,35 @@ export async function createWashEvent(washEvent: WashEvent): Promise<WashEvent> 
         }
       }
     }
+  }
+
+  // 🔥 Phase 11 / finding #39: правильный shiftId на retroactive POST.
+  // Раньше клиент проставлял shiftId из текущей смены бокса (workstation/page.tsx),
+  // но при оформлении вчерашней мойки timestamp идёт от камеры (вчера), а shiftId
+  // оставался сегодняшний. shift-report-service строка 57 матчит по shiftId →
+  // вчерашняя мойка попадала в сегодняшний отчёт.
+  //
+  // Решение: если timestamp отстаёт от now() более чем на 30 минут, ищем
+  // исторический shift по date+box+washId+shiftType и перезаписываем shiftId.
+  // Если не нашли (смены не было) — оставляем как есть (клиент сам разберётся).
+  try {
+    const ts = washEvent.timestamp;
+    const box = washEvent.boxNumber;
+    if (ts && (box === 1 || box === 2)) {
+      const ageMs = Date.now() - new Date(ts).getTime();
+      if (ageMs > 30 * 60 * 1000) {
+        const correctShiftId = await findShiftForTimestamp(ts, box);
+        if (correctShiftId && correctShiftId !== washEvent.shiftId) {
+          console.warn(
+            `[wash-event] retroactive POST: shiftId перезаписан ${washEvent.shiftId ?? '∅'} → ${correctShiftId} (timestamp ${ts}, бокс ${box}). Wash ID: ${washEvent.id}`
+          );
+          washEvent.shiftId = correctShiftId;
+        }
+      }
+    }
+  } catch (err) {
+    // Best-effort — если lookup упал, не блокируем создание.
+    console.warn('[wash-event] shift lookup failed:', err);
   }
 
   // 🔥 Phase 8 / finding #38: проверка SalaryPeriod для retroactive POST.

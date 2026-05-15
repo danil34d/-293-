@@ -774,6 +774,50 @@ export async function unarchiveEmployee(id: string): Promise<void> {
 }
 
 /**
+ * Phase 11 / finding #39: lookup активной/завершённой смены по timestamp + бокс.
+ *
+ * Используется при retroactive POST WashEvent чтобы проставить ПРАВИЛЬНЫЙ shiftId
+ * (той смены, что была фактически на момент мойки), а не текущей смены бокса.
+ *
+ * Логика shiftType:
+ *  - hour 8-19 → 'day' (date = sameDay)
+ *  - hour 20-23 → 'night' (date = sameDay, ночная смена начинается)
+ *  - hour 0-7 → 'night' (date = previousDay, ночная смена ещё идёт)
+ *
+ * Ищет любую смену (status=any), даже completed — это исторический matching.
+ * Возвращает shift.id или null если не найден.
+ */
+export async function findShiftForTimestamp(
+  timestamp: Date | string,
+  boxNumber: 1 | 2
+): Promise<string | null> {
+  const ts = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+  if (!Number.isFinite(ts.getTime())) return null;
+
+  const hour = ts.getHours();
+  const isDay = hour >= 8 && hour < 20;
+
+  // Дата смены: для night-смены утренних часов (0-7) — это вчерашняя дата.
+  let dateForShift: Date;
+  if (!isDay && hour < 8) {
+    dateForShift = new Date(ts);
+    dateForShift.setDate(dateForShift.getDate() - 1);
+  } else {
+    dateForShift = ts;
+  }
+  const dateKey = dateForShift.toISOString().slice(0, 10);
+  const shiftType = isDay ? 'day' : 'night';
+  const washId = boxNumber === 2 ? 'wash_2' : 'wash_1';
+
+  const shift = await prisma.shift.findFirst({
+    where: { date: dateKey, boxNumber, shiftType, washId },
+    select: { id: true },
+    orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+  });
+  return shift?.id ?? null;
+}
+
+/**
  * Подсчёт реальных связей сотрудника — для pre-check перед hard DELETE.
  * Возвращает количество записей в каскадных таблицах.
  */
