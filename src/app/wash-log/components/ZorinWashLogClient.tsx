@@ -505,6 +505,17 @@ export function ZorinWashLogClient({
                 const createdInClosedPeriod = Boolean((event as any).createdInClosedPeriod);
                 const closedPeriodAtCreate = (event as any).closedPeriodAtCreate ?? eventMonth;
 
+                // Phase 10 / finding #40: кто оформил мойку (cookie identity при POST).
+                // Если createdByEmployeeId не входит в employeeIds — это ретроактив
+                // («Петя оформил за Диму»). Подсветим бэйджем «не свой».
+                const createdById = (event as any).createdByEmployeeId as string | undefined;
+                const createdByName = createdById ? employeeMap.get(createdById) : undefined;
+                const createdByOutsideTeam = Boolean(
+                  createdById &&
+                  Array.isArray(event.employeeIds) &&
+                  !event.employeeIds.includes(createdById)
+                );
+
                 // Highlight: rose если edit после оплаты ИЛИ создано в закрытый период,
                 // amber если просто edited.
                 const rowStyle: React.CSSProperties = (editedAfterPaid || createdInClosedPeriod)
@@ -552,6 +563,28 @@ export function ZorinWashLogClient({
                                 <p className="text-[11px] mt-1">
                                   Период <b>{closedPeriodAtCreate}</b> был закрыт на момент создания этой мойки.
                                   ZP за этот месяц уже выплачен — пересчёт нужно сделать вручную (новый платёж сотруднику).
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {/* Phase 10: бэйдж «оформил не свой» (finding #40) */}
+                        {createdByOutsideTeam && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <div
+                                  className="rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+                                  style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}
+                                >
+                                  не свой
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent className="zorin-tooltip max-w-[260px]">
+                                <p className="font-semibold">Оформил не участник мойки</p>
+                                <p className="text-[11px] mt-1">
+                                  POST от <b>{createdByName || createdById}</b>, но в employeeIds его нет.
+                                  Типичный кейс: ретроактивная мойка следующей смены за предыдущую («Петя оформил за Диму»).
                                 </p>
                               </TooltipContent>
                             </Tooltip>

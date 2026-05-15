@@ -60,6 +60,8 @@ function washEventFromPrisma(row: any): WashEvent {
     // Phase 8 / finding #38
     createdInClosedPeriod: row.createdInClosedPeriod ?? false,
     closedPeriodAtCreate: row.closedPeriodAtCreate ?? undefined,
+    // Phase 10 / finding #40
+    createdByEmployeeId: row.createdByEmployeeId ?? undefined,
   };
 }
 
@@ -642,6 +644,9 @@ export async function saveWashEvent(data: any): Promise<void> {
       // Phase 8 / finding #38
       createdInClosedPeriod: data.createdInClosedPeriod ?? false,
       closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
+      // Phase 10 / finding #40 — НЕ перезаписываем при upsert update,
+      // чтобы не потерять оригинального автора при последующих edit'ах.
+      // (Update path — это PUT, у нас createdByEmployeeId фиксируется только на create.)
     },
     create: {
       id: data.id,
@@ -675,6 +680,8 @@ export async function saveWashEvent(data: any): Promise<void> {
       // Phase 8 / finding #38
       createdInClosedPeriod: data.createdInClosedPeriod ?? false,
       closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
+      // Phase 10 / finding #40 — фиксируется только на create (PUT не трогает)
+      createdByEmployeeId: data.createdByEmployeeId ?? null,
     },
   });
 

@@ -152,6 +152,11 @@ model WashEvent {
   createdInClosedPeriod    Boolean  @default(false)
   /// YYYY-MM закрытого периода на момент создания (для аудита, кто и когда).
   closedPeriodAtCreate     String?
+  /// Phase 10 (finding #40): аудит — кто фактически нажал «Сохранить» (cookie identity).
+  /// Может отличаться от employeeIds (например, ретроактивная мойка: вчера работал
+  /// Дима, не оформил → сегодня Петя оформляет за Диму). UI показывает «оформил»
+  /// и подсвечивает несовпадение.
+  createdByEmployeeId      String?
 
   aggregator   Aggregator?         @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
   counterAgent CounterAgent?       @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
@@ -167,6 +172,7 @@ model WashEvent {
   @@index([status])
   @@index([shiftId])
   @@index([createdInClosedPeriod])
+  @@index([createdByEmployeeId])
 }
 
 model WashEventEmployee {

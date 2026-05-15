@@ -322,6 +322,9 @@ export interface WashEvent {
   createdInClosedPeriod?: boolean;
   /** YYYY-MM месяца закрытого периода на момент создания (для аудита). */
   closedPeriodAtCreate?: string;
+  /** Phase 10 / finding #40: кто фактически нажал «Сохранить» (cookie identity).
+   *  Может отличаться от employeeIds — UI подсвечивает «оформил не свой». */
+  createdByEmployeeId?: string;
 }
 
 export type EmployeeTransactionType = 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off';
