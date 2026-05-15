@@ -4,24 +4,29 @@ export const dynamic = 'force-dynamic';
 import "@/styles/employees.css";
 import { AlertTriangle } from 'lucide-react';
 import type { Employee, SalaryScheme } from '@/types';
-import { getEmployeesData, getSalarySchemesData } from '@/lib/data';
+import { getEmployeesData, getSalarySchemesData, getEmployeesMetrics } from '@/lib/data';
 import { EmployeesTable } from './components/EmployeesTable';
 
 
 export default async function EmployeesPage() {
   let employees: Employee[] = [];
   let salarySchemes: SalaryScheme[] = [];
+  // Phase 14: метрики для UI колонок (Моек/мес + Последняя активность)
+  let metrics: Record<string, { washesThisMonth: number; lastWashAt: string | null }> = {};
   let fetchError: string | null = null;
 
   try {
-    const [allEmployees, schemes] = await Promise.all([
+    const [allEmployees, schemes, metricsMap] = await Promise.all([
         getEmployeesData(),
-        getSalarySchemesData()
+        getSalarySchemesData(),
+        getEmployeesMetrics(),
     ]);
     // Phase 6.2: НЕ фильтруем kiosk на server-стороне — client-component сам решит
     // по `role` через role-фильтр. Архивных также включаем — UI покажет через фильтр.
     employees = allEmployees;
     salarySchemes = schemes;
+    // Map → plain object для serialization в client component
+    metrics = Object.fromEntries(metricsMap);
   } catch (error: any) {
     fetchError = error.message || "Не удалось загрузить список сотрудников.";
   }
@@ -42,7 +47,7 @@ export default async function EmployeesPage() {
 
   return (
     <div className="employees px-6 pb-12 max-w-[1400px]">
-      <EmployeesTable employees={employees} salarySchemes={salarySchemes} />
+      <EmployeesTable employees={employees} salarySchemes={salarySchemes} metrics={metrics} />
     </div>
   );
 }

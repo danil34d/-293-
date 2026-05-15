@@ -774,6 +774,67 @@ export async function unarchiveEmployee(id: string): Promise<void> {
 }
 
 /**
+ * Phase 14 / UX полировка: метрики для /employees таблицы (Моек/мес + Последняя активность).
+ *
+ * Возвращает Map<employeeId, {washesThisMonth, lastWashAt}> за один batch-запрос.
+ * Используется в /employees page чтобы показать колонки без отдельного fetch.
+ */
+export async function getEmployeesMetrics(): Promise<Map<string, {
+  washesThisMonth: number;
+  lastWashAt: string | null;
+}>> {
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  // Считаем completed мойки текущего месяца
+  const monthLinks = await prisma.washEventEmployee.findMany({
+    where: {
+      washEvent: {
+        timestamp: { gte: monthStart },
+        OR: [{ status: null }, { status: 'completed' }, { status: 'restored' }],
+      },
+    },
+    select: { employeeId: true },
+  });
+
+  // Последняя мойка (любая completed, любой период)
+  const lastByEmployee = await prisma.washEventEmployee.groupBy({
+    by: ['employeeId'],
+    _max: { washEventId: true },
+  });
+  // Через groupBy нельзя достать timestamp напрямую, нужен второй запрос:
+  // забираем last washEventId per employee, потом lookup timestamps.
+  const lastIds = lastByEmployee
+    .map(l => l._max.washEventId)
+    .filter((id): id is string => Boolean(id));
+  const lastEvents = lastIds.length > 0
+    ? await prisma.washEvent.findMany({
+        where: { id: { in: lastIds } },
+        select: { id: true, timestamp: true, employees: { select: { employeeId: true } } },
+      })
+    : [];
+
+  // Build map
+  const result = new Map<string, { washesThisMonth: number; lastWashAt: string | null }>();
+  for (const link of monthLinks) {
+    const cur = result.get(link.employeeId) ?? { washesThisMonth: 0, lastWashAt: null };
+    cur.washesThisMonth += 1;
+    result.set(link.employeeId, cur);
+  }
+  // Last wash: пройдёмся по всем ссылкам, найдём max timestamp per employee
+  for (const ev of lastEvents) {
+    for (const link of ev.employees) {
+      const cur = result.get(link.employeeId) ?? { washesThisMonth: 0, lastWashAt: null };
+      const ts = ev.timestamp.toISOString();
+      if (!cur.lastWashAt || ts > cur.lastWashAt) cur.lastWashAt = ts;
+      result.set(link.employeeId, cur);
+    }
+  }
+  return result;
+}
+
+/**
  * Phase 11 / finding #39: lookup активной/завершённой смены по timestamp + бокс.
  *
  * Используется при retroactive POST WashEvent чтобы проставить ПРАВИЛЬНЫЙ shiftId

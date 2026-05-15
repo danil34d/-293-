@@ -167,6 +167,13 @@ export const findShiftForTimestamp: (
 ) => Promise<string | null> =
   adapter.findShiftForTimestamp ?? (async () => null);
 
+// Phase 14 / UX полировка: метрики для /employees таблицы
+export const getEmployeesMetrics: () => Promise<Map<string, {
+  washesThisMonth: number;
+  lastWashAt: string | null;
+}>> =
+  adapter.getEmployeesMetrics ?? (async () => new Map());
+
 // ─── Cache invalidation (no-ops for PG, real for JSON) ──────
 
 export const invalidateWashEventsCache: () => Promise<void> = adapter.invalidateWashEventsCache;

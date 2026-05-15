@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { PlusCircle, Edit, UserCog, Check, XIcon, Wallet, WalletCards, Trash2, Archive, RotateCcw, Lock, Search } from "lucide-react";
+import { PlusCircle, Edit, UserCog, Check, XIcon, Wallet, WalletCards, Trash2, Archive, RotateCcw, Lock, Search, Activity, Droplets } from "lucide-react";
 import { ROLE_LABELS, type Employee, type EmployeeRole, type SalaryScheme } from "@/types";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
@@ -11,9 +11,36 @@ import { Input } from "@/components/ui/input";
 import { SafetyBar, HazardPill } from "@/components/admin";
 import { EmployeeDeleteModal } from "./EmployeeDeleteModal";
 
-interface EmployeesTableProps {
+export interface EmployeesTableProps {
   employees: Employee[];
   salarySchemes: SalaryScheme[];
+  /** Phase 14: метрики для UI колонок (Моек/мес + Последняя активность). */
+  metrics?: Record<string, { washesThisMonth: number; lastWashAt: string | null }>;
+}
+
+function formatRelativeDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) {
+    return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  }
+  if (diffDays === 1) return "вчера";
+  if (diffDays < 7) return `${diffDays} дн назад`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} нед назад`;
+  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" });
+}
+
+function activityColor(iso: string | null): string {
+  if (!iso) return "#9ca3af"; // gray
+  const diffDays = (Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24);
+  if (diffDays < 1) return "#15803d"; // green-700
+  if (diffDays < 7) return "#0369a1"; // sky-700
+  if (diffDays < 30) return "#92400e"; // amber-800
+  return "#b91c1c"; // red-700
 }
 
 /**
@@ -31,7 +58,7 @@ interface EmployeesTableProps {
  * - Архивные строки: пониженная прозрачность + кнопка «Восстановить»
  * - EmployeeDeleteModal с 2 режимами (choose → hard-delete)
  */
-export function EmployeesTable({ employees, salarySchemes }: EmployeesTableProps) {
+export function EmployeesTable({ employees, salarySchemes, metrics = {} }: EmployeesTableProps) {
   const router = useRouter();
   const { toast } = useToast();
   const schemeMap = new Map(salarySchemes.map((s) => [s.id, s.name]));
@@ -191,6 +218,8 @@ export function EmployeesTable({ employees, salarySchemes }: EmployeesTableProps
                 <th className="px-5 py-2.5">Сотрудник</th>
                 <th className="px-3 py-2.5">Роль</th>
                 <th className="px-3 py-2.5">Схема ЗП</th>
+                <th className="px-3 py-2.5 text-center" title="Моек за этот месяц">Моек/мес</th>
+                <th className="px-3 py-2.5" title="Последняя мойка">Активность</th>
                 <th className="px-3 py-2.5">Логин · Телефон</th>
                 <th className="px-3 py-2.5 text-center">Авто</th>
                 <th className="px-3 py-2.5 text-right w-[160px]">Действия</th>
@@ -254,6 +283,39 @@ export function EmployeesTable({ employees, salarySchemes }: EmployeesTableProps
                       ) : (
                         <span className="text-gray-400">—</span>
                       )}
+                    </td>
+                    {/* Phase 14: Моек за месяц + Последняя активность */}
+                    <td className="px-3 py-3 text-center">
+                      {(() => {
+                        const m = metrics[e.id];
+                        const count = m?.washesThisMonth ?? 0;
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1 text-[12px] tabular-nums font-semibold"
+                            style={{ color: count > 0 ? "#0369a1" : "#9ca3af" }}
+                          >
+                            <Droplets className="w-3 h-3" />
+                            {count > 0 ? count : "—"}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-3 py-3 text-[11px]">
+                      {(() => {
+                        const m = metrics[e.id];
+                        const lastAt = m?.lastWashAt ?? null;
+                        const color = activityColor(lastAt);
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1 font-medium"
+                            style={{ color }}
+                            title={lastAt ? new Date(lastAt).toLocaleString("ru-RU") : "Никогда не мыла"}
+                          >
+                            <Activity className="w-3 h-3" />
+                            {formatRelativeDate(lastAt)}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-3 text-[11px] text-gray-600">
                       {e.username && (
@@ -333,7 +395,7 @@ export function EmployeesTable({ employees, salarySchemes }: EmployeesTableProps
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={8}>
                     <div className="px-5 py-12 text-center">
                       <UserCog className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                       <div className="text-[14px] font-semibold text-gray-700">
