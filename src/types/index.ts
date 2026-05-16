@@ -327,6 +327,64 @@ export interface WashEvent {
   createdByEmployeeId?: string;
 }
 
+// ─── Phase 22 / Invoice ─────────────────────────────────────────
+
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'cancelled';
+export type InvoicePaidVia = 'cash' | 'card' | 'transfer';
+
+/** Item-снепшот: агрегация по услугам (для сводной таблицы Combo-варианта). */
+export interface InvoiceServiceItem {
+  name: string;
+  qty: number;
+  pricePerUnit: number;
+  total: number;
+}
+
+/** Item-снепшот: детализация по мойкам (для сворачиваемого блока Combo-варианта). */
+export interface InvoiceWashItem {
+  id: string;          // WashEvent.id
+  date: string;        // ISO
+  plate: string;
+  vehicleType?: string;
+  services: string;    // короткое описание услуг
+  total: number;
+}
+
+export interface InvoiceItems {
+  services: InvoiceServiceItem[];
+  washes: InvoiceWashItem[];
+}
+
+export interface Invoice {
+  id: string;
+  number: string; // "2026-05-001"
+  counterAgentId: string;
+  counterAgentName?: string; // для UI без JOIN
+  periodStart: string; // ISO
+  periodEnd: string;   // ISO
+  status: InvoiceStatus;
+
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments?: number;
+  totalAmount: number;
+
+  items: InvoiceItems;
+
+  createdByEmployeeId?: string;
+  sentAt?: string;
+  sentToEmail?: string;
+  paidAt?: string;
+  paidVia?: InvoicePaidVia;
+  paidTransactionId?: string;
+
+  notes?: string;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type EmployeeTransactionType = 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off';
 
 export interface EmployeeTransaction {

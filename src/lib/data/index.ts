@@ -8,6 +8,7 @@ import type {
   Expense, Shift, ShiftSwapRequest, ShiftAssignmentRequest,
   EmployeeDayStatusEntry, SchedulePlan, Inventory, StockMovement,
   EmployeeChemicalCanister, ActiveSession, Violation,
+  Invoice, InvoiceItems,
 } from '@/types';
 
 const usePostgres = process.env.DATA_SOURCE === 'postgres';
@@ -173,6 +174,64 @@ export const getEmployeesMetrics: () => Promise<Map<string, {
   lastWashAt: string | null;
 }>> =
   adapter.getEmployeesMetrics ?? (async () => new Map());
+
+// Phase 22 / Invoice БД
+export const getInvoicesData: (filters?: {
+  counterAgentId?: string;
+  status?: string;
+  periodFrom?: string;
+  periodTo?: string;
+}) => Promise<Invoice[]> =
+  adapter.getInvoicesData ?? (async () => []);
+
+export const getInvoiceById: (id: string) => Promise<Invoice | null> =
+  adapter.getInvoiceById ?? (async () => null);
+
+export const getInvoicesByCounterAgent: (counterAgentId: string) => Promise<Invoice[]> =
+  adapter.getInvoicesByCounterAgent ?? (async () => []);
+
+export const generateInvoiceNumber: (periodStart: Date) => Promise<string> =
+  adapter.generateInvoiceNumber ?? (async () => 'TEMP-001');
+
+export const buildInvoicePreview: (
+  counterAgentId: string,
+  periodStart: Date,
+  periodEnd: Date,
+  discountPercent?: number
+) => Promise<{
+  counterAgentId: string;
+  periodStart: string;
+  periodEnd: string;
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments: number;
+  totalAmount: number;
+  items: InvoiceItems;
+  washCount: number;
+}> =
+  adapter.buildInvoicePreview ?? (async () => { throw new Error('buildInvoicePreview requires DATA_SOURCE=postgres'); });
+
+export const createInvoice: (data: {
+  counterAgentId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments?: number;
+  totalAmount: number;
+  items: InvoiceItems;
+  createdByEmployeeId?: string;
+  notes?: string;
+}) => Promise<Invoice> =
+  adapter.createInvoice ?? (async () => { throw new Error('createInvoice requires DATA_SOURCE=postgres'); });
+
+export const updateInvoice: (id: string, data: any) => Promise<Invoice> =
+  adapter.updateInvoice ?? (async () => { throw new Error('updateInvoice requires DATA_SOURCE=postgres'); });
+
+export const deleteInvoice: (id: string) => Promise<void> =
+  adapter.deleteInvoice ?? (async () => { throw new Error('deleteInvoice requires DATA_SOURCE=postgres'); });
 
 // Phase 20 / finding #8 АРХ-НАХОДКИ: scan orphan StockMovement (soft FK без проверки)
 export const findOrphanedStockMovements: () => Promise<{

@@ -920,6 +920,265 @@ export async function findOrphanedStockMovements(): Promise<{
   };
 }
 
+// ─── Phase 22 / Invoice ─────────────────────────────────────────
+
+function invoiceFromPrisma(row: any): import('@/types').Invoice {
+  return {
+    id: row.id,
+    number: row.number,
+    counterAgentId: row.counterAgentId,
+    counterAgentName: row.counterAgent?.name,
+    periodStart: row.periodStart instanceof Date ? row.periodStart.toISOString() : row.periodStart,
+    periodEnd: row.periodEnd instanceof Date ? row.periodEnd.toISOString() : row.periodEnd,
+    status: (row.status ?? 'draft') as any,
+    subtotal: row.subtotal,
+    discountPercent: row.discountPercent ?? undefined,
+    discountAmount: row.discountAmount ?? undefined,
+    prepayments: row.prepayments ?? undefined,
+    totalAmount: row.totalAmount,
+    items: parseJsonField(row.items, { services: [], washes: [] }),
+    createdByEmployeeId: row.createdByEmployeeId ?? undefined,
+    sentAt: row.sentAt instanceof Date ? row.sentAt.toISOString() : (row.sentAt ?? undefined),
+    sentToEmail: row.sentToEmail ?? undefined,
+    paidAt: row.paidAt instanceof Date ? row.paidAt.toISOString() : (row.paidAt ?? undefined),
+    paidVia: row.paidVia ?? undefined,
+    paidTransactionId: row.paidTransactionId ?? undefined,
+    notes: row.notes ?? '',
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
+  };
+}
+
+export async function getInvoicesData(filters?: {
+  counterAgentId?: string;
+  status?: string;
+  periodFrom?: string;
+  periodTo?: string;
+}): Promise<import('@/types').Invoice[]> {
+  const where: any = {};
+  if (filters?.counterAgentId) where.counterAgentId = filters.counterAgentId;
+  if (filters?.status) where.status = filters.status;
+  if (filters?.periodFrom || filters?.periodTo) {
+    where.periodStart = {};
+    if (filters.periodFrom) where.periodStart.gte = new Date(filters.periodFrom);
+    if (filters.periodTo) where.periodStart.lte = new Date(filters.periodTo);
+  }
+  const rows = await prisma.invoice.findMany({
+    where,
+    include: { counterAgent: { select: { name: true } } },
+    orderBy: [{ createdAt: 'desc' }],
+  });
+  return rows.map(invoiceFromPrisma);
+}
+
+export async function getInvoiceById(id: string): Promise<import('@/types').Invoice | null> {
+  const row = await prisma.invoice.findUnique({
+    where: { id },
+    include: { counterAgent: { select: { name: true } } },
+  });
+  return row ? invoiceFromPrisma(row) : null;
+}
+
+export async function getInvoicesByCounterAgent(counterAgentId: string): Promise<import('@/types').Invoice[]> {
+  return getInvoicesData({ counterAgentId });
+}
+
+/**
+ * Phase 22: генерация номера счёта вида "YYYY-MM-NNN".
+ * NNN — счётчик per-month, начиная с 001. Атомарно через max + 1.
+ */
+export async function generateInvoiceNumber(periodStart: Date): Promise<string> {
+  const year = periodStart.getFullYear();
+  const month = String(periodStart.getMonth() + 1).padStart(2, '0');
+  const prefix = `${year}-${month}-`;
+
+  const existing = await prisma.invoice.findMany({
+    where: { number: { startsWith: prefix } },
+    select: { number: true },
+  });
+  let maxN = 0;
+  for (const inv of existing) {
+    const tail = inv.number.slice(prefix.length);
+    const n = parseInt(tail, 10);
+    if (Number.isFinite(n) && n > maxN) maxN = n;
+  }
+  const next = String(maxN + 1).padStart(3, '0');
+  return `${prefix}${next}`;
+}
+
+/**
+ * Phase 22: основная функция — собрать WashEvent + ClientTransaction за период
+ * и сформировать items snapshot. НЕ создаёт запись в БД — только preview.
+ *
+ * services: агрегация по serviceName (для сводки)
+ * washes: детализация по WashEvent (для сворачиваемого блока)
+ */
+export async function buildInvoicePreview(
+  counterAgentId: string,
+  periodStart: Date,
+  periodEnd: Date,
+  discountPercent?: number
+): Promise<{
+  counterAgentId: string;
+  periodStart: string;
+  periodEnd: string;
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments: number;
+  totalAmount: number;
+  items: import('@/types').InvoiceItems;
+  washCount: number;
+}> {
+  // 1. Все completed WashEvent за период для этого counterAgent
+  const washEvents = await prisma.washEvent.findMany({
+    where: {
+      counterAgentId,
+      timestamp: { gte: periodStart, lte: periodEnd },
+      OR: [{ status: null }, { status: 'completed' }, { status: 'restored' }],
+    },
+    orderBy: { timestamp: 'asc' },
+  });
+
+  // 2. Все ClientTransaction (type='payment') за период для предоплат
+  const prepaymentsRows = await prisma.clientTransaction.findMany({
+    where: {
+      counterAgentId,
+      date: { gte: periodStart, lte: periodEnd },
+      type: 'payment',
+    },
+    select: { amount: true },
+  });
+  const prepayments = prepaymentsRows.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+  // 3. Aggregate by serviceName (для services array)
+  const serviceMap = new Map<string, { qty: number; pricePerUnit: number; total: number }>();
+  const washes: import('@/types').InvoiceWashItem[] = [];
+  let subtotal = 0;
+
+  for (const w of washEvents) {
+    const services = parseJsonField(w.services, { main: { serviceName: '', price: 0 }, additional: [] });
+    const allServices = [services.main, ...(services.additional || [])].filter((s: any) => s?.serviceName);
+
+    // Краткое описание услуг для wash item
+    const serviceShort = allServices.map((s: any) => s.serviceName).join(' + ') || '—';
+    const washTotal = w.totalAmount || 0;
+    subtotal += washTotal;
+
+    washes.push({
+      id: w.id,
+      date: w.timestamp.toISOString(),
+      plate: w.vehicleNumber,
+      vehicleType: undefined,
+      services: serviceShort,
+      total: washTotal,
+    });
+
+    // Aggregation: по каждой услуге отдельно (так клиент видит «Мойка тягача × 5»)
+    for (const s of allServices) {
+      const key = s.serviceName;
+      const price = s.price ?? 0;
+      const existing = serviceMap.get(key);
+      if (existing) {
+        existing.qty += 1;
+        existing.total += price;
+        // pricePerUnit оставляем как первое — если цены разные, average считаем в конце
+      } else {
+        serviceMap.set(key, { qty: 1, pricePerUnit: price, total: price });
+      }
+    }
+  }
+
+  // Финализируем services с average price если total/qty не равен pricePerUnit
+  const services: import('@/types').InvoiceServiceItem[] = [];
+  for (const [name, s] of serviceMap) {
+    const avgPrice = s.qty > 0 ? Math.round((s.total / s.qty) * 100) / 100 : 0;
+    services.push({ name, qty: s.qty, pricePerUnit: avgPrice, total: s.total });
+  }
+  services.sort((a, b) => b.total - a.total);
+
+  // Discount
+  const discountAmount = discountPercent ? Math.round((subtotal * discountPercent) / 100 * 100) / 100 : 0;
+  const totalAmount = Math.max(0, subtotal - discountAmount - prepayments);
+
+  return {
+    counterAgentId,
+    periodStart: periodStart.toISOString(),
+    periodEnd: periodEnd.toISOString(),
+    subtotal,
+    discountPercent,
+    discountAmount,
+    prepayments,
+    totalAmount,
+    items: { services, washes },
+    washCount: washes.length,
+  };
+}
+
+/**
+ * Phase 22: создать Invoice в БД из preview.
+ * Auto-number, status='draft' по умолчанию.
+ */
+export async function createInvoice(data: {
+  counterAgentId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments?: number;
+  totalAmount: number;
+  items: import('@/types').InvoiceItems;
+  createdByEmployeeId?: string;
+  notes?: string;
+}): Promise<import('@/types').Invoice> {
+  const number = await generateInvoiceNumber(data.periodStart);
+  const created = await prisma.invoice.create({
+    data: {
+      number,
+      counterAgentId: data.counterAgentId,
+      periodStart: data.periodStart,
+      periodEnd: data.periodEnd,
+      status: 'draft',
+      subtotal: data.subtotal,
+      discountPercent: data.discountPercent ?? null,
+      discountAmount: data.discountAmount ?? 0,
+      prepayments: data.prepayments ?? 0,
+      totalAmount: data.totalAmount,
+      items: data.items as any,
+      createdByEmployeeId: data.createdByEmployeeId ?? null,
+      notes: data.notes ?? '',
+    },
+    include: { counterAgent: { select: { name: true } } },
+  });
+  return invoiceFromPrisma(created);
+}
+
+export async function updateInvoice(id: string, data: Partial<{
+  status: string;
+  discountPercent: number | null;
+  discountAmount: number;
+  prepayments: number;
+  totalAmount: number;
+  sentAt: Date | null;
+  sentToEmail: string | null;
+  paidAt: Date | null;
+  paidVia: string | null;
+  paidTransactionId: string | null;
+  notes: string;
+}>): Promise<import('@/types').Invoice> {
+  const updated = await prisma.invoice.update({
+    where: { id },
+    data: data as any,
+    include: { counterAgent: { select: { name: true } } },
+  });
+  return invoiceFromPrisma(updated);
+}
+
+export async function deleteInvoice(id: string): Promise<void> {
+  await prisma.invoice.delete({ where: { id } });
+}
+
 /**
  * Phase 16 / finding #35: backfill StockMovement.purchase из исторических Expense.
  *

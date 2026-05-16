@@ -108,9 +108,60 @@ model CounterAgent {
 
   washEvents         WashEvent[]
   clientTransactions ClientTransaction[]
+  invoices           Invoice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Phase 22 (finding `#3` АРХ-НАХОДКИ / `#20` ТЕХ-ДОЛГ): persistence для счетов клиентам.
+/// Раньше счета были виртуальной агрегацией WashEvent на лету — нет audit trail кто/когда отправил.
+/// Теперь — immutable snapshot всех WashEvent в момент создания (items JSON), статус workflow.
+/// UI layout = вариант 3 «Combo» (сводка по услугам + сворачиваемая детализация по машинам).
+model Invoice {
+  id             String   @id @default(uuid())
+  number         String   @unique // напр. "2026-05-001" (генерируется автоматически)
+  counterAgentId String
+  periodStart    DateTime
+  periodEnd      DateTime
+
+  /// Реальный enum: 'draft' | 'sent' | 'paid' | 'cancelled'
+  status String @default("draft")
+
+  // Финансы (snapshot на момент создания)
+  subtotal        Float // сумма моек без скидок
+  discountPercent Float? // % скидки (если есть)
+  discountAmount  Float? @default(0) // вычисленная скидка в рублях
+  prepayments     Float? @default(0) // учтённые предоплаты (из ClientTransaction)
+  totalAmount     Float // итого к оплате
+
+  /// Items snapshot (immutable JSON):
+  /// {
+  ///   services: [{ name, qty, pricePerUnit, total }],     // агрегация по услугам (для сводки)
+  ///   washes:   [{ id, date, plate, vehicleType, services, total }]  // детализация по машинам
+  /// }
+  items Json
+
+  // Audit
+  createdByEmployeeId String?
+  sentAt              DateTime?
+  sentToEmail         String?
+  paidAt              DateTime?
+  paidVia             String? // 'cash' | 'card' | 'transfer'
+  paidTransactionId   String? // FK на ClientTransaction (опционально)
+
+  notes String? @default("")
+
+  counterAgent CounterAgent @relation(fields: [counterAgentId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([counterAgentId])
+  @@index([status])
+  @@index([periodStart])
+  @@index([number])
+  @@index([createdAt])
 }
 
 // ─── Мойки ────────────────────────────────────────────────────
@@ -136,6 +187,9 @@ model WashEvent {
   chemicalCostRub          Float?
   /// Реальный enum в коде: 'completed' | 'dismissed' | 'restored' (см. types/index.ts).
   /// Prisma хранит String? для гибкости, валидация на уровне TypeScript.
+  /// Phase 21 (15.05.2026): рассмотрена миграция в enum WashEventStatus, отложена —
+  /// требует ручного SQL `ALTER TABLE ... USING status::"WashEventStatus"`, не критично
+  /// (prod-данные уже совместимы с enum, валидация работает на TS-уровне).
   status                   String?
   completedAt              String?
   refundedAt               String?
