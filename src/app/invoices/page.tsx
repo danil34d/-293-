@@ -1,30 +1,34 @@
-
 export const dynamic = 'force-dynamic';
 
 import "@/styles/invoices.css";
 import { AlertTriangle } from 'lucide-react';
-import { getCounterAgentsData, getWashEventsData, getAggregatorsData } from '@/lib/data';
+import { getCounterAgentsData, getAggregatorsData, getWashEventsData, getInvoicesData } from '@/lib/data';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { InvoiceGenerator } from './components/InvoiceGenerator';
+import { InvoicesListClient } from './components/InvoicesListClient';
 
 async function fetchData() {
     try {
-        const [counterAgents, aggregators, washEvents] = await Promise.all([
+        const [counterAgents, aggregators, washEvents, invoices] = await Promise.all([
             getCounterAgentsData(),
             getAggregatorsData(),
             getWashEventsData(),
+            getInvoicesData(),
         ]);
-        
-        return { counterAgents, aggregators, washEvents, error: null };
+        return { counterAgents, aggregators, washEvents, invoices, error: null };
     } catch (e: any) {
         console.error("Failed to fetch invoice page data:", e);
-        return { error: e.message || "Не удалось загрузить данные.", counterAgents: [], aggregators: [], washEvents: [] };
+        return {
+            error: e.message || "Не удалось загрузить данные.",
+            counterAgents: [], aggregators: [], washEvents: [], invoices: [],
+        };
     }
 }
 
 export default async function InvoicesPage() {
-    const { counterAgents, aggregators, washEvents, error } = await fetchData();
-    
-    // Временные реквизиты вашей компании. В будущем мы вынесем их в настройки.
+    const { counterAgents, aggregators, washEvents, invoices, error } = await fetchData();
+
+    // Реквизиты исполнителя (вынести в /settings позже)
     const myCompanyDetails = {
         companyName: 'Индивидуальный предприниматель Абанин Даниил Олегович',
         ownerName: 'Абанин Д.О.',
@@ -65,18 +69,35 @@ export default async function InvoicesPage() {
                 <div className="page-header-content">
                     <div className="page-title-section">
                         <h1>Счета для клиентов</h1>
-                        <p>Формирование и печать актов выполненных работ для корпоративных клиентов и агрегаторов.</p>
+                        <p>Сохранённые счета с workflow draft → sent → paid + быстрая генерация preview без сохранения.</p>
                     </div>
                 </div>
             </div>
-            <div className="invoice-generator">
-                <InvoiceGenerator
-                    counterAgents={counterAgents}
-                    aggregators={aggregators}
-                    washEvents={washEvents}
-                    myCompanyDetails={myCompanyDetails}
-                />
-            </div>
+
+            <Tabs defaultValue="saved" className="w-full">
+                <TabsList className="mb-4">
+                    <TabsTrigger value="saved">💼 Сохранённые счета (БД)</TabsTrigger>
+                    <TabsTrigger value="quick">⚡ Быстрый счёт (preview)</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="saved">
+                    <InvoicesListClient
+                        initialInvoices={invoices}
+                        counterAgents={counterAgents}
+                    />
+                </TabsContent>
+
+                <TabsContent value="quick">
+                    <div className="invoice-generator">
+                        <InvoiceGenerator
+                            counterAgents={counterAgents}
+                            aggregators={aggregators}
+                            washEvents={washEvents}
+                            myCompanyDetails={myCompanyDetails}
+                        />
+                    </div>
+                </TabsContent>
+            </Tabs>
         </div>
     );
 }
