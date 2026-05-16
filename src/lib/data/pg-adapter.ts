@@ -1179,6 +1179,97 @@ export async function deleteInvoice(id: string): Promise<void> {
   await prisma.invoice.delete({ where: { id } });
 }
 
+// ─── Report (Phase 23 / finding #4 АРХ-НАХОДКИ / #21 ТЕХ-ДОЛГ) ─────
+
+function reportFromPrisma(row: any): import('@/types').Report {
+  return {
+    id: row.id,
+    title: row.title,
+    periodStart: row.periodStart instanceof Date ? row.periodStart.toISOString() : String(row.periodStart),
+    periodEnd: row.periodEnd instanceof Date ? row.periodEnd.toISOString() : String(row.periodEnd),
+    status: (row.status ?? 'draft') as import('@/types').ReportStatus,
+    reportMarkdown: row.reportMarkdown ?? '',
+    prompt: row.prompt ?? '',
+    usage: row.usage ?? undefined,
+    createdByEmployeeId: row.createdByEmployeeId ?? undefined,
+    notes: row.notes ?? '',
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
+  };
+}
+
+export async function getReportsData(filters?: {
+  status?: string;
+  periodFrom?: string; // ISO
+  periodTo?: string;   // ISO
+}): Promise<import('@/types').Report[]> {
+  const where: any = {};
+  if (filters?.status) where.status = filters.status;
+  if (filters?.periodFrom || filters?.periodTo) {
+    where.periodStart = {};
+    if (filters.periodFrom) where.periodStart.gte = new Date(filters.periodFrom);
+    if (filters.periodTo) where.periodStart.lte = new Date(filters.periodTo);
+  }
+  const rows = await prisma.report.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }],
+  });
+  return rows.map(reportFromPrisma);
+}
+
+export async function getReportById(id: string): Promise<import('@/types').Report | null> {
+  const row = await prisma.report.findUnique({ where: { id } });
+  return row ? reportFromPrisma(row) : null;
+}
+
+// generateReportTitle вынесен в @/lib/utils/report-title (sync utility),
+// чтобы избежать ошибки Next.js "Server actions must be async functions"
+// при цепочке импортов pg-adapter → data/index → ai/flows/* ('use server').
+import { generateReportTitle } from '@/lib/utils/report-title';
+
+export async function createReport(data: {
+  title?: string;
+  periodStart: Date;
+  periodEnd: Date;
+  reportMarkdown: string;
+  prompt?: string;
+  usage?: import('@/types').ReportUsage;
+  createdByEmployeeId?: string;
+  notes?: string;
+}): Promise<import('@/types').Report> {
+  const title = data.title?.trim() || generateReportTitle(data.periodStart, data.periodEnd);
+  const created = await prisma.report.create({
+    data: {
+      title,
+      periodStart: data.periodStart,
+      periodEnd: data.periodEnd,
+      reportMarkdown: data.reportMarkdown,
+      prompt: data.prompt ?? '',
+      status: 'draft',
+      usage: (data.usage as any) ?? undefined,
+      createdByEmployeeId: data.createdByEmployeeId ?? null,
+      notes: data.notes ?? '',
+    },
+  });
+  return reportFromPrisma(created);
+}
+
+export async function updateReport(id: string, data: {
+  title?: string;
+  status?: import('@/types').ReportStatus;
+  notes?: string;
+}): Promise<import('@/types').Report> {
+  const updated = await prisma.report.update({
+    where: { id },
+    data: data as any,
+  });
+  return reportFromPrisma(updated);
+}
+
+export async function deleteReport(id: string): Promise<void> {
+  await prisma.report.delete({ where: { id } });
+}
+
 /**
  * Phase 16 / finding #35: backfill StockMovement.purchase из исторических Expense.
  *

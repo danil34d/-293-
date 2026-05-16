@@ -164,6 +164,42 @@ model Invoice {
   @@index([createdAt])
 }
 
+/// Phase 23 (finding `#4` АРХ-НАХОДКИ / `#21` ТЕХ-ДОЛГ): persistence для AI-аналитических отчётов.
+/// Раньше /reports был ephemeral — markdown терялся при reload, нет audit, нет повторного просмотра.
+/// Теперь — сохраняется в БД с фильтрами по периоду, автогенерацией title и soft-archive.
+/// Используется в /reports (Tabs: Saved + Quick preview).
+model Report {
+  id          String   @id @default(uuid())
+  /// Название отчёта — автогенерация ("Отчёт за май 2026") или ручное при сохранении
+  title       String
+  periodStart DateTime
+  periodEnd   DateTime
+
+  /// Markdown-контент (immutable snapshot, от AI flow generatePerformanceReport)
+  reportMarkdown String
+
+  /// Вопрос пользователя в AI-flow (для контекста, дефолт-prompt если пусто)
+  prompt String @default("")
+
+  /// Реальный enum: 'draft' | 'archived'
+  status String @default("draft")
+
+  /// AI usage метаданные (для будущего rate-limit / cost tracking, finding #5-6)
+  /// { model: 'gemini-1.5-flash-latest', tokensIn?: number, tokensOut?: number }
+  usage Json?
+
+  /// Audit
+  createdByEmployeeId String?
+  notes               String? @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([periodStart])
+  @@index([createdAt])
+}
+
 // ─── Мойки ────────────────────────────────────────────────────
 
 model WashEvent {

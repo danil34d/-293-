@@ -9,6 +9,7 @@ import type {
   EmployeeDayStatusEntry, SchedulePlan, Inventory, StockMovement,
   EmployeeChemicalCanister, ActiveSession, Violation,
   Invoice, InvoiceItems,
+  Report, ReportStatus, ReportUsage,
 } from '@/types';
 
 const usePostgres = process.env.DATA_SOURCE === 'postgres';
@@ -232,6 +233,37 @@ export const updateInvoice: (id: string, data: any) => Promise<Invoice> =
 
 export const deleteInvoice: (id: string) => Promise<void> =
   adapter.deleteInvoice ?? (async () => { throw new Error('deleteInvoice requires DATA_SOURCE=postgres'); });
+
+// Phase 23 / Report БД (AI-аналитика persistence)
+export const getReportsData: (filters?: {
+  status?: string;
+  periodFrom?: string;
+  periodTo?: string;
+}) => Promise<Report[]> =
+  adapter.getReportsData ?? (async () => []);
+
+export const getReportById: (id: string) => Promise<Report | null> =
+  adapter.getReportById ?? (async () => null);
+
+// generateReportTitle — sync utility, importить напрямую из @/lib/utils/report-title
+
+export const createReport: (data: {
+  title?: string;
+  periodStart: Date;
+  periodEnd: Date;
+  reportMarkdown: string;
+  prompt?: string;
+  usage?: ReportUsage;
+  createdByEmployeeId?: string;
+  notes?: string;
+}) => Promise<Report> =
+  adapter.createReport ?? (async () => { throw new Error('createReport requires DATA_SOURCE=postgres'); });
+
+export const updateReport: (id: string, data: { title?: string; status?: ReportStatus; notes?: string }) => Promise<Report> =
+  adapter.updateReport ?? (async () => { throw new Error('updateReport requires DATA_SOURCE=postgres'); });
+
+export const deleteReport: (id: string) => Promise<void> =
+  adapter.deleteReport ?? (async () => { throw new Error('deleteReport requires DATA_SOURCE=postgres'); });
 
 // Phase 20 / finding #8 АРХ-НАХОДКИ: scan orphan StockMovement (soft FK без проверки)
 export const findOrphanedStockMovements: () => Promise<{

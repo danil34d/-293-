@@ -385,6 +385,39 @@ export interface Invoice {
   updatedAt: string;
 }
 
+// ─── Phase 23 / Report (AI-аналитика) ──────────────────────────
+
+export type ReportStatus = 'draft' | 'archived';
+
+/** AI usage метаданные (для будущего rate-limit / cost tracking, finding #5-6). */
+export interface ReportUsage {
+  model?: string;
+  tokensIn?: number;
+  tokensOut?: number;
+}
+
+export interface Report {
+  id: string;
+  /** Название отчёта — автогенерация "Отчёт за май 2026" или ручное. */
+  title: string;
+  periodStart: string; // ISO
+  periodEnd: string;   // ISO
+  status: ReportStatus;
+
+  /** Markdown-контент (immutable snapshot от AI flow). */
+  reportMarkdown: string;
+  /** Вопрос пользователя в AI-flow. */
+  prompt: string;
+
+  usage?: ReportUsage;
+
+  createdByEmployeeId?: string;
+  notes?: string;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type EmployeeTransactionType = 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off';
 
 export interface EmployeeTransaction {

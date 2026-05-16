@@ -44,14 +44,15 @@ const ReportContextSchema = z.object({
   }),
 });
 
-export const performanceReportInputSchema = z.object({
+// Schemas — internal only ('use server' files can only export async functions).
+const performanceReportInputSchema = z.object({
   startDate: z.string().describe('The start date for the report period in ISO format.'),
   endDate: z.string().describe('The end date for the report period in ISO format.'),
   question: z.string().describe('The user\'s question about the report.'),
 });
 export type PerformanceReportInput = z.infer<typeof performanceReportInputSchema>;
 
-export const performanceReportOutputSchema = z.object({
+const performanceReportOutputSchema = z.object({
   reportMarkdown: z.string().describe('The generated performance report in Markdown format.'),
 });
 export type PerformanceReportOutput = z.infer<typeof performanceReportOutputSchema>;
@@ -152,7 +153,7 @@ Follow this structure strictly:
 Your tone should be professional, data-driven, and helpful. Use formatting like bolding, lists, and headers to make the report easy to read.`;
 
 
-export const generatePerformanceReportFlow = ai.defineFlow(
+const generatePerformanceReportFlow = ai.defineFlow(
   {
     name: 'generatePerformanceReportFlow',
     inputSchema: performanceReportInputSchema,
