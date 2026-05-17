@@ -6,6 +6,7 @@ import { getReportsData } from '@/lib/data';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AIReportGenerator } from './components/AIReportGenerator';
 import { ReportsListClient } from './components/ReportsListClient';
+import { AIQuotaGauge } from './components/AIQuotaGauge';
 
 async function fetchData() {
   try {
@@ -54,6 +55,10 @@ export default async function AIReportsPage() {
             <p>Сохранённые отчёты с persistence + быстрая генерация preview без сохранения.</p>
           </div>
         </div>
+      </div>
+
+      <div className="mb-4">
+        <AIQuotaGauge />
       </div>
 
       <Tabs defaultValue="saved" className="w-full">

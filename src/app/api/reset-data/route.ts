@@ -7,10 +7,31 @@ import { requireAdmin } from '@/lib/server-auth';
 
 const dataDir = path.join(process.cwd(), 'data');
 
+/**
+ * Phase 24b / V2-#1: server-side phrase validation.
+ * Раньше защита была только в UI (ResetDataButton check), что не блокировало
+ * прямой `curl POST /api/reset-data` — admin мог снести всё одной командой.
+ * Теперь body MUST содержать `confirmPhrase: "УДАЛИТЬ ВСЕ ДАННЫЕ"` (4 слова —
+ * специально дольше чтобы не опечататься), иначе 400.
+ */
+const REQUIRED_CONFIRM_PHRASE = 'УДАЛИТЬ ВСЕ ДАННЫЕ';
+
 export async function POST(request: Request) {
   try {
     const auth = requireAdmin();
     if (auth instanceof NextResponse) return auth;
+
+    // Server-side phrase validation (V2-#1) — критично, без этого curl-обход возможен
+    let body: any = {};
+    try { body = await request.json(); } catch { /* empty body — отклоним */ }
+    if (!body?.confirmPhrase || String(body.confirmPhrase).trim() !== REQUIRED_CONFIRM_PHRASE) {
+      console.warn(`[reset-data] Phrase validation failed. Admin: ${auth.id}, got: "${body?.confirmPhrase}"`);
+      return NextResponse.json({
+        error: `Защита: body должен содержать confirmPhrase="${REQUIRED_CONFIRM_PHRASE}" (точно как написано, с пробелами).`,
+        hint: 'Это защита от случайного curl-вызова. Используйте UI-кнопку в Настройках.',
+      }, { status: 400 });
+    }
+    console.warn(`[reset-data] CONFIRMED reset by admin ${auth.id} (${auth.fullName}) at ${new Date().toISOString()}`);
 
     // When the app is running on PostgreSQL, the legacy JSON wipe below would
     // have no effect on what users see (reads come from PG via data-loader's

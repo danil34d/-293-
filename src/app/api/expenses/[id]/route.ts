@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { Expense } from '@/types';
-import { invalidateExpensesCache, invalidateInventoryCache, getInventory } from '@/lib/data';
+import { invalidateExpensesCache, invalidateInventoryCache, getInventory, reverseExpenseStockMovements } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { saveEntity, deleteEntity, readEntity, saveInventoryData } from '@/lib/data/write-helpers';
 
@@ -117,16 +117,38 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
         chemicalAmountToSubtractGrams = (data.quantity ?? 0) * 1000;
     }
 
-    // Update inventory FIRST - if this fails, we don't delete the entity
-    if (chemicalAmountToSubtractGrams > 0) {
+    // Phase 24a / V2-#2 / finding #7 АРХ: атомарный реверс связанных StockMovement
+    // (если есть — backfill Phase 16 создал relatedEntityType='expense' + relatedEntityId).
+    // Делаем ПЕРВЫМ — если реверс упадёт, ничего не удаляется (audit safety).
+    let stockReversal = { reversed: 0, totalGramsReversed: 0, reverseMovementIds: [] as string[] };
+    try {
+      stockReversal = await reverseExpenseStockMovements(id, auth.id);
+    } catch (e: any) {
+      console.error(`reverseExpenseStockMovements failed for expense ${id}:`, e);
+      return NextResponse.json({
+        error: `Не удалось реверсировать связанные движения склада: ${e.message ?? e}. Расход НЕ удалён.`,
+      }, { status: 500 });
+    }
+
+    // Legacy путь: AppConfig.inventory.chemicalStockGrams (manual number, без audit).
+    // Делаем только если StockMovement реверса НЕ было — чтобы не двойной декремент.
+    if (chemicalAmountToSubtractGrams > 0 && stockReversal.reversed === 0) {
         await updateInventory(-chemicalAmountToSubtractGrams);
     }
 
-    // Only delete entity after inventory is successfully updated
+    // Только после успешного inventory adjustment удаляем сам Expense
     await deleteEntity('expense', id);
     invalidateExpensesCache();
+    if (stockReversal.reversed > 0) invalidateInventoryCache();
 
-    return NextResponse.json({ message: 'Expense deleted successfully' });
+    return NextResponse.json({
+      message: 'Expense deleted successfully',
+      stockReversal: stockReversal.reversed > 0 ? {
+        reversedMovements: stockReversal.reversed,
+        totalGramsReversed: stockReversal.totalGramsReversed,
+        note: `Создано ${stockReversal.reversed} reverse-движений (audit trail сохранён)`,
+      } : undefined,
+    });
   } catch (error: any) {
     console.error(`Error deleting expense data for ID ${id}:`, error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

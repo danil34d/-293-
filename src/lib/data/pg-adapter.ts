@@ -774,6 +774,92 @@ export async function unarchiveEmployee(id: string): Promise<void> {
 }
 
 /**
+ * Phase 24a / V2-#2 / finding #7 АРХ-НАХОДКИ: атомарный реверс StockMovement при DELETE Expense.
+ *
+ * Проблема: DELETE Expense (категория Закупка химии) оставляет
+ *   - StockMovement.purchase orphan (FK не cascade)
+ *   - Inventory.chemicalStockGrams (AppConfig JSON) не пересчитан
+ *   - История остаётся «бита» (Phase 20 orphan scanner это уже видит, но это репорт-only)
+ *
+ * Решение: при удалении Expense в транзакции
+ *   1. Найти все StockMovement где relatedEntityType='expense' AND relatedEntityId=expenseId
+ *   2. Для каждого — создать reverse-movement type='adjustment' с amount=-original
+ *      (это сохраняет audit trail — оригинал + реверс оба видны в журнале)
+ *   3. Декремент InventoryMaterial.currentStock на сумму реверсируемых amounts
+ *
+ * Возвращает summary: сколько реверсировано, на какую сумму kg.
+ */
+export async function reverseExpenseStockMovements(
+  expenseId: string,
+  employeeId?: string
+): Promise<{
+  reversed: number;
+  totalGramsReversed: number;
+  reverseMovementIds: string[];
+}> {
+  const movements = await prisma.stockMovement.findMany({
+    where: {
+      relatedEntityType: 'expense',
+      relatedEntityId: expenseId,
+    },
+    select: {
+      id: true,
+      materialId: true,
+      type: true,
+      amount: true,
+    },
+  });
+
+  if (movements.length === 0) {
+    return { reversed: 0, totalGramsReversed: 0, reverseMovementIds: [] };
+  }
+
+  const now = new Date();
+  const reverseMovementIds: string[] = [];
+  let totalGramsReversed = 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const m of movements) {
+      const reverseAmount = -m.amount;
+      const material = await tx.inventoryMaterial.findUnique({
+        where: { id: m.materialId },
+        select: { currentStock: true },
+      });
+      const newStock = (material?.currentStock ?? 0) + reverseAmount;
+
+      const reverseId = `sm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_rev`;
+      await tx.stockMovement.create({
+        data: {
+          id: reverseId,
+          materialId: m.materialId,
+          type: 'adjustment',
+          amount: reverseAmount,
+          balanceAfter: newStock,
+          date: now,
+          description: `Авто-реверс при удалении Expense ${expenseId} (оригинал SM ${m.id}, ${m.type})`,
+          relatedEntityType: 'expense_reversal',
+          relatedEntityId: expenseId,
+          employeeId: employeeId ?? null,
+          createdBy: employeeId ?? null,
+        },
+      });
+      await tx.inventoryMaterial.update({
+        where: { id: m.materialId },
+        data: { currentStock: newStock },
+      });
+      reverseMovementIds.push(reverseId);
+      totalGramsReversed += Math.abs(m.amount);
+    }
+  });
+
+  return {
+    reversed: movements.length,
+    totalGramsReversed: Math.round(totalGramsReversed * 100) / 100,
+    reverseMovementIds,
+  };
+}
+
+/**
  * Phase 20 / finding #8 АРХ-НАХОДКИ: scan orphan StockMovement.
  *
  * `StockMovement.relatedEntityType` + `relatedEntityId` — soft FK без БД-констрейнта.

@@ -265,6 +265,14 @@ export const updateReport: (id: string, data: { title?: string; status?: ReportS
 export const deleteReport: (id: string) => Promise<void> =
   adapter.deleteReport ?? (async () => { throw new Error('deleteReport requires DATA_SOURCE=postgres'); });
 
+// Phase 24a / V2-#2 / finding #7 АРХ-НАХОДКИ: атомарный реверс StockMovement при DELETE Expense
+export const reverseExpenseStockMovements: (expenseId: string, employeeId?: string) => Promise<{
+  reversed: number;
+  totalGramsReversed: number;
+  reverseMovementIds: string[];
+}> =
+  adapter.reverseExpenseStockMovements ?? (async () => ({ reversed: 0, totalGramsReversed: 0, reverseMovementIds: [] }));
+
 // Phase 20 / finding #8 АРХ-НАХОДКИ: scan orphan StockMovement (soft FK без проверки)
 export const findOrphanedStockMovements: () => Promise<{
   total: number;

@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/server-auth';
 import { getReportsData, createReport } from '@/lib/data';
 import { generateReportTitle } from '@/lib/utils/report-title';
 import { generatePerformanceReport } from '@/ai/flows/generate-performance-report';
+import { checkAndIncrementAIQuota } from '@/lib/ai/rate-limit';
 
 /**
  * GET /api/reports?status=&periodFrom=&periodTo=
@@ -69,6 +70,22 @@ export async function POST(request: NextRequest) {
 
     const prompt = (question && String(question).trim()) ||
       'Сгенерируй аналитический отчёт по производительности за указанный период.';
+
+    // Phase 24c / V2-#13 / finding #5 АРХ: AI quota check ПЕРЕД вызовом Gemini.
+    // Защищает от cost spike (Gemini Flash ~$0.002/call, 1000 вызовов = $2,
+    // но если кто-то запустит loop — может вылететь в $50+).
+    const quotaCheck = checkAndIncrementAIQuota(auth.id);
+    if (!quotaCheck.allowed) {
+      return NextResponse.json({
+        error: `AI квота исчерпана (${quotaCheck.reason === 'global-daily' ? 'дневной лимит мойки' : 'часовой лимит на пользователя'}). Повторите через ${Math.ceil((quotaCheck.retryAfter ?? 0) / 60)} мин.`,
+        retryAfter: quotaCheck.retryAfter,
+        remainingHour: quotaCheck.remainingHour,
+        remainingDay: quotaCheck.remainingDay,
+      }, {
+        status: 429,
+        headers: { 'Retry-After': String(quotaCheck.retryAfter ?? 60) },
+      });
+    }
 
     // Step 1: generate via AI flow
     const aiResult = await generatePerformanceReport({

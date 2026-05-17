@@ -18,11 +18,16 @@ import { useToast } from '@/hooks/use-toast';
 import { Trash2, Loader2, AlertTriangle, ShieldAlert, Lock } from 'lucide-react';
 import { CheckItem, HazardPill, SafetyBar } from '@/components/admin';
 
-const MAGIC_WORD = 'ОЧИСТИТЬ';
+// Phase 24b / V2-#1: phrase upgraded ОЧИСТИТЬ → УДАЛИТЬ ВСЕ ДАННЫЕ (V2-стандарт).
+// Server-side проверка в /api/reset-data теперь требует этот же phrase в body
+// — даже curl-обход блокируется.
+const MAGIC_WORD = 'УДАЛИТЬ ВСЕ ДАННЫЕ';
 
 /**
  * Phase 6.3 / UX-safety: ResetDataButton переделан с просто confirm-modal
  * на DangerGate-style с magic word + 4 чек-листами.
+ * Phase 24b / V2-#1: phrase обновлён + добавлена server-side валидация
+ * (раньше curl POST обходил защиту, теперь body должен содержать confirmPhrase).
  *
  * `/api/reset-data` — это БОМБА: удаляет ВСЕ WashEvent, EmployeeTransaction,
  * ClientTransaction, Expense, обнуляет balance. Никакой undo. До этого один
@@ -31,8 +36,9 @@ const MAGIC_WORD = 'ОЧИСТИТЬ';
  * Теперь чтобы запустить:
  *  1. Открыть модал (Trash2 button)
  *  2. Отметить 4 чек-листа (есть бэкап? период закрыт? сотрудники warned?)
- *  3. Ввести MAGIC_WORD = "ОЧИСТИТЬ" точно как написано
+ *  3. Ввести MAGIC_WORD точно как написано
  *  4. Нажать Submit (disabled пока 1-3 не выполнены)
+ *  5. Клиент шлёт confirmPhrase в body → server тоже валидирует
  */
 export function ResetDataButton() {
   const [isOpen, setIsOpen] = useState(false);
@@ -62,7 +68,11 @@ export function ResetDataButton() {
     if (!canSubmit) return;
     setIsLoading(true);
     try {
-      const response = await fetch('/api/reset-data', { method: 'POST' });
+      const response = await fetch('/api/reset-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmPhrase: MAGIC_WORD }),
+      });
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || 'Не удалось очистить данные');
