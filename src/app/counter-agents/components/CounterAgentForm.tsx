@@ -126,6 +126,10 @@ export function CounterAgentForm({
   // Phase 6.3: balance под DangerGate-замком на edit (на create — открыт)
   const isExisting = !!agentId;
   const [balanceUnlocked, setBalanceUnlocked] = React.useState(!isExisting);
+  // Phase 26b: для нового агента — initial payment через ClientTransaction (audit-trail)
+  const [recordPrepaid, setRecordPrepaid] = React.useState(false);
+  const [prepaidAmount, setPrepaidAmount] = React.useState("");
+  const [prepaidMethod, setPrepaidMethod] = React.useState<"transfer" | "cash" | "card">("transfer");
 
   const defaults = React.useMemo(() => ({
     name: initialData?.name || "",
@@ -424,6 +428,39 @@ export function CounterAgentForm({
         const errorData = await response.json();
         throw new Error(errorData.error || `Failed to save agent: ${response.statusText}`);
       }
+      // Phase 26b: после успешного создания нового агента — если отмечена предоплата,
+      // создаём ClientTransaction через audit-эндпоинт (server-side гарантировал balance=0 при PUT).
+      const prepaidNum = Number((prepaidAmount || "").replace(/\s/g, "")) || 0;
+      if (!agentId && recordPrepaid && prepaidNum > 0) {
+        try {
+          const methodLabel = ({ transfer: "Безнал", cash: "Наличные", card: "Карта" } as const)[prepaidMethod];
+          const txResponse = await fetch(`/api/client-transactions/${currentAgentId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount: prepaidNum,
+              description: `${methodLabel} · первоначальный платёж при создании контрагента`,
+            }),
+          });
+          if (!txResponse.ok) {
+            const txError = await txResponse.json().catch(() => ({}));
+            // Не упасть всей операцией — агент создан, просто платёж не записался
+            toast({
+              title: "Агент создан, но платёж не записан",
+              description: txError.error || `${prepaidNum.toLocaleString('ru-RU')} ₽ — добавьте вручную через «Платёж» в списке.`,
+              variant: "destructive",
+            });
+          }
+        } catch (txErr: any) {
+          console.error("Initial payment failed:", txErr);
+          toast({
+            title: "Платёж не записан",
+            description: `Агент создан, но ${prepaidNum.toLocaleString('ru-RU')} ₽ нужно добавить вручную.`,
+            variant: "destructive",
+          });
+        }
+      }
+
       const normalizedCarsText = mergedCars.join("\n");
       form.reset({ ...data, cars: normalizedCarsText });
       setQuickCarInput("");
@@ -434,6 +471,7 @@ export function CounterAgentForm({
         description: (
           <span>
             Контрагент <strong>{agentToSave.name}</strong> успешно сохранен.
+            {!agentId && recordPrepaid && prepaidNum > 0 ? ` + ${prepaidNum.toLocaleString('ru-RU')} ₽ предоплаты записано.` : ""}
             {mergedCars.length > parsedCars.length ? ` Автоматически добавлено номеров: ${mergedCars.length - parsedCars.length}.` : ""}
             {pendingBulk.invalidLines.length > 0 ? ` Пропущено невалидных строк: ${pendingBulk.invalidLines.length}.` : ""}
           </span>
@@ -538,9 +576,72 @@ export function CounterAgentForm({
                     </div>
                   </div>
                 ) : (
-                  <FormField control={form.control} name="balance" render={({ field }) => (
-                    <FormItem><FormLabel>Стартовый баланс (руб.)</FormLabel><FormControl><Input type="number" placeholder="0" {...field} /></FormControl><FormDescription>Отрицательное значение = долг клиента, положительное = предоплата.</FormDescription><FormMessage /></FormItem>
-                  )} />
+                  // Phase 26b / V2 «counter-agent-new»: убран прямой инпут balance.
+                  // Контрагент всегда создаётся с balance=0 (server forces, Phase 26a).
+                  // Если клиент сразу внёс предоплату — checkbox ниже создаёт ClientTransaction
+                  // (audit-trail) сразу после успешного создания агента.
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-emerald-100 p-2 flex-shrink-0">
+                        <HandCoins className="h-5 w-5 text-emerald-700" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-[11px] uppercase tracking-wider font-bold text-emerald-700 flex items-center gap-1.5">
+                          🛡 Стартовый баланс — через audit
+                        </div>
+                        <div className="text-[12px] text-slate-700 mt-1 leading-snug">
+                          Контрагент создаётся с balance=0. Если клиент сразу внёс предоплату
+                          — отметьте чекбокс ниже, и после создания будет записан
+                          <code className="bg-emerald-100 px-1 rounded text-[11px] mx-0.5">ClientTransaction(type='payment')</code>
+                          с audit-меткой.
+                        </div>
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer pt-1 select-none">
+                      <input
+                        type="checkbox"
+                        checked={recordPrepaid}
+                        onChange={(e) => setRecordPrepaid(e.target.checked)}
+                        className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-[13px] font-medium text-slate-800">
+                        Да, клиент сразу внёс предоплату
+                      </span>
+                    </label>
+
+                    {recordPrepaid && (
+                      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-emerald-200">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Сумма (₽)</label>
+                          <Input
+                            type="text"
+                            value={prepaidAmount}
+                            onChange={(e) => setPrepaidAmount(e.target.value.replace(/[^\d\s]/g, ''))}
+                            placeholder="0"
+                            className="text-[16px] font-bold tabular-nums"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Способ</label>
+                          <select
+                            value={prepaidMethod}
+                            onChange={(e) => setPrepaidMethod(e.target.value as any)}
+                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-[14px] font-medium"
+                          >
+                            <option value="transfer">Безнал</option>
+                            <option value="cash">Наличные</option>
+                            <option value="card">Карта</option>
+                          </select>
+                        </div>
+                        <div className="col-span-2 text-[11px] text-emerald-800">
+                          Будет создана запись:
+                          {prepaidAmount ? ` +${Number(prepaidAmount.replace(/\s/g, '') || 0).toLocaleString('ru-RU')} ₽` : ' (введите сумму)'}
+                          {' '}через {(({ transfer: 'безналичный перевод', cash: 'наличные', card: 'карту' } as const)[prepaidMethod])}.
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </CardContent>
             </Card>

@@ -45,6 +45,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         updatedData.id = id;
     }
 
+    // Phase 25a / V2-#7 README: server-side audit enforcement для balance.
+    // Balance НЕ должен меняться через PUT — только через
+    // POST /api/client-transactions/[counterAgentId] (создаёт ClientTransaction
+    // с audit-меткой). Закрывает «обход audit» — UI мог отправить balance в Edit-форме.
     if (existingData) {
       if (updatedData.archived === undefined) {
         updatedData.archived = existingData.archived;
@@ -54,11 +58,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         updatedData.archivedAt = existingData.archivedAt;
       }
 
-      // Phase 25a / V2-#7 README: server-side audit enforcement.
-      // Balance НЕ должен меняться через PUT — только через
-      // POST /api/client-transactions/[counterAgentId] (создаёт ClientTransaction
-      // с audit-меткой). Сохраняем существующий balance, игнорируем входящий.
-      // Это закрывает «обход audit» — старый UI мог отправить balance в Edit-форме.
       const incomingBalance = (updatedData as any).balance;
       const existingBalance = (existingData as any).balance ?? 0;
       if (incomingBalance !== undefined && Number(incomingBalance) !== Number(existingBalance)) {
@@ -68,6 +67,19 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         );
       }
       (updatedData as any).balance = existingBalance;
+    } else {
+      // Phase 26a: создание нового агента — balance НЕЛЬЗЯ задать сразу (audit-bypass).
+      // Если нужна стартовая предоплата — отдельный POST на /api/client-transactions/[newId]
+      // после создания. Это закрывает дыру: раньше POST с body.balance создавал агента
+      // с произвольным balance минуя ClientTransaction audit.
+      const incomingBalance = (updatedData as any).balance;
+      if (incomingBalance !== undefined && Number(incomingBalance) !== 0) {
+        console.warn(
+          `[counter-agents PUT create] Попытка создать ${id} c balance=${incomingBalance} ` +
+          `(admin: ${auth.id}). Forced to 0 — используйте POST /api/client-transactions/${id} для стартового платежа.`
+        );
+      }
+      (updatedData as any).balance = 0;
     }
 
     await saveEntity('counterAgent', updatedData);
