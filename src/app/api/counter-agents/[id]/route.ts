@@ -53,6 +53,21 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       if (updatedData.archivedAt === undefined) {
         updatedData.archivedAt = existingData.archivedAt;
       }
+
+      // Phase 25a / V2-#7 README: server-side audit enforcement.
+      // Balance НЕ должен меняться через PUT — только через
+      // POST /api/client-transactions/[counterAgentId] (создаёт ClientTransaction
+      // с audit-меткой). Сохраняем существующий balance, игнорируем входящий.
+      // Это закрывает «обход audit» — старый UI мог отправить balance в Edit-форме.
+      const incomingBalance = (updatedData as any).balance;
+      const existingBalance = (existingData as any).balance ?? 0;
+      if (incomingBalance !== undefined && Number(incomingBalance) !== Number(existingBalance)) {
+        console.warn(
+          `[counter-agents PUT] Попытка изменить balance ${existingBalance} → ${incomingBalance} ` +
+          `для ${id} (admin: ${auth.id}). Игнорирую — используйте POST /api/client-transactions/${id} для платежа.`
+        );
+      }
+      (updatedData as any).balance = existingBalance;
     }
 
     await saveEntity('counterAgent', updatedData);

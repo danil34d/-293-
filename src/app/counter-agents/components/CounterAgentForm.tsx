@@ -20,7 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CompanyAccordion, companySchema, baseCompany } from "@/components/common/CompanyAccordion";
 import { PriceListEditor, priceListItemSchema } from "@/components/common/PriceListEditor";
-import { Cog, Copy, Save, X } from "lucide-react";
+import { Cog, Copy, Save, X, Scale, HandCoins } from "lucide-react";
 import { DangerGate } from "@/components/admin";
 
 const schema = z.object({
@@ -497,62 +497,46 @@ export function CounterAgentForm({
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem><FormLabel>Имя агента</FormLabel><FormControl><Input placeholder="например, ООО 'Авто Коммерц'" {...field} className="text-base" /></FormControl><FormMessage /></FormItem>
                 )} />
-                {/* Phase 6.3: balance под DangerGate.
-                    Прямая правка обходит ClientTransaction (нет audit trail).
-                    Лучше пользоваться /counter-agents/[id]/finance → платёж. */}
+                {/* Phase 6.3: balance был под DangerGate.
+                    Phase 25 (17.05.2026): backend теперь ИГНОРИРУЕТ balance в PUT
+                    (server-side audit enforcement, см. /api/counter-agents/[id]/route.ts).
+                    Поэтому форма показывает balance read-only + явный CTA на PaymentModal. */}
                 {isExisting ? (
-                  <DangerGate
-                    label="Текущий баланс"
-                    level="warn"
-                    locked={!balanceUnlocked}
-                    currentValue={`${(initialData?.balance ?? 0).toLocaleString("ru-RU")} ₽`}
-                    impact="Прямая правка баланса обходит ClientTransaction — нет audit trail. Рекомендуется использовать /finance → платёж."
-                    onUnlock={() => setBalanceUnlocked(true)}
-                    onRelock={() => {
-                      setBalanceUnlocked(false);
-                      form.setValue("balance", initialData?.balance ?? 0);
-                    }}
-                  >
-                    <FormField control={form.control} name="balance" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-[12px] text-amber-700">Новое значение баланса</FormLabel>
-                        <FormControl>
-                          <Input type="number" placeholder="0" {...field} className="border-amber-400 bg-amber-50/40" />
-                        </FormControl>
-                        <FormDescription className="text-[11px]">
-                          Отрицательное = долг клиента, положительное = предоплата.
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-
-                    {/* Кнопки корректировки тоже под замком */}
-                    <div className="rounded-lg border bg-muted/20 p-4 mt-3">
-                      <div className="flex flex-col gap-4">
-                        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                          <div>
-                            <div className="text-sm text-muted-foreground">Статус нового баланса</div>
-                            <div className="mt-2 flex flex-wrap items-center gap-3">
-                              <div className="text-2xl font-semibold">{watchedBalance.toLocaleString("ru-RU")} ₽</div>
-                              <Badge variant="outline" className={balanceMeta.className}>{balanceMeta.label}</Badge>
-                            </div>
-                            <div className="mt-2 text-sm text-muted-foreground">{balanceMeta.hint}</div>
-                          </div>
-                          {agentId ? <Button type="button" variant="outline" onClick={() => router.push(`/counter-agents/${agentId}/finance`)}>Открыть финансы</Button> : null}
+                  <div className="rounded-xl border-2 border-amber-200 bg-amber-50/30 p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-amber-100 p-2 flex-shrink-0">
+                        <Scale className="h-5 w-5 text-amber-700" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] uppercase tracking-wider font-bold text-amber-700 flex items-center gap-1.5">
+                          🔒 Баланс защищён от прямой правки
                         </div>
-                        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                          <Input type="number" value={balanceAdjustment} onChange={(event) => setBalanceAdjustment(event.target.value)} placeholder="Сумма корректировки" className="xl:w-56" />
-                          <div className="flex flex-wrap gap-2">
-                            <Button type="button" variant="outline" onClick={() => applyBalance("increase")}>Прибавить сумму</Button>
-                            <Button type="button" variant="outline" onClick={() => applyBalance("decrease")}>Списать сумму</Button>
-                            <Button type="button" variant="outline" onClick={() => setBalanceValue(0)}>Обнулить</Button>
-                            <Button type="button" variant="ghost" onClick={() => setBalanceValue(Math.abs(watchedBalance || 0))}>Сделать предоплатой</Button>
-                            <Button type="button" variant="ghost" onClick={() => setBalanceValue(-Math.abs(watchedBalance || 0))}>Сделать долгом</Button>
+                        <div className="mt-2 flex items-baseline gap-3 flex-wrap">
+                          <div className="text-3xl font-extrabold tabular-nums">
+                            {(initialData?.balance ?? 0).toLocaleString("ru-RU")} ₽
                           </div>
+                          <Badge variant="outline" className={balanceMeta.className}>{balanceMeta.label}</Badge>
+                        </div>
+                        <div className="text-[12px] text-muted-foreground mt-1">{balanceMeta.hint}</div>
+                        <div className="mt-3 text-[12px] text-amber-900 leading-snug">
+                          Phase 25 (17.05.2026): прямая правка баланса в этой форме <b>отключена</b> на уровне сервера
+                          (PUT игнорирует поле <code className="bg-amber-100 px-1 rounded text-[11px]">balance</code>).
+                          Любое изменение должно идти через <b>«Добавить платёж»</b> в списке контрагентов
+                          — это создаёт <code className="bg-amber-100 px-1 rounded text-[11px]">ClientTransaction(type='payment')</code> с audit-меткой.
                         </div>
                       </div>
                     </div>
-                  </DangerGate>
+                    <div className="flex gap-2 pt-1">
+                      <Button type="button" variant="outline" onClick={() => router.push('/counter-agents')}>
+                        <HandCoins className="w-4 h-4 mr-1.5" /> К списку → Добавить платёж
+                      </Button>
+                      {agentId ? (
+                        <Button type="button" variant="ghost" onClick={() => router.push(`/counter-agents/${agentId}/finance`)}>
+                          Открыть финансы
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
                 ) : (
                   <FormField control={form.control} name="balance" render={({ field }) => (
                     <FormItem><FormLabel>Стартовый баланс (руб.)</FormLabel><FormControl><Input type="number" placeholder="0" {...field} /></FormControl><FormDescription>Отрицательное значение = долг клиента, положительное = предоплата.</FormDescription><FormMessage /></FormItem>
