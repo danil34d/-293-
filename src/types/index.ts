@@ -237,6 +237,22 @@ export interface EmployeeSalarySchemeHistoryEntry {
   createdAt: string;
 }
 
+/** Phase 29 / V2-NEW-3: общий audit log для опасных правок Employee.
+ *  В отличие от EmployeeSalarySchemeHistoryEntry — без интервалов effectiveFrom/To.
+ *  Просто запись «field X у employee Y был oldVal, стал newVal — admin Z, в момент T». */
+export interface EmployeeChangeLogEntry {
+  id: string;
+  employeeId: string;
+  /** Поля: 'role' | 'username' | 'password' | 'archived' | 'paymentDetails'
+   *  | 'phone' | 'salarySchemeId' | 'fullName' и др. */
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;     // employeeId admin'а из cookie
+  reason: string | null; // опц. комментарий
+  createdAt: string;     // ISO
+}
+
 export interface WashEventEditHistory {
     editedAt: string; // ISO timestamp of the edit
     editedBy: string; // ID of the employee who edited

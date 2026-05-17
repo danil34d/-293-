@@ -1883,6 +1883,91 @@ export async function appendEmployeeSchemeHistory(
   ]);
 }
 
+// ─── EmployeeChangeLog (Phase 29 / V2-NEW-3) ────────────────────
+
+function changeLogFromPrisma(row: any): import('@/types').EmployeeChangeLogEntry {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    fieldName: row.fieldName,
+    oldValue: row.oldValue ?? null,
+    newValue: row.newValue ?? null,
+    changedBy: row.changedBy,
+    reason: row.reason ?? null,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+  };
+}
+
+/**
+ * Phase 29 / V2-NEW-3: запись одной строки audit-журнала для опасной правки Employee.
+ * Не throw'ит — best-effort: если БД упадёт, основная PUT-операция не должна
+ * остановиться. Только лог в console.error.
+ */
+export async function createEmployeeChangeLog(data: {
+  employeeId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  reason?: string | null;
+}): Promise<void> {
+  try {
+    await prisma.employeeChangeLog.create({
+      data: {
+        employeeId: data.employeeId,
+        fieldName: data.fieldName,
+        oldValue: data.oldValue,
+        newValue: data.newValue,
+        changedBy: data.changedBy,
+        reason: data.reason ?? null,
+      },
+    });
+  } catch (err) {
+    console.error('[createEmployeeChangeLog] best-effort failed:', err);
+  }
+}
+
+/** Batch-вариант для PUT'а с несколькими опасными изменениями за один запрос. */
+export async function createEmployeeChangeLogBatch(entries: Array<{
+  employeeId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  reason?: string | null;
+}>): Promise<void> {
+  if (entries.length === 0) return;
+  try {
+    await prisma.employeeChangeLog.createMany({
+      data: entries.map(e => ({
+        employeeId: e.employeeId,
+        fieldName: e.fieldName,
+        oldValue: e.oldValue,
+        newValue: e.newValue,
+        changedBy: e.changedBy,
+        reason: e.reason ?? null,
+      })),
+    });
+  } catch (err) {
+    console.error('[createEmployeeChangeLogBatch] best-effort failed:', err);
+  }
+}
+
+/**
+ * История изменений конкретного employee. Newest first. Лимит для UI tab.
+ */
+export async function getEmployeeChangeLog(
+  employeeId: string,
+  limit = 50
+): Promise<import('@/types').EmployeeChangeLogEntry[]> {
+  const rows = await prisma.employeeChangeLog.findMany({
+    where: { employeeId },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+  return rows.map(changeLogFromPrisma);
+}
+
 // --- Employee Transactions ---
 
 export async function saveEmployeeTransaction(data: any): Promise<void> {

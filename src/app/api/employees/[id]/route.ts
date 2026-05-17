@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { Employee, EmployeeRole } from '@/types';
-import { appendEmployeeSchemeHistory, getEmployeeImpact, getEmployeesData, invalidateEmployeesCache } from '@/lib/data';
+import { appendEmployeeSchemeHistory, getEmployeeImpact, getEmployeesData, invalidateEmployeesCache, createEmployeeChangeLogBatch } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { hashPassword } from '@/lib/password-hash';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
@@ -94,6 +94,51 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       } catch (histErr: any) {
         // History — best-effort, не блокируем основной save.
         console.warn(`[scheme-history] failed for employee ${id}:`, histErr?.message);
+      }
+    }
+
+    // Phase 29 / V2-NEW-3: EmployeeChangeLog audit для опасных правок.
+    // Сравниваем old vs new для tracked полей и пишем batch.
+    if (oldDataForHistory) {
+      const tracked: Array<{ field: keyof Employee; isPassword?: boolean }> = [
+        { field: 'fullName' },
+        { field: 'role' },
+        { field: 'username' },
+        { field: 'password', isPassword: true },
+        { field: 'salarySchemeId' },
+        { field: 'archived' },
+        { field: 'phone' },
+        { field: 'paymentDetails' },
+      ];
+      const entries: Array<{
+        employeeId: string;
+        fieldName: string;
+        oldValue: string | null;
+        newValue: string | null;
+        changedBy: string;
+      }> = [];
+      for (const t of tracked) {
+        const oldV = (oldDataForHistory as any)[t.field];
+        const newV = (updatedData as any)[t.field];
+        if (oldV !== newV) {
+          // Для пароля не пишем значения — только факт изменения
+          const oldStr = t.isPassword ? (oldV ? '***' : null) : (oldV == null ? null : String(oldV));
+          const newStr = t.isPassword ? (newV ? '***' : null) : (newV == null ? null : String(newV));
+          entries.push({
+            employeeId: id,
+            fieldName: String(t.field),
+            oldValue: oldStr,
+            newValue: newStr,
+            changedBy: (auth as any).id,
+          });
+        }
+      }
+      if (entries.length > 0) {
+        try {
+          await createEmployeeChangeLogBatch(entries);
+        } catch (logErr: any) {
+          console.warn(`[employee-change-log] failed for ${id}:`, logErr?.message);
+        }
       }
     }
 

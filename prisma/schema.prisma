@@ -545,6 +545,33 @@ model EmployeeSalarySchemeHistory {
   @@index([effectiveFrom])
 }
 
+/// Phase 29 / V2-NEW-3: общий audit log для опасных правок Employee.
+/// EmployeeSalarySchemeHistory покрывает только смену schemeId (с effectiveFrom/To
+/// для retrospective ZP). EmployeeChangeLog — широкий audit: role, username,
+/// password, archived, paymentDetails и др. Без интервалов — просто кто и когда.
+/// Запись создаётся в PUT /api/employees/[id] когда меняется любое из tracked-полей.
+model EmployeeChangeLog {
+  id         String   @id @default(uuid())
+  employeeId String
+  /// Имя поля: 'role', 'username', 'password', 'archived', 'paymentDetails',
+  /// 'phone', 'salarySchemeId', 'fullName' и др.
+  fieldName  String
+  /// Старое значение (string repr; для password — '***')
+  oldValue   String?
+  /// Новое значение (string repr; для password — '***')
+  newValue   String?
+  /// Кто менял — employeeId admin'а из cookie identity
+  changedBy  String
+  /// Опциональный комментарий (если в будущем UI попросит причину)
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([employeeId])
+  @@index([changedBy])
+  @@index([fieldName])
+  @@index([createdAt])
+}
+
 // ─── Нарушения ───────────────────────────────────────────────
 
 model Violation {

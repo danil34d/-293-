@@ -92,6 +92,33 @@ export const appendEmployeeSchemeHistory: (
 ) => Promise<void> =
   adapter.appendEmployeeSchemeHistory ?? (async () => { /* no-op for JSON */ });
 
+// Phase 29 / V2-NEW-3: EmployeeChangeLog audit table
+export const createEmployeeChangeLog: (data: {
+  employeeId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  reason?: string | null;
+}) => Promise<void> =
+  adapter.createEmployeeChangeLog ?? (async () => { /* no-op for JSON */ });
+
+export const createEmployeeChangeLogBatch: (entries: Array<{
+  employeeId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  reason?: string | null;
+}>) => Promise<void> =
+  adapter.createEmployeeChangeLogBatch ?? (async () => { /* no-op for JSON */ });
+
+export const getEmployeeChangeLog: (
+  employeeId: string,
+  limit?: number
+) => Promise<import('@/types').EmployeeChangeLogEntry[]> =
+  adapter.getEmployeeChangeLog ?? (async () => []);
+
 // Phase 6.2: employee archive / impact pre-check
 export const archiveEmployee: (id: string) => Promise<void> =
   adapter.archiveEmployee ?? (async () => { throw new Error('archiveEmployee requires DATA_SOURCE=postgres'); });
