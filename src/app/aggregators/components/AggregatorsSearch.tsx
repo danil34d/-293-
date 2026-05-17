@@ -6,6 +6,7 @@ import { Search, X, PlusCircle, Edit, Star, Briefcase, WalletCards, Scale, Alert
 import type { Aggregator, NamedPriceList } from '@/types';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
 import { SetActivePriceButton } from './SetActivePriceButton';
+import { SwitchPriceModal } from './SwitchPriceModal';
 import { SafetyBar } from '@/components/admin';
 
 function formatMoney(n: number): string {
@@ -61,6 +62,9 @@ interface AggregatorsSearchProps {
 export default function AggregatorsSearch({ allAggregators, fetchError }: AggregatorsSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentView, setCurrentView] = useState<AggregatorsView>('active');
+  // Phase 27a: state модала смены прайса — в parent чтобы не закрывался
+  // вместе с popover при клике на «Сделать активным»
+  const [switchTarget, setSwitchTarget] = useState<{ aggregator: Aggregator; priceListName: string } | null>(null);
 
   const sortedAggregators = useMemo(() =>
     [...allAggregators].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
@@ -280,6 +284,7 @@ export default function AggregatorsSearch({ allAggregators, fetchError }: Aggreg
                                     aggregator={aggregator}
                                     priceListName={pl.name}
                                     isActive={activePriceList?.name === pl.name}
+                                    onRequestSwitch={(agg, name) => setSwitchTarget({ aggregator: agg, priceListName: name })}
                                   />
                                 </div>
                                 <div className="scroll-area">
@@ -414,6 +419,14 @@ export default function AggregatorsSearch({ allAggregators, fetchError }: Aggreg
           </table>
         </div>
       </div>
+
+      {/* Phase 27a: SwitchPriceModal — рендерится в parent чтобы не unmount-иться с popover */}
+      <SwitchPriceModal
+        aggregator={switchTarget?.aggregator ?? null}
+        targetPriceListName={switchTarget?.priceListName ?? null}
+        open={!!switchTarget}
+        onOpenChange={(o) => { if (!o) setSwitchTarget(null); }}
+      />
     </div>
   );
 }
