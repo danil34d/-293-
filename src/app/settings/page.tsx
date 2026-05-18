@@ -2,7 +2,7 @@
 import "@/styles/settings.css";
 import Link from 'next/link';
 import { RetailPriceListForm } from './components/RetailPriceListForm';
-import { ResetDataButton } from './components/ResetDataButton';
+import { DangerZone } from './components/DangerZone';
 import { getWashEventsData, getEmployeesData } from '@/lib/data';
 import type { WashEvent, Employee } from '@/types';
 import { AlertTriangle, ScanLine, ChevronRight } from 'lucide-react';
@@ -52,7 +52,7 @@ export default async function SettingsPage() {
       </div>
 
       <div className="price-list-form-card" style={{ marginTop: '2rem' }}>
-        <ResetDataButton />
+        <DangerZone />
       </div>
 
       {/* OCR Section */}
