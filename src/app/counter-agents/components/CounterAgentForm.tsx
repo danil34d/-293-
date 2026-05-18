@@ -433,13 +433,13 @@ export function CounterAgentForm({
       const prepaidNum = Number((prepaidAmount || "").replace(/\s/g, "")) || 0;
       if (!agentId && recordPrepaid && prepaidNum > 0) {
         try {
-          const methodLabel = ({ transfer: "Безнал", cash: "Наличные", card: "Карта" } as const)[prepaidMethod];
+          // Phase 33: контрагенты ВСЕГДА по договору безналом — hardcoded label
           const txResponse = await fetch(`/api/client-transactions/${currentAgentId}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               amount: prepaidNum,
-              description: `${methodLabel} · первоначальный платёж при создании контрагента`,
+              description: `Безнал по договору · первоначальный платёж при создании контрагента`,
             }),
           });
           if (!txResponse.ok) {
@@ -612,7 +612,7 @@ export function CounterAgentForm({
 
                     {recordPrepaid && (
                       <div className="grid grid-cols-2 gap-3 pt-2 border-t border-emerald-200">
-                        <div>
+                        <div className="col-span-2">
                           <label className="block text-[11px] font-semibold text-slate-700 mb-1">Сумма (₽)</label>
                           <Input
                             type="text"
@@ -622,22 +622,18 @@ export function CounterAgentForm({
                             className="text-[16px] font-bold tabular-nums"
                           />
                         </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Способ</label>
-                          <select
-                            value={prepaidMethod}
-                            onChange={(e) => setPrepaidMethod(e.target.value as any)}
-                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-[14px] font-medium"
-                          >
-                            <option value="transfer">Безнал</option>
-                            <option value="cash">Наличные</option>
-                            <option value="card">Карта</option>
-                          </select>
+                        {/* Phase 33: контрагенты ВСЕГДА платят по договору безналом — picker убран */}
+                        <div className="col-span-2 rounded-md border border-blue-200 bg-blue-50/60 px-3 py-2 flex items-center gap-2">
+                          <span className="text-[18px]">🏦</span>
+                          <div className="flex-1 min-w-0 text-[11px]">
+                            <div className="font-bold text-blue-900">Безнал по договору</div>
+                            <div className="text-blue-700">Контрагенты платят только через расчётный счёт.</div>
+                          </div>
                         </div>
                         <div className="col-span-2 text-[11px] text-emerald-800">
                           Будет создана запись:
                           {prepaidAmount ? ` +${Number(prepaidAmount.replace(/\s/g, '') || 0).toLocaleString('ru-RU')} ₽` : ' (введите сумму)'}
-                          {' '}через {(({ transfer: 'безналичный перевод', cash: 'наличные', card: 'карту' } as const)[prepaidMethod])}.
+                          {' '}через безналичный перевод по договору.
                         </div>
                       </div>
                     )}

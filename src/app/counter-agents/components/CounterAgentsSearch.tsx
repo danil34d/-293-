@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Search, X, PlusCircle, Edit, Users, ListChecks, Cog, Scale, WalletCards, AlertTriangle, Archive, RotateCcw, HandCoins, Building2, Car as CarIcon, TrendingUp } from 'lucide-react';
+import { Search, X, PlusCircle, Edit, Users, ListChecks, Cog, Scale, WalletCards, AlertTriangle, Archive, RotateCcw, HandCoins, Building2, Car as CarIcon, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 import type { CounterAgent } from '@/types';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
 import { SafetyBar } from '@/components/admin';
 import { PaymentModal } from './PaymentModal';
+import { ExpandedCounterAgent } from './ExpandedCounterAgent';
 
 type BalanceFilter = 'all' | 'prepaid' | 'debt';
 
@@ -77,6 +78,8 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
   const [currentView, setCurrentView] = useState<CounterAgentsView>(initialView);
   const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>('all');
   const [paymentTarget, setPaymentTarget] = useState<CounterAgent | null>(null);
+  // Phase 34: inline-expand state — id раскрытого контрагента (null = ничего не раскрыто)
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const sortedAgents = useMemo(() =>
     [...allAgents].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
@@ -290,9 +293,24 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
               {!fetchError && visibleAgents.map((agent) => {
                 const bal = Number(agent.balance ?? 0);
                 const isDebt = bal < 0;
+                const isExpanded = expandedId === agent.id;
                 return (
-                <tr key={agent.id} className="agents-table-row"
-                  style={isDebt && !agent.archived ? { background: 'rgba(254, 242, 242, 0.5)' } : undefined}>
+                <React.Fragment key={agent.id}>
+                <tr
+                  className="agents-table-row cursor-pointer"
+                  style={
+                    isExpanded
+                      ? { background: 'rgba(239, 246, 255, 0.85)' }
+                      : isDebt && !agent.archived
+                      ? { background: 'rgba(254, 242, 242, 0.5)' }
+                      : undefined
+                  }
+                  onClick={(e) => {
+                    // Не раскрывать при клике на actions ячейку (кнопки внутри)
+                    const target = e.target as HTMLElement;
+                    if (target.closest('.action-buttons') || target.closest('a') || target.closest('button')) return;
+                    setExpandedId(isExpanded ? null : agent.id);
+                  }}>
                   <td className="agents-table-cell align-top">
                     <div className="agent-name">{highlightMatch(agent.name, searchQuery)}</div>
                     {agent.archived && (
@@ -377,6 +395,17 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
                   </td>
                   <td className="agents-table-cell text-right align-top">
                     <div className="action-buttons">
+                      {/* Phase 34: chevron toggle */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : agent.id); }}
+                        className="action-btn"
+                        style={{ color: '#64748b' }}
+                        aria-label={isExpanded ? 'Свернуть карточку' : 'Раскрыть карточку'}
+                        title={isExpanded ? 'Свернуть' : 'Раскрыть карточку'}
+                      >
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </button>
                       {!agent.archived && (
                         <button
                           type="button"
@@ -458,6 +487,17 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
                     </div>
                   </td>
                 </tr>
+                {isExpanded && (
+                  <tr>
+                    <td colSpan={6} className="agents-table-cell" style={{ background: 'rgba(248, 250, 252, 0.8)', padding: '12px 16px' }}>
+                      <ExpandedCounterAgent
+                        agent={agent}
+                        onPay={() => setPaymentTarget(agent)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
                 );
               })}
               {!fetchError && visibleAgents.length === 0 && (

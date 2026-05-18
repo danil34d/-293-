@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Loader2, HandCoins, ArrowRight, CheckCircle2, Banknote, Building2, CreditCard, ShieldCheck,
+  Loader2, HandCoins, ArrowRight, CheckCircle2, Building2, ShieldCheck, FileText,
 } from "lucide-react";
 import type { CounterAgent } from "@/types";
 
@@ -20,13 +20,10 @@ interface Props {
   onPaymentRecorded?: (newBalance: number) => void;
 }
 
-type PaymentMethod = "cash" | "transfer" | "card";
-
-const METHODS: Array<{ id: PaymentMethod; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: "cash",     label: "Наличные", icon: Banknote },
-  { id: "transfer", label: "Безнал",   icon: Building2 },
-  { id: "card",     label: "Карта",    icon: CreditCard },
-];
+// Phase 33: контрагенты у владельца платят ТОЛЬКО по договору безналом.
+// Раньше показывали 3 кнопки (Наличные/Безнал/Карта) — это сбивало с толку.
+// Сейчас способ зафиксирован как 'transfer' и в UI просто показывается
+// «Безнал по договору» вместо выбора.
 
 const QUICK_AMOUNTS = [1000, 5000, 10000, 50000];
 
@@ -45,15 +42,16 @@ function formatMoney(n: number): string {
 export function PaymentModal({ agent, open, onOpenChange, onPaymentRecorded }: Props) {
   const { toast } = useToast();
   const [amountStr, setAmountStr] = React.useState("");
-  const [method, setMethod] = React.useState<PaymentMethod>("cash");
   const [comment, setComment] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  // Phase 33: способ оплаты для контрагентов всегда «Безнал по договору».
+  // Никаких 3-кнопочных picker'ов — у владельца контрагенты платят ТОЛЬКО так.
+  const methodLabel = "Безнал по договору";
 
   // Сброс полей при открытии нового модала
   React.useEffect(() => {
     if (open && agent) {
       setAmountStr("");
-      setMethod("cash");
       setComment("");
     }
   }, [open, agent?.id]);
@@ -70,7 +68,6 @@ export function PaymentModal({ agent, open, onOpenChange, onPaymentRecorded }: P
     if (!canSubmit || !agent) return;
     setSubmitting(true);
     try {
-      const methodLabel = METHODS.find(m => m.id === method)?.label ?? method;
       const description = comment.trim()
         ? `${methodLabel} · ${comment.trim()}`
         : `${methodLabel} · платёж`;
@@ -173,29 +170,18 @@ export function PaymentModal({ agent, open, onOpenChange, onPaymentRecorded }: P
             </div>
           </div>
 
-          {/* Method */}
+          {/* Method — Phase 33: контрагенты платят ТОЛЬКО по договору безналом, picker убран */}
           <div>
             <Label className="text-[12px] font-semibold mb-1.5 block">Способ</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {METHODS.map(m => {
-                const Icon = m.icon;
-                const isActive = method === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setMethod(m.id)}
-                    className={`rounded-lg border px-3 py-2 text-[12px] font-semibold flex items-center gap-1.5 justify-center transition-all ${
-                      isActive
-                        ? "bg-[#0088CC] text-white border-[#0088CC]"
-                        : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {m.label}
-                  </button>
-                );
-              })}
+            <div className="rounded-lg border-2 border-blue-200 bg-blue-50/50 px-3 py-2.5 flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-blue-700 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-bold text-blue-900">Безнал по договору</div>
+                <div className="text-[10px] text-blue-700 mt-0.5">
+                  Контрагенты платят через расчётный счёт — это единственный способ.
+                </div>
+              </div>
+              <FileText className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" title="Договор" />
             </div>
           </div>
 
