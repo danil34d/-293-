@@ -244,10 +244,11 @@ export function SalarySchemeForm({ initialData, schemeId }: SalarySchemeFormProp
   }, [toast]);
 
   // When "Universal" source is selected, pre-fill rates to ~50% of the retail price.
+  // Phase 41 / АРХ-#15: добавлен toast «Авто-rates установлены, проверьте перед сохранением».
   useEffect(() => {
     if (selectedRateSourceId === 'all-sources' && selectedRateSource?.services) {
       const priceMap = new Map<string, number>();
-      
+
       const retailSource = rateSourceOptions.find(s => s.id === 'retail');
       if (retailSource) {
           retailSource.services.forEach(service => {
@@ -256,7 +257,7 @@ export function SalarySchemeForm({ initialData, schemeId }: SalarySchemeFormProp
             }
           });
       }
-      
+
       const existingRates = form.getValues('rates') || {};
       const newRates: Record<string, { rate: string; deduction: string }> = Object.fromEntries(
         Object.entries(existingRates).map(([serviceName, value]) => [
@@ -267,22 +268,35 @@ export function SalarySchemeForm({ initialData, schemeId }: SalarySchemeFormProp
           },
         ])
       );
+      // Phase 41 / АРХ-#15: считаем сколько rates фактически было заполнено auto-50%.
+      let autoFilledCount = 0;
       selectedRateSource.services.forEach(service => {
         const price = priceMap.get(service.serviceName) || 0;
         const rate = price > 0 ? Math.floor(price / 2) : 0;
-        
+
         if (!newRates[service.serviceName]) {
              newRates[service.serviceName] = { rate: '', deduction: '' };
         }
 
         if (!newRates[service.serviceName].rate && rate > 0) {
             newRates[service.serviceName].rate = String(rate);
+            autoFilledCount++;
         }
       });
 
       form.setValue('rates', newRates, { shouldDirty: true });
+
+      // Phase 41 / АРХ-#15: toast предупреждение, чтобы админ не сохранил скрытые 50%.
+      if (autoFilledCount > 0) {
+        toast({
+          title: 'Авто-ставки установлены',
+          description: `Для ${autoFilledCount} услуг ставки автозаполнены = 50% от розничной цены. Проверьте значения перед «Сохранить» — это не всегда корректно.`,
+          variant: 'default',
+          duration: 6000,
+        });
+      }
     }
-  }, [selectedRateSourceId, selectedRateSource, rateSourceOptions, form]);
+  }, [selectedRateSourceId, selectedRateSource, rateSourceOptions, form, toast]);
 
   // Set form defaults when initialData is available.
   useEffect(() => {
