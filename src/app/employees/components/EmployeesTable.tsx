@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { PlusCircle, Edit, UserCog, Check, XIcon, Wallet, WalletCards, Trash2, Archive, RotateCcw, Lock, Search, Activity, Droplets } from "lucide-react";
+import { PlusCircle, Edit, UserCog, Check, XIcon, Wallet, WalletCards, Trash2, Archive, RotateCcw, Lock, Search, Activity, Droplets, ChevronDown, ChevronUp } from "lucide-react";
 import { ROLE_LABELS, type Employee, type EmployeeRole, type SalaryScheme } from "@/types";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SafetyBar, HazardPill } from "@/components/admin";
 import { EmployeeDeleteModal } from "./EmployeeDeleteModal";
+import { ExpandedEmployee } from "./ExpandedEmployee";
 
 export interface EmployeesTableProps {
   employees: Employee[];
@@ -67,6 +68,15 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
   const [filter, setFilter] = React.useState<"active" | "all" | "archived">("active");
   const [roleFilter, setRoleFilter] = React.useState<"all" | "employee" | "admin" | "kiosk">("all");
   const [search, setSearch] = React.useState("");
+  // Phase 39 / V2-#9: inline-expand
+  const [expandedId, setExpandedId] = React.useState<string | null>(null);
+
+  function toggleExpand(employeeId: string, event: React.MouseEvent<HTMLTableRowElement>) {
+    // Skip toggle if click was on link/button/action element
+    const target = event.target as HTMLElement;
+    if (target.closest('a, button, [role="button"]')) return;
+    setExpandedId((prev) => (prev === employeeId ? null : employeeId));
+  }
 
   const filtered = React.useMemo(() => {
     return employees.filter((e) => {
@@ -233,11 +243,16 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
                 const isOwner = e.id === "emp_manager_admin";
                 const isKiosk = e.role === "kiosk";
                 const noLogin = !e.username && !isProtected;
+                const isExpanded = expandedId === e.id;
                 return (
+                  <React.Fragment key={e.id}>
                   <tr
-                    key={e.id}
-                    className="hover:bg-slate-50/40 transition-colors"
-                    style={isArchived ? { opacity: 0.55 } : {}}
+                    onClick={(ev) => toggleExpand(e.id, ev)}
+                    className="hover:bg-slate-50/40 transition-colors cursor-pointer"
+                    style={{
+                      ...(isArchived ? { opacity: 0.55 } : {}),
+                      ...(isExpanded ? { background: 'rgba(59, 130, 246, 0.04)' } : {}),
+                    }}
                   >
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -342,6 +357,15 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="inline-flex items-center justify-end gap-1">
+                        {/* Phase 39: Chevron expand toggle (visual indicator) */}
+                        <button
+                          type="button"
+                          onClick={(ev) => { ev.stopPropagation(); setExpandedId((prev) => (prev === e.id ? null : e.id)); }}
+                          title={isExpanded ? 'Свернуть' : 'Раскрыть карточку'}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 transition-colors"
+                        >
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </button>
                         {!isProtected && !isArchived && (
                           <Link
                             href={`/employees/${e.id}/finance`}
@@ -391,6 +415,18 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
                       </div>
                     </td>
                   </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={8} className="p-0">
+                        <ExpandedEmployee
+                          employee={e}
+                          salaryScheme={salarySchemes.find((s) => s.id === e.salarySchemeId)}
+                          metrics={metrics[e.id]}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
               {filtered.length === 0 && (
