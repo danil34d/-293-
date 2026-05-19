@@ -74,6 +74,10 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
   const [autoFillCheck3, setAutoFillCheck3] = useState(false);
   const [autoFillMagic, setAutoFillMagic] = useState('');
 
+  // Phase 40 / V2-#18: preview-режим — какие дни ИСКЛЮЧИТЬ из автозаполнения
+  const [autoFillShowPreview, setAutoFillShowPreview] = useState(false);
+  const [autoFillExcludeDates, setAutoFillExcludeDates] = useState<Set<string>>(new Set());
+
   const [activatePlanModal, setActivatePlanModal] = useState<SchedulePlan | null>(null);
   const [activateCheck, setActivateCheck] = useState(false);
   const [activateSubmitting, setActivateSubmitting] = useState(false);
@@ -371,7 +375,12 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
       const response = await fetch(`/api/schedule-plans/${autoFillPlan.id}/auto-fill`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clearExisting: autoFillClearExisting, syncEmployeeConfigs: autoFillSyncEmployeeConfigs })
+        body: JSON.stringify({
+          clearExisting: autoFillClearExisting,
+          syncEmployeeConfigs: autoFillSyncEmployeeConfigs,
+          // Phase 40 / V2-#18: список yyyy-MM-dd, которые надо пропустить
+          excludeDates: Array.from(autoFillExcludeDates),
+        })
       });
 
       if (!response.ok) throw new Error('Failed to auto-fill shifts');
@@ -396,6 +405,9 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
       setAutoFillCheck2(false);
       setAutoFillCheck3(false);
       setAutoFillMagic('');
+      // Phase 40: reset preview state
+      setAutoFillShowPreview(false);
+      setAutoFillExcludeDates(new Set());
       router.refresh();
     } catch (error) {
       console.error('Error auto-filling shifts:', error);
@@ -741,6 +753,9 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
         if (!o) {
           setAutoFillCheck1(false); setAutoFillCheck2(false); setAutoFillCheck3(false);
           setAutoFillMagic('');
+          // Phase 40: reset preview state on close
+          setAutoFillShowPreview(false);
+          setAutoFillExcludeDates(new Set());
         }
       }}>
         <DialogContent className="max-w-2xl">
@@ -758,7 +773,7 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
           </DialogHeader>
 
           <div className="space-y-3 py-2">
-            {autoFillClearExisting && (
+            {autoFillClearExisting && !autoFillShowPreview && (
               <SafetyBar
                 level="critical"
                 items={[
@@ -769,6 +784,110 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
               />
             )}
 
+            {/* Phase 40 / V2-#18: Preview panel — галки по дням */}
+            {autoFillShowPreview && autoFillPlan && (() => {
+              const monthStart = new Date(autoFillPlan.month + '-01');
+              const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+              const daysInMonth: Date[] = [];
+              for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
+                daysInMonth.push(new Date(d));
+              }
+              const dailyReqMap = new Map<string, any>();
+              (autoFillPlan.dailyRequirements || []).forEach((r: any) => {
+                if (r?.date) dailyReqMap.set(r.date, r);
+              });
+              const includedCount = daysInMonth.filter(d => !autoFillExcludeDates.has(format(d, 'yyyy-MM-dd'))).length;
+              return (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-[13px] font-bold text-slate-900 flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-violet-600" />
+                        Превью {includedCount} из {daysInMonth.length} дней будет заполнено
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        Снимите галку с дня, который НЕ нужно автозаполнять
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setAutoFillExcludeDates(new Set())}
+                        className="text-[11px] font-semibold text-blue-700 hover:underline px-2 py-1"
+                      >
+                        Все
+                      </button>
+                      <span className="text-[10px] text-slate-300">·</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const all = new Set<string>();
+                          daysInMonth.forEach(d => all.add(format(d, 'yyyy-MM-dd')));
+                          setAutoFillExcludeDates(all);
+                        }}
+                        className="text-[11px] font-semibold text-rose-700 hover:underline px-2 py-1"
+                      >
+                        Никого
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1.5 max-h-[280px] overflow-y-auto">
+                    {daysInMonth.map(day => {
+                      const dateStr = format(day, 'yyyy-MM-dd');
+                      const isExcluded = autoFillExcludeDates.has(dateStr);
+                      const dailyReq = dailyReqMap.get(dateStr);
+                      const required = dailyReq
+                        ? (Number(dailyReq.box1DayRequired || 0) + Number(dailyReq.box1NightRequired || 0) +
+                           Number(dailyReq.box2DayRequired || 0) + Number(dailyReq.box2NightRequired || 0))
+                        : 0;
+                      const dow = day.getDay();
+                      const isWeekend = dow === 0 || dow === 6;
+                      return (
+                        <button
+                          key={dateStr}
+                          type="button"
+                          onClick={() => {
+                            const next = new Set(autoFillExcludeDates);
+                            if (next.has(dateStr)) next.delete(dateStr);
+                            else next.add(dateStr);
+                            setAutoFillExcludeDates(next);
+                          }}
+                          className="rounded-md p-1.5 text-left transition-colors"
+                          style={{
+                            background: isExcluded ? '#f1f5f9' : (isWeekend ? '#eff6ff' : '#fff'),
+                            border: `1px solid ${isExcluded ? '#cbd5e1' : (isWeekend ? '#bfdbfe' : '#e5e7eb')}`,
+                            opacity: isExcluded ? 0.45 : 1,
+                          }}
+                          title={isExcluded ? 'Пропущен' : `${required} слот${required === 1 ? '' : 'ов'}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className={`text-[10px] uppercase font-bold ${isWeekend ? 'text-blue-700' : 'text-slate-500'}`}>
+                              {format(day, 'EEEEEE', { locale: ru })}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {isExcluded ? '☐' : '☑'}
+                            </span>
+                          </div>
+                          <div className={`text-[14px] font-bold tabular-nums ${isExcluded ? 'text-slate-400' : 'text-slate-900'}`}>
+                            {format(day, 'd')}
+                          </div>
+                          <div className="text-[9px] text-slate-400 tabular-nums">
+                            {required > 0 ? `${required} слот.` : '—'}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 text-[11px] text-slate-600 rounded-md bg-white px-3 py-2 border border-slate-200">
+                    Будет создано смен примерно на {includedCount} дней.
+                    Дни с галкой будут обработаны AI-планировщиком, дни без — пропущены целиком.
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Опции (показываются только когда не в preview-режиме) */}
+            {!autoFillShowPreview && (
             <div className="text-sm text-gray-600">
               По умолчанию автозаполнение:
               <ul className="list-disc pl-5 mt-1 space-y-1">
@@ -777,7 +896,9 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                 <li>не удаляет лишние смены автоматически.</li>
               </ul>
             </div>
+            )}
 
+            {!autoFillShowPreview && (
             <div className={`rounded-md border p-3 ${autoFillClearExisting ? 'border-red-300 bg-red-50' : ''}`}>
               <div className="flex items-start gap-2">
                 <Checkbox
@@ -802,7 +923,9 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                 </div>
               </div>
             </div>
+            )}
 
+            {!autoFillShowPreview && (
             <div className="rounded-md border p-3">
               <div className="flex items-start gap-2">
                 <Checkbox
@@ -821,9 +944,10 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                 </div>
               </div>
             </div>
+            )}
 
             {/* UX-safety чек-лист (только для clearExisting) */}
-            {autoFillClearExisting && (
+            {!autoFillShowPreview && autoFillClearExisting && (
               <div className="space-y-2 pt-2 border-t border-red-200">
                 <CheckItem
                   checked={autoFillCheck1}
@@ -884,28 +1008,69 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
           </div>
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setAutoFillDialogOpen(false);
-                setAutoFillPlan(null);
-                setAutoFillClearExisting(false);
-              }}
-              disabled={autoFillSubmitting}
-            >
-              Отмена
-            </Button>
-            <Button
-              onClick={submitAutoFill}
-              disabled={
-                !autoFillPlan
-                || autoFillSubmitting
-                || (autoFillClearExisting && !(autoFillCheck1 && autoFillCheck2 && autoFillCheck3 && autoFillMagic.trim() === AUTOFILL_MAGIC))
-              }
-              className={autoFillClearExisting ? 'bg-red-600 hover:bg-red-700' : ''}
-            >
-              {autoFillSubmitting ? 'Заполняем...' : autoFillClearExisting ? 'Удалить и заполнить' : 'Заполнить'}
-            </Button>
+            {autoFillShowPreview ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setAutoFillShowPreview(false)}
+                  disabled={autoFillSubmitting}
+                >
+                  ← Назад к опциям
+                </Button>
+                <Button
+                  onClick={submitAutoFill}
+                  disabled={
+                    !autoFillPlan
+                    || autoFillSubmitting
+                    || (autoFillClearExisting && !(autoFillCheck1 && autoFillCheck2 && autoFillCheck3 && autoFillMagic.trim() === AUTOFILL_MAGIC))
+                  }
+                  className={autoFillClearExisting ? 'bg-red-600 hover:bg-red-700' : ''}
+                >
+                  {autoFillSubmitting
+                    ? 'Заполняем...'
+                    : `Применить (${autoFillPlan ? (() => {
+                        const ms = new Date(autoFillPlan.month + '-01');
+                        const me = new Date(ms.getFullYear(), ms.getMonth() + 1, 0);
+                        const total = Math.round((me.getTime() - ms.getTime()) / (24 * 3600 * 1000)) + 1;
+                        return total - autoFillExcludeDates.size;
+                      })() : '?'} дн)`}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setAutoFillDialogOpen(false);
+                    setAutoFillPlan(null);
+                    setAutoFillClearExisting(false);
+                  }}
+                  disabled={autoFillSubmitting}
+                >
+                  Отмена
+                </Button>
+                {/* Phase 40 / V2-#18: Preview button */}
+                <Button
+                  variant="outline"
+                  onClick={() => setAutoFillShowPreview(true)}
+                  disabled={!autoFillPlan || autoFillSubmitting}
+                >
+                  <Sparkles className="h-4 w-4 mr-1.5 text-violet-500" />
+                  Превью дней →
+                </Button>
+                <Button
+                  onClick={submitAutoFill}
+                  disabled={
+                    !autoFillPlan
+                    || autoFillSubmitting
+                    || (autoFillClearExisting && !(autoFillCheck1 && autoFillCheck2 && autoFillCheck3 && autoFillMagic.trim() === AUTOFILL_MAGIC))
+                  }
+                  className={autoFillClearExisting ? 'bg-red-600 hover:bg-red-700' : ''}
+                >
+                  {autoFillSubmitting ? 'Заполняем...' : autoFillClearExisting ? 'Удалить и заполнить' : 'Заполнить'}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

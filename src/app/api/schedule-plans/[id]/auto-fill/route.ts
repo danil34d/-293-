@@ -95,6 +95,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = await request.json().catch(() => ({} as any));
     const clearExisting = Boolean((body as any)?.clearExisting);
     const syncEmployeeConfigs = Boolean((body as any)?.syncEmployeeConfigs);
+    // Phase 40 / V2-#18: preview-режим (исключить дни галками)
+    // excludeDates — массив yyyy-MM-dd, которые ПРОПУСТИТЬ при автозаполнении.
+    // Полезно когда админ хочет автозаполнить часть месяца (например, не трогать
+    // праздничные дни или дни особого режима, которые уже выставлены вручную).
+    const excludeDatesArr = Array.isArray((body as any)?.excludeDates) ? (body as any).excludeDates : [];
+    const excludeDates = new Set<string>(
+      excludeDatesArr.filter((d: any) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
+    );
 
     // Load plan
     const plans = await getSchedulePlansData();
@@ -221,6 +229,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // For each day, assign employees
     for (const day of daysInMonth) {
       const dateStr = format(day, 'yyyy-MM-dd');
+
+      // Phase 40 / V2-#18: skip дни выбранные админом в preview через галки
+      if (excludeDates.has(dateStr)) continue;
 
       // Get daily requirement
       const dailyReq = plan.dailyRequirements.find(r => r.date === dateStr);
