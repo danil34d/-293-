@@ -8,6 +8,7 @@ import type { BackgroundAnalysis } from '@/types/ai-assistant';
 import ReactMarkdown from 'react-markdown';
 import { CheckCircle2, Download, KeyRound, Save, Trash2, X } from 'lucide-react';
 import PlanimumImportCard from './PlanimumImportCard';
+import { RateLimitBar, SecurityBanner, HeaderPill } from './AIChatV2Extras';
 
 export default function AIAssistantPageClient() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<BackgroundAnalysis | null>(null);
@@ -170,12 +171,22 @@ export default function AIAssistantPageClient() {
 
   return (
     <div className="ai-assistant-page">
-      <div className="page-header-section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Phase 37 / V2-#24: V2 header pill + rate-limit bar */}
+      <div className="page-header-section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
         <div>
-          <h1>AI Помощник</h1>
+          <HeaderPill />
+          <h1 style={{ marginTop: 4 }}>AI Помощник</h1>
           <p>Интеллектуальный анализ и прогнозирование для вашей автомойки</p>
         </div>
-        <BackgroundAnalysisPanel onAnalysisClick={handleAnalysisClick} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <RateLimitBar />
+          <BackgroundAnalysisPanel onAnalysisClick={handleAnalysisClick} />
+        </div>
+      </div>
+
+      {/* Phase 37 / V2-#24: Security banner */}
+      <div style={{ marginTop: 12 }}>
+        <SecurityBanner />
       </div>
 
       <div className="ai-keys-card">

@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Chat, Message } from '@/types/ai-assistant';
 import ExportChatButton from './ExportChatButton';
+import { SuggestedPrompts } from './AIChatV2Extras';
 
 export function AIAssistantClient() {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -154,6 +155,18 @@ export function AIAssistantClient() {
               )}
               <div ref={messagesEndRef} />
             </div>
+            {/* Phase 37 / V2-#24: Suggested prompts для пустого чата */}
+            <SuggestedPrompts
+              visible={!isLoading && messages.filter(m => m && m.role).length === 0}
+              onSelect={(prompt) => {
+                setInput(prompt);
+                // Лёгкий UX: фокус на input, чтобы пользователь видел что добавилось
+                window.setTimeout(() => {
+                  const el = document.querySelector<HTMLInputElement>('.chat-input-container input');
+                  el?.focus();
+                }, 0);
+              }}
+            />
             <div className="chat-input-container">
               <input
                 type="text"
