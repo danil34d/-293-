@@ -8,6 +8,7 @@ import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmation
 import { SafetyBar } from '@/components/admin';
 import { PaymentModal } from './PaymentModal';
 import { ExpandedCounterAgent } from './ExpandedCounterAgent';
+import { type AgentSignal, SIGNAL_COLORS } from '@/lib/counter-agent-signals';
 
 type BalanceFilter = 'all' | 'prepaid' | 'debt';
 
@@ -71,9 +72,11 @@ interface CounterAgentsSearchProps {
   allAgents: CounterAgent[];
   initialView: CounterAgentsView;
   fetchError: string | null;
+  /** Phase 42 / V2-#7: precomputed derived signals per agent. */
+  signalsByAgentId?: Record<string, AgentSignal[]>;
 }
 
-export default function CounterAgentsSearch({ allAgents, initialView, fetchError }: CounterAgentsSearchProps) {
+export default function CounterAgentsSearch({ allAgents, initialView, fetchError, signalsByAgentId = {} }: CounterAgentsSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentView, setCurrentView] = useState<CounterAgentsView>(initialView);
   const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>('all');
@@ -313,6 +316,37 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
                   }}>
                   <td className="agents-table-cell align-top">
                     <div className="agent-name">{highlightMatch(agent.name, searchQuery)}</div>
+                    {/* Phase 42 / V2-#7 deferred: derived signals — top 3 наиболее важных */}
+                    {(() => {
+                      const signals = signalsByAgentId[agent.id] || [];
+                      const topSignals = signals.slice(0, 3);
+                      if (topSignals.length === 0) return null;
+                      return (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {topSignals.map((s) => {
+                            const c = SIGNAL_COLORS[s.level];
+                            return (
+                              <span
+                                key={s.id}
+                                title={s.description}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border"
+                                style={{ background: c.bg, color: c.text, borderColor: c.border }}
+                              >
+                                {s.label}
+                              </span>
+                            );
+                          })}
+                          {signals.length > 3 && (
+                            <span
+                              title={`Ещё ${signals.length - 3} сигналов — раскройте карточку`}
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 bg-slate-100"
+                            >
+                              +{signals.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {agent.archived && (
                       <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
                         Архив
@@ -493,6 +527,7 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
                       <ExpandedCounterAgent
                         agent={agent}
                         onPay={() => setPaymentTarget(agent)}
+                        signals={signalsByAgentId[agent.id] || []}
                       />
                     </td>
                   </tr>

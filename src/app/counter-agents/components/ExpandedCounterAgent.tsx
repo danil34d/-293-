@@ -10,6 +10,7 @@ import {
   Building2, Phone, Mail, MapPin, Cog,
 } from "lucide-react";
 import type { CounterAgent, ClientTransaction } from "@/types";
+import { type AgentSignal, SIGNAL_COLORS } from "@/lib/counter-agent-signals";
 
 /**
  * Phase 34 / V2 «counter-agents inline-expand»:
@@ -24,6 +25,8 @@ import type { CounterAgent, ClientTransaction } from "@/types";
 interface Props {
   agent: CounterAgent;
   onPay: () => void;
+  /** Phase 42 / V2-#7: derived signals computed server-side. */
+  signals?: AgentSignal[];
 }
 
 function formatMoney(n: number): string {
@@ -47,7 +50,7 @@ function MiniStat({ label, value, Icon, color }: {
   );
 }
 
-export function ExpandedCounterAgent({ agent, onPay }: Props) {
+export function ExpandedCounterAgent({ agent, onPay, signals = [] }: Props) {
   const [transactions, setTransactions] = React.useState<ClientTransaction[] | null>(null);
   const [loadingTx, setLoadingTx] = React.useState(false);
   const [txError, setTxError] = React.useState<string | null>(null);
@@ -292,6 +295,43 @@ export function ExpandedCounterAgent({ agent, onPay }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Phase 42 / V2-#7 deferred: full signals panel */}
+      {signals.length > 0 && (
+        <div className="lg:col-span-12 bg-white rounded-lg border border-gray-200 p-3">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-2 flex items-center gap-1.5">
+            <AlertTriangle className="w-3 h-3 text-amber-600" />
+            Сигналы по контрагенту ({signals.length})
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {signals.map((s) => {
+              const c = SIGNAL_COLORS[s.level];
+              return (
+                <div
+                  key={s.id}
+                  className="rounded-md border px-3 py-2 flex items-start gap-2"
+                  style={{ background: c.bg, borderColor: c.border }}
+                >
+                  <span
+                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider flex-shrink-0 mt-0.5"
+                    style={{ color: c.text, background: "rgba(255,255,255,0.6)" }}
+                  >
+                    {s.level === "critical" ? "критично" : s.level === "warn" ? "внимание" : "инфо"}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-bold" style={{ color: c.text }}>
+                      {s.label}
+                    </div>
+                    <div className="text-[11px] mt-0.5" style={{ color: c.text, opacity: 0.85 }}>
+                      {s.description}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
