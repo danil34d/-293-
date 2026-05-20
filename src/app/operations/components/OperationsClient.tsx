@@ -442,6 +442,10 @@ export function OperationsClient({
 }: OperationsClientProps) {
   const router = useRouter();
   const [pendingVehicles, setPendingVehicles] = useState(initialPendingVehicles);
+  // Phase 45: live clock + last-refresh marker
+  const [now, setNow] = useState<number>(() => Date.now());
+  const [lastFullRefreshAt, setLastFullRefreshAt] = useState<number>(() => Date.now());
+
   const handlePendingDismissed = (dirName: string) => {
     setPendingVehicles((current) => current.filter((vehicle) => vehicle.dirName !== dirName));
   };
@@ -475,6 +479,31 @@ export function OperationsClient({
       window.clearInterval(intervalId);
     };
   }, []);
+
+  // Phase 45: tick clock каждую секунду (для отображения времени)
+  useEffect(() => {
+    const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  // Phase 45: full server-side refresh каждые 60s через router.refresh()
+  // → переподтянет shifts/employees/events/pending заново server-side
+  useEffect(() => {
+    const refresh = window.setInterval(() => {
+      router.refresh();
+      setLastFullRefreshAt(Date.now());
+    }, 60000);
+    return () => window.clearInterval(refresh);
+  }, [router]);
+
+  // Phase 45: relative "обновлено N сек назад" string
+  const refreshAgoSec = Math.max(0, Math.floor((now - lastFullRefreshAt) / 1000));
+  const refreshAgoLabel = refreshAgoSec < 5
+    ? 'только что'
+    : refreshAgoSec < 60
+    ? `${refreshAgoSec}с назад`
+    : `${Math.floor(refreshAgoSec / 60)}м назад`;
+  const nowLabel = new Date(now).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   // ─── computed ───
   const box1Events = todayEvents.filter((e) => e.boxNumber === 1);
@@ -550,6 +579,14 @@ export function OperationsClient({
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Phase 45: live clock + refresh indicator */}
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <div className="leading-tight">
+              <div className="font-bold tabular-nums text-emerald-800">{nowLabel}</div>
+              <div className="text-[9px] text-emerald-700">обновлено {refreshAgoLabel}</div>
+            </div>
+          </div>
           <Link
             href="/wash-log"
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 inline-flex items-center"
@@ -580,12 +617,29 @@ export function OperationsClient({
         </div>
       </div>
 
-      {/* Pending cars alert strip */}
+      {/* Pending cars alert strip — Phase 45: rose-tinted + pulse если есть overdue */}
       {pendingVehicles.length > 0 && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+        <div
+          className={
+            'rounded-xl border p-3 transition-colors ' +
+            (overduePending.length > 0
+              ? 'bg-rose-50 border-rose-300'
+              : 'bg-amber-50 border-amber-200')
+          }
+        >
           <div className="flex items-center gap-2 mb-2">
-            <Camera className="w-4 h-4 text-amber-700" />
-            <span className="text-[12px] uppercase tracking-wider font-bold text-amber-800">
+            <Camera
+              className={
+                'w-4 h-4 ' +
+                (overduePending.length > 0 ? 'text-rose-700 animate-pulse' : 'text-amber-700')
+              }
+            />
+            <span
+              className={
+                'text-[12px] uppercase tracking-wider font-bold ' +
+                (overduePending.length > 0 ? 'text-rose-800' : 'text-amber-800')
+              }
+            >
               Камеры зафиксировали · {pendingVehicles.length} машин ждут оформления
               {overduePending.length > 0 && (
                 <span className="ml-2 text-rose-700">
