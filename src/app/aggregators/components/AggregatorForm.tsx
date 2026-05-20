@@ -131,7 +131,9 @@ export function AggregatorForm({ initialData, aggregatorId }: AggregatorFormProp
   });
 
   async function onSubmit(data: AggregatorFormValues) {
-    const currentAggregatorId = aggregatorId || `agg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // Phase 48 / АРХ-#12: UUID v4 для новых агрегаторов (защита от коллизий).
+    // Префикс "agg_" сохранён для UI-распознавания. crypto.randomUUID() — browser API.
+    const currentAggregatorId = aggregatorId || `agg_${crypto.randomUUID()}`;
 
     const parsedCars = (data.cars || '')
         .split('\n')

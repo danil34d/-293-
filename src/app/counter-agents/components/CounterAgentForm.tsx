@@ -383,7 +383,10 @@ export function CounterAgentForm({
   }
 
   async function onSubmit(data: Values) {
-    const currentAgentId = agentId || `agent_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // Phase 48 / АРХ-#12: UUID v4 для новых агентов (теоретическая защита от коллизий
+    // двух параллельных POST в 1ms). Префикс "agent_" сохранён для UI-фильтрации.
+    // crypto.randomUUID() — browser API, поддержка с Chrome 92 / FF 95 / Safari 15.4.
+    const currentAgentId = agentId || `agent_${crypto.randomUUID()}`;
     const {
       parsedCars,
       mergedCars,
