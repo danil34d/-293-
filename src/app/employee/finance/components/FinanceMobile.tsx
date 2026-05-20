@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Wallet, Sun, CalendarDays, BarChart3, Receipt, PlusCircle, MinusCircle,
   Gift, CircleOff, ShoppingCart, HandCoins, History, CarFront, ChevronRight,
-  PiggyBank, TrendingUp, Info, Image, MessageCircle,
+  PiggyBank, TrendingUp, Info, Image, MessageCircle, Loader2,
 } from 'lucide-react';
 import type { Employee, EmployeeTransaction, WashEvent, SalaryScheme, EmployeeTransactionType } from '@/types';
 import { MobileSheet } from '@/components/employee/sheets/MobileSheet';
@@ -64,12 +64,43 @@ export function FinanceMobile({
   const [sheetAllTxns, setSheetAllTxns] = useState(false);
   const [sheetWashes, setSheetWashes] = useState(false);
 
+  // Phase 47 / ТЕХ-#8: client-side period switcher для sparkline
+  type SparkPeriod = 11 | 7 | 14 | 30;
+  const [sparkPeriod, setSparkPeriod] = useState<SparkPeriod>(11);
+  const [currentSparkline, setCurrentSparkline] = useState(sparkline);
+  const [currentBestDay, setCurrentBestDay] = useState(bestDay);
+  const [sparkLoading, setSparkLoading] = useState(false);
+
+  // Fetch new sparkline when period changes (skip initial render — server-side gave us days=11)
+  useEffect(() => {
+    if (sparkPeriod === 11) {
+      // Сервер уже дал 11 дней — используем как есть
+      setCurrentSparkline(sparkline);
+      setCurrentBestDay(bestDay);
+      return;
+    }
+    let cancelled = false;
+    setSparkLoading(true);
+    fetch(`/api/employee/sparkline?days=${sparkPeriod}`, { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data.sparkline)) setCurrentSparkline(data.sparkline);
+        setCurrentBestDay(data.bestDay ?? undefined);
+      })
+      .catch((e) => console.error('[FinanceMobile] sparkline fetch failed:', e))
+      .finally(() => {
+        if (!cancelled) setSparkLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [sparkPeriod, sparkline, bestDay]);
+
   const heroIsPositive = balance >= 0;
   const heroGradient = heroIsPositive
     ? 'from-emerald-500 via-emerald-600 to-teal-700 shadow-emerald-500/30'
     : 'from-rose-500 via-rose-600 to-red-700 shadow-rose-500/30';
 
-  const sparkMax = Math.max(1, ...sparkline.map(d => d.amount));
+  const sparkMax = Math.max(1, ...currentSparkline.map(d => d.amount));
   const todayDateStr = now.toISOString().slice(0, 10);
 
   return (
@@ -141,29 +172,51 @@ export function FinanceMobile({
         </button>
       </div>
 
-      {/* Sparkline */}
-      {sparkline.length > 0 && (
+      {/* Sparkline — Phase 47 / ТЕХ-#8: client-side period switcher (11/7/14/30 дней) */}
+      {currentSparkline.length > 0 && (
         <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-teal-100">
                 <BarChart3 className="h-4 w-4 text-emerald-600" />
               </div>
               <span className="text-sm font-semibold text-gray-900">Заработок по дням</span>
+              {sparkLoading && <Loader2 className="h-3.5 w-3.5 text-slate-400 animate-spin" />}
             </div>
-            {bestDay && (
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                Лучший: {ruDate(bestDay.date)}
-              </span>
-            )}
+            <div className="flex items-center gap-1">
+              {/* Period switcher 7/11/14/30 */}
+              <div className="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
+                {([7, 11, 14, 30] as SparkPeriod[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setSparkPeriod(p)}
+                    disabled={sparkLoading}
+                    className="rounded px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50"
+                    style={{
+                      background: sparkPeriod === p ? '#fff' : 'transparent',
+                      color: sparkPeriod === p ? '#0088CC' : '#64748b',
+                      boxShadow: sparkPeriod === p ? '0 1px 2px rgba(0,0,0,0.04)' : 'none',
+                    }}
+                  >
+                    {p}д
+                  </button>
+                ))}
+              </div>
+              {currentBestDay && (
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                  Лучший: {ruDate(currentBestDay.date)}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex h-20 items-end justify-between gap-1">
-            {sparkline.map((d) => {
+            {currentSparkline.map((d) => {
               const isToday = d.date === todayDateStr;
               const heightPct = Math.round((d.amount / sparkMax) * 100);
               const opacity = d.amount === 0 ? 0.3 : 1;
               return (
-                <div key={d.date} className="flex flex-1 flex-col items-center gap-1 cursor-default" title={`${ruDate(d.date)}: ${fmt(d.amount)} ₽`}>
+                <div key={d.date} className="flex flex-1 flex-col items-center gap-1 cursor-default min-w-0" title={`${ruDate(d.date)}: ${fmt(d.amount)} ₽`}>
                   <div
                     className={isToday ? 'w-full rounded-md ring-2 ring-blue-400' : 'w-full rounded-md'}
                     style={{
@@ -172,9 +225,12 @@ export function FinanceMobile({
                       opacity,
                     }}
                   />
-                  <span className={`text-[9px] ${isToday ? 'font-bold text-blue-600' : 'text-gray-400'}`}>
-                    {new Date(d.date).getDate().toString().padStart(2, '0')}
-                  </span>
+                  {/* Phase 47: для 30д показываем число только каждые ~5 баров чтобы не было каши */}
+                  {(currentSparkline.length <= 14 || new Date(d.date).getDate() % 5 === 0) && (
+                    <span className={`text-[9px] ${isToday ? 'font-bold text-blue-600' : 'text-gray-400'}`}>
+                      {new Date(d.date).getDate().toString().padStart(2, '0')}
+                    </span>
+                  )}
                 </div>
               );
             })}
