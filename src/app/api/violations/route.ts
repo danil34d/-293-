@@ -1,10 +1,43 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
-import type { Violation, ViolationType } from '@/types';
-import { getViolationsData } from '@/lib/data';
-import { saveEntity } from '@/lib/data/write-helpers';
+import type { Violation, ViolationType, EmployeeTransaction } from '@/types';
+import { getViolationsData, getEmployeeTransactions } from '@/lib/data';
+import { saveEntity, saveEmployeeTransactions } from '@/lib/data/write-helpers';
 import { requireAuth, requireAdmin } from '@/lib/server-auth';
+
+// Phase 44 / ТЕХ-#7: deterministic id для связанной EmployeeTransaction (loan).
+// Позволяет POST/PATCH/DELETE синхронно править одну транзакцию без новой колонки в Violation.
+function violationLoanTxId(violationId: string): string {
+  return `loan_v_${violationId}`;
+}
+
+async function syncViolationPenaltyTransaction(
+  violation: Violation,
+  adminId: string,
+): Promise<void> {
+  const txId = violationLoanTxId(violation.id);
+  const existingTxs = await getEmployeeTransactions(violation.employeeId);
+  const otherTxs = existingTxs.filter((t: EmployeeTransaction) => t.id !== txId);
+  const shouldHaveTx = typeof violation.penaltyAmount === 'number' && violation.penaltyAmount > 0;
+
+  if (shouldHaveTx) {
+    const loanTx: EmployeeTransaction = {
+      id: txId,
+      employeeId: violation.employeeId,
+      date: violation.date + 'T12:00:00.000Z',
+      type: 'loan',
+      amount: violation.penaltyAmount!,
+      description: `Штраф (${violation.type})${violation.description ? ': ' + violation.description : ''}`,
+    };
+    await saveEmployeeTransactions(violation.employeeId, [...otherTxs, loanTx]);
+    console.log(`[violations] auto-${otherTxs.length === existingTxs.length ? 'create' : 'update'} loan tx ${txId} for employee ${violation.employeeId} by admin ${adminId}`);
+  } else if (otherTxs.length !== existingTxs.length) {
+    // Было penalty (есть tx), сейчас 0 / отсутствует → delete tx
+    await saveEmployeeTransactions(violation.employeeId, otherTxs);
+    console.log(`[violations] auto-delete loan tx ${txId} for employee ${violation.employeeId} by admin ${adminId}`);
+  }
+}
 
 const VALID_TYPES: ViolationType[] = [
   'lateness', 'early_leave', 'no_show', 'equipment_damage',
@@ -76,6 +109,15 @@ export async function POST(request: Request) {
 
     await saveEntity('violation', violation);
 
+    // Phase 44 / ТЕХ-#7: если есть penaltyAmount > 0 — автоматически создаём loan
+    // EmployeeTransaction. Раньше админ должен был помнить вручную → риск рассинхрона.
+    try {
+      await syncViolationPenaltyTransaction(violation, auth.id);
+    } catch (txErr) {
+      // Не блокируем создание violation если transaction sync упал. Logging-only.
+      console.error('[violations POST] penalty tx sync failed:', txErr);
+    }
+
     return NextResponse.json({ violation }, { status: 201 });
   } catch (error) {
     console.error('Error creating violation:', error);
@@ -109,6 +151,17 @@ export async function PATCH(request: Request) {
     };
 
     await saveEntity('violation', updated);
+
+    // Phase 44 / ТЕХ-#7: если penaltyAmount изменился (или resolved=true) — пере-синхронизируем
+    // связанную loan-транзакцию. resolved=true НЕ удаляет penalty: админ может пометить
+    // нарушение «обсуждено», но штраф остаётся. Удаление штрафа = явно penaltyAmount=0.
+    if (existing.penaltyAmount !== updated.penaltyAmount) {
+      try {
+        await syncViolationPenaltyTransaction(updated, auth.id);
+      } catch (txErr) {
+        console.error('[violations PATCH] penalty tx sync failed:', txErr);
+      }
+    }
 
     return NextResponse.json({ violation: updated });
   } catch (error) {
