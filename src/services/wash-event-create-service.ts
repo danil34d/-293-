@@ -1,16 +1,57 @@
-import type { Inventory, StockMovement, WashComment, WashEvent } from '@/types';
+import type { Inventory, StockMovement, WashComment, WashEvent, SalaryScheme, SalaryRate } from '@/types';
 import {
   getInventory,
   invalidateInventoryCache,
   invalidateStockMovementsCache,
   invalidateWashEventsCache,
   getEmployeesData,
+  getSalarySchemesData,
+  createDriverKickback,
   isSalaryPeriodClosed,
   findShiftForTimestamp,
 } from '@/lib/data';
 import { createWashEventAtomic, readEntity } from '@/lib/data/write-helpers';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
 import { isKiosk } from '@/lib/employee-role';
+
+/**
+ * Phase 50 / V2-#4 split-pricing: найти split-услуги в WashEvent.
+ *
+ * Услуга split если в SalaryScheme.rates[] есть запись с этим serviceName
+ * и splitDriverBonus > 0. SalaryScheme берётся у первого сотрудника
+ * (employeeIds[0]) — Q4 решение: «один rate для всех», не per-employee override.
+ *
+ * Возвращает массив { service, splitDriverBonus } для каждой split-услуги
+ * (main + additional). Пустой массив = нет split.
+ */
+function detectSplitServices(
+  washEvent: WashEvent,
+  scheme: SalaryScheme | undefined,
+): Array<{ serviceName: string; splitDriverBonus: number }> {
+  if (!scheme?.rates || scheme.rates.length === 0) return [];
+  const rates: SalaryRate[] = scheme.rates;
+
+  const allServices: Array<{ serviceName: string }> = [];
+  if (washEvent.services?.main?.serviceName) {
+    allServices.push({ serviceName: washEvent.services.main.serviceName });
+  }
+  if (Array.isArray(washEvent.services?.additional)) {
+    for (const s of washEvent.services.additional) {
+      if (s.serviceName) allServices.push({ serviceName: s.serviceName });
+    }
+  }
+
+  const result: Array<{ serviceName: string; splitDriverBonus: number }> = [];
+  for (const svc of allServices) {
+    const rate = rates.find(
+      (r) => r.serviceName === svc.serviceName && typeof r.splitDriverBonus === 'number' && r.splitDriverBonus > 0
+    );
+    if (rate) {
+      result.push({ serviceName: svc.serviceName, splitDriverBonus: rate.splitDriverBonus! });
+    }
+  }
+  return result;
+}
 
 function calculateTotalChemicalConsumption(washEvent: WashEvent, inventory: Inventory): number {
   if (!isCompletedWashEvent(washEvent)) {
@@ -225,6 +266,36 @@ export async function createWashEvent(washEvent: WashEvent): Promise<WashEvent> 
     ? { sourceId: washEvent.sourceId, amount: -washEvent.totalAmount }
     : null;
 
+  // Phase 50 / V2-#4 split-pricing: detect split-услуги ПЕРЕД atomic write.
+  // Если найдены — валидируем что есть driverKickback метаданные.
+  // SalaryScheme берётся у первого сотрудника (Q4: один rate для всех).
+  let splitServices: Array<{ serviceName: string; splitDriverBonus: number }> = [];
+  if (washEvent.paymentMethod === 'counterAgentContract' && washEvent.sourceId && washEvent.employeeIds?.length > 0) {
+    try {
+      const [allEmployees, allSchemes] = await Promise.all([getEmployeesData(), getSalarySchemesData()]);
+      const firstEmp = allEmployees.find((e) => e.id === washEvent.employeeIds[0]);
+      const scheme = firstEmp?.salarySchemeId
+        ? allSchemes.find((s) => s.id === firstEmp.salarySchemeId)
+        : undefined;
+      splitServices = detectSplitServices(washEvent, scheme);
+    } catch (err) {
+      console.warn('[wash-event] split detect failed:', err);
+    }
+  }
+
+  // Если есть split-услуги — driverKickback obligatory.
+  if (splitServices.length > 0) {
+    const meta = washEvent.driverKickback;
+    if (!meta?.driverName?.trim()) {
+      throw new Error(
+        `Услуга «${splitServices[0].serviceName}» — split-цена. Требуется ФИО водителя в driverKickback.driverName.`
+      );
+    }
+    if (!washEvent.sourceId) {
+      throw new Error('Split-услуга требует counterAgent (sourceId)');
+    }
+  }
+
   // Atomic write: wash event + stock movement + inventory + client balance
   // For PG: single transaction (all-or-nothing)
   // For JSON: sequential writes (backward compatible)
@@ -234,6 +305,34 @@ export async function createWashEvent(washEvent: WashEvent): Promise<WashEvent> 
     inventory: updatedInventory,
     clientBalanceChange,
   });
+
+  // Phase 50 / V2-#4 split-pricing: создать DriverKickback per split service.
+  // Best-effort после atomic — если упадёт, WashEvent остаётся валидным,
+  // менеджер увидит ошибку в логах. На прод-DATA_SOURCE=postgres работает,
+  // на JSON-fallback — no-op (требует PG).
+  if (splitServices.length > 0 && washEvent.driverKickback && washEvent.sourceId) {
+    const meta = washEvent.driverKickback;
+    for (const svc of splitServices) {
+      try {
+        await createDriverKickback({
+          washEventId: washEvent.id,
+          counterAgentId: washEvent.sourceId,
+          driverName: meta.driverName,
+          driverPhone: meta.driverPhone,
+          plate: meta.plate || washEvent.vehicleNumber,
+          amount: svc.splitDriverBonus,
+        });
+        console.log(
+          `[wash-event] DriverKickback создан: ${meta.driverName} (${svc.splitDriverBonus}₽) за «${svc.serviceName}», washEvent=${washEvent.id}`
+        );
+      } catch (err) {
+        console.error(
+          `[wash-event] DriverKickback СОЗДАНИЕ УПАЛО для wash=${washEvent.id} service=${svc.serviceName}:`,
+          err
+        );
+      }
+    }
+  }
 
   // Invalidate caches (no-op for PG, real for JSON)
   invalidateWashEventsCache();

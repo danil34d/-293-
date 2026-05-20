@@ -79,6 +79,36 @@ export interface CounterAgent {
   priceList?: PriceListItem[];
   additionalPriceList?: PriceListItem[];
   allowCustomServices?: boolean;
+  /** Phase 50 / V2-#4: список водителей для split-услуг (мойка скотовоза). */
+  drivers?: CounterAgentDriver[];
+}
+
+export interface CounterAgentDriver {
+  name: string;
+  phone?: string;
+  /** Госномера, закреплённые за водителем (для auto-match при оформлении). */
+  plates?: string[];
+}
+
+/**
+ * Phase 50 / V2-#4 split-pricing: бонус водителю за split-услугу.
+ * Workflow: pending → ready (после оплаты счёта) → paid (выплата + Expense).
+ */
+export type DriverKickbackStatus = 'pending' | 'ready' | 'paid';
+
+export interface DriverKickback {
+  id: string;
+  washEventId: string;
+  counterAgentId: string;
+  driverName: string;
+  driverPhone?: string;
+  plate?: string;
+  amount: number;
+  status: DriverKickbackStatus;
+  createdAt: string; // ISO
+  readyAt?: string;
+  paidAt?: string;
+  paidBy?: string; // employeeId менеджера
 }
 
 export interface NamedPriceList {
@@ -193,6 +223,13 @@ export interface SalaryRate {
   serviceName: string;
   rate: number;
   deduction?: number;
+  /**
+   * Phase 50 / V2-#4 split-pricing: фиксированный бонус водителю в ₽.
+   * Если определён — услуга split: процент схемы игнорируется, rate = фикс мойщику,
+   * splitDriverBonus = фикс водителю (через DriverKickback workflow).
+   * Пример: Мойка скотовоза 9000₽ → rate=3500, splitDriverBonus=2000, остаток 3500 мойке.
+   */
+  splitDriverBonus?: number;
 }
 
 export interface RateSource {
@@ -341,6 +378,17 @@ export interface WashEvent {
   /** Phase 10 / finding #40: кто фактически нажал «Сохранить» (cookie identity).
    *  Может отличаться от employeeIds — UI подсвечивает «оформил не свой». */
   createdByEmployeeId?: string;
+  /**
+   * Phase 50 / V2-#4 split-pricing: метаданные водителя для создания DriverKickback.
+   * Передаются терминалом при оформлении split-услуги (Мойка скотовоза).
+   * Не хранятся в WashEvent (отдельная таблица DriverKickback).
+   * Сервер валидирует: если в SalaryScheme.rates есть splitDriverBonus — поле обязательно.
+   */
+  driverKickback?: {
+    driverName: string;
+    driverPhone?: string;
+    plate?: string;
+  };
 }
 
 // ─── Phase 22 / Invoice ─────────────────────────────────────────

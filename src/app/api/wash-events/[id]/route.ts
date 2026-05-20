@@ -5,6 +5,7 @@ import type { WashEvent, Inventory } from '@/types';
 import {
   getInventory,
   getWashEventById,
+  getWashEventKickbackBlockers,
   invalidateInventoryCache,
   invalidateWashEventsCache,
   isSalaryPeriodClosed,
@@ -233,6 +234,37 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     // UX-safety: если период закрыт — отказ 423.
     const locked = await checkWashEventPeriodLocked(washEvent);
     if (locked) return locked;
+
+    // Phase 50f / V2-#4: проверка DriverKickback блокеров перед DELETE.
+    //   paid   → 423 Locked: деньги уже отданы, бухгалтерия не сойдётся
+    //   ready  → 409 Conflict: бонус готов к выплате, требуется ручная отмена
+    //   pending → cascade OK (Prisma onDelete:Cascade)
+    try {
+      const blockers = await getWashEventKickbackBlockers(id);
+      if (blockers.paid > 0) {
+        return NextResponse.json(
+          {
+            error: `Нельзя удалить мойку: уже выплачено ${blockers.paid} бонусов водителю по split-цене.`,
+            blockers,
+            hint: 'Выплаченные DriverKickback нельзя откатить — деньги отданы. Если ошибочно создали — обратитесь к бухгалтеру для ручного оформления возврата.',
+          },
+          { status: 423 }
+        );
+      }
+      if (blockers.ready > 0) {
+        return NextResponse.json(
+          {
+            error: `Нельзя удалить мойку: ${blockers.ready} бонусов водителю в статусе "ready" (готовы к выплате).`,
+            blockers,
+            hint: 'Сначала откатите эти DriverKickback в "pending" вручную через UI контрагента, потом удалите мойку.',
+          },
+          { status: 409 }
+        );
+      }
+      // pending kickbacks — cascade OK (onDelete:Cascade в Prisma)
+    } catch (err) {
+      console.warn(`[wash-events DELETE ${id}] kickback check failed (proceeding):`, err);
+    }
 
     if (washEvent) {
       consumedChemicals = getRecordedConsumption(washEvent);

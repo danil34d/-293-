@@ -119,6 +119,47 @@ export const getEmployeeChangeLog: (
 ) => Promise<import('@/types').EmployeeChangeLogEntry[]> =
   adapter.getEmployeeChangeLog ?? (async () => []);
 
+// Phase 50 / V2-#4: split-pricing DriverKickback
+
+export const getDriverKickbacks: (filters?: {
+  counterAgentId?: string;
+  status?: import('@/types').DriverKickbackStatus;
+  washEventId?: string;
+}) => Promise<import('@/types').DriverKickback[]> =
+  adapter.getDriverKickbacks ?? (async () => []);
+
+export const getDriverKickbackById: (id: string) => Promise<import('@/types').DriverKickback | null> =
+  adapter.getDriverKickbackById ?? (async () => null);
+
+export const getDriverKickbacksByWashEvent: (washEventId: string) => Promise<import('@/types').DriverKickback[]> =
+  adapter.getDriverKickbacksByWashEvent ?? (async () => []);
+
+export const createDriverKickback: (data: {
+  washEventId: string;
+  counterAgentId: string;
+  driverName: string;
+  driverPhone?: string;
+  plate?: string;
+  amount: number;
+}) => Promise<import('@/types').DriverKickback> =
+  adapter.createDriverKickback ?? (async () => { throw new Error('createDriverKickback requires DATA_SOURCE=postgres'); });
+
+export const markDriverKickbacksReady: (ids: string[]) => Promise<number> =
+  adapter.markDriverKickbacksReady ?? (async () => 0);
+
+export const payDriverKickback: (
+  id: string,
+  paidByEmployeeId: string,
+) => Promise<{ kickback: import('@/types').DriverKickback; expenseId: string }> =
+  adapter.payDriverKickback ?? (async () => { throw new Error('payDriverKickback requires DATA_SOURCE=postgres'); });
+
+export const getWashEventKickbackBlockers: (washEventId: string) => Promise<{
+  paid: number;
+  ready: number;
+  pending: number;
+}> =
+  adapter.getWashEventKickbackBlockers ?? (async () => ({ paid: 0, ready: 0, pending: 0 }));
+
 // Phase 6.2: employee archive / impact pre-check
 export const archiveEmployee: (id: string) => Promise<void> =
   adapter.archiveEmployee ?? (async () => { throw new Error('archiveEmployee requires DATA_SOURCE=postgres'); });

@@ -2920,3 +2920,155 @@ export async function getCounterAgentImpact(id: string): Promise<{
   ]);
   return { washEvents, clientTransactions, schemesUsingAsRateSource: schemes };
 }
+
+// ────────────────────────────────────────────────────────────────────
+// Phase 50 (V2-#4 split-pricing): DriverKickback
+// ────────────────────────────────────────────────────────────────────
+
+function driverKickbackFromPrisma(row: any): import('@/types').DriverKickback {
+  return {
+    id: row.id,
+    washEventId: row.washEventId,
+    counterAgentId: row.counterAgentId,
+    driverName: row.driverName,
+    driverPhone: row.driverPhone ?? '',
+    plate: row.plate ?? '',
+    amount: row.amount,
+    status: row.status as import('@/types').DriverKickbackStatus,
+    createdAt: row.createdAt.toISOString(),
+    readyAt: row.readyAt ? row.readyAt.toISOString() : undefined,
+    paidAt: row.paidAt ? row.paidAt.toISOString() : undefined,
+    paidBy: row.paidBy ?? undefined,
+  };
+}
+
+export async function getDriverKickbacks(filters?: {
+  counterAgentId?: string;
+  status?: import('@/types').DriverKickbackStatus;
+  washEventId?: string;
+}): Promise<import('@/types').DriverKickback[]> {
+  const where: any = {};
+  if (filters?.counterAgentId) where.counterAgentId = filters.counterAgentId;
+  if (filters?.status) where.status = filters.status;
+  if (filters?.washEventId) where.washEventId = filters.washEventId;
+  const rows = await prisma.driverKickback.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }],
+  });
+  return rows.map(driverKickbackFromPrisma);
+}
+
+export async function getDriverKickbackById(id: string): Promise<import('@/types').DriverKickback | null> {
+  const row = await prisma.driverKickback.findUnique({ where: { id } });
+  return row ? driverKickbackFromPrisma(row) : null;
+}
+
+export async function getDriverKickbacksByWashEvent(washEventId: string): Promise<import('@/types').DriverKickback[]> {
+  const rows = await prisma.driverKickback.findMany({
+    where: { washEventId },
+    orderBy: [{ createdAt: 'asc' }],
+  });
+  return rows.map(driverKickbackFromPrisma);
+}
+
+/**
+ * Phase 50d: создать DriverKickback при оформлении WashEvent со split-услугой.
+ * Используется ВНУТРИ $transaction вместе с созданием WashEvent.
+ */
+export async function createDriverKickback(data: {
+  washEventId: string;
+  counterAgentId: string;
+  driverName: string;
+  driverPhone?: string;
+  plate?: string;
+  amount: number;
+}): Promise<import('@/types').DriverKickback> {
+  const created = await prisma.driverKickback.create({
+    data: {
+      washEventId: data.washEventId,
+      counterAgentId: data.counterAgentId,
+      driverName: data.driverName.trim(),
+      driverPhone: (data.driverPhone ?? '').trim(),
+      plate: (data.plate ?? '').trim(),
+      amount: data.amount,
+      status: 'pending',
+    },
+  });
+  return driverKickbackFromPrisma(created);
+}
+
+/**
+ * Phase 50c: bulk pending → ready (Q2 рекомендация: manual select через UI).
+ * Менеджер отмечает галками после получения оплаты от контрагента.
+ */
+export async function markDriverKickbacksReady(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const now = new Date();
+  const result = await prisma.driverKickback.updateMany({
+    where: { id: { in: ids }, status: 'pending' },
+    data: { status: 'ready', readyAt: now },
+  });
+  return result.count;
+}
+
+/**
+ * Phase 50c: ready → paid в одной транзакции.
+ *  1. DriverKickback.status='paid', paidAt, paidBy
+ *  2. Expense(category='driver-kickback', amount, description, date)
+ * Если статус НЕ ready — кидаем ошибку (нельзя пропустить ready stage).
+ */
+export async function payDriverKickback(
+  id: string,
+  paidByEmployeeId: string,
+): Promise<{ kickback: import('@/types').DriverKickback; expenseId: string }> {
+  const now = new Date();
+  const existing = await prisma.driverKickback.findUnique({ where: { id } });
+  if (!existing) throw new Error('DriverKickback not found');
+  if (existing.status !== 'ready') {
+    throw new Error(`DriverKickback ${id} status=${existing.status}, ожидался 'ready'`);
+  }
+
+  const expenseId = `kickback_${id}_${Date.now()}`;
+  const result = await prisma.$transaction(async (tx) => {
+    const kickback = await tx.driverKickback.update({
+      where: { id },
+      data: { status: 'paid', paidAt: now, paidBy: paidByEmployeeId },
+    });
+    await tx.expense.create({
+      data: {
+        id: expenseId,
+        date: now,
+        category: 'driver-kickback',
+        description: `Бонус водителю ${existing.driverName}${existing.plate ? ` (${existing.plate})` : ''}`,
+        amount: existing.amount,
+      },
+    });
+    return kickback;
+  });
+
+  return { kickback: driverKickbackFromPrisma(result), expenseId };
+}
+
+/**
+ * Phase 50f: получить блокеры для DELETE WashEvent.
+ * paid → 423 Locked (бухгалтерия не должна разойтись)
+ * ready → 409 (предложить отменить через UI)
+ * pending → cascade OK через Prisma onDelete
+ */
+export async function getWashEventKickbackBlockers(washEventId: string): Promise<{
+  paid: number;
+  ready: number;
+  pending: number;
+}> {
+  const grouped = await prisma.driverKickback.groupBy({
+    by: ['status'],
+    where: { washEventId },
+    _count: { _all: true },
+  });
+  const counts = { paid: 0, ready: 0, pending: 0 };
+  for (const g of grouped) {
+    const s = g.status as keyof typeof counts;
+    if (s in counts) counts[s] = g._count._all;
+  }
+  return counts;
+}

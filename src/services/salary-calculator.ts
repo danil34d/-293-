@@ -71,6 +71,11 @@ function calculateIndividualShare(
 
   if (employeeScheme.type === 'rate') {
     // For rate-based schemes:
+    // Phase 50 / V2-#4 split-pricing note: если у rate.splitDriverBonus определён —
+    // услуга split. salary-calculator использует только `rate` (фикс мойщику),
+    // splitDriverBonus игнорируется (это отдельный DriverKickback workflow).
+    // Q5 пропорция: rate делится на numEmployeesOnWash ниже как обычно.
+    // Q4: split требует type='rate' scheme (percentage схемы не поддерживают).
     const schemeSource = employeeScheme.rateSource;
 
     // 1. If a source is defined, check if the scheme is applicable to this specific wash.

@@ -106,12 +106,51 @@ model CounterAgent {
   archived            Boolean @default(false)
   archivedAt          String?
 
+  /// Phase 50 (V2-#4 split-pricing): водители контрагента для split-услуг.
+  /// JSON array of { name, phone, plates: string[] }.
+  /// Используется в /workstation для выбора водителя при оформлении мойки скотовоза.
+  /// Q1 решён вариантом (а) — Json field, не отдельная таблица Driver.
+  drivers Json @default("[]")
+
   washEvents         WashEvent[]
   clientTransactions ClientTransaction[]
   invoices           Invoice[]
+  driverKickbacks    DriverKickback[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Phase 50 (V2-#4 split-pricing): бонус водителю за услугу со split-pricing.
+/// Создаётся при POST WashEvent если в SalaryScheme.rates[N].splitDriverBonus определён.
+/// Workflow: pending → ready (после ClientTransaction оплаты от контрагента, manual select)
+///           ready → paid (при выплате — создаётся Expense(category='driver-kickback')).
+/// onDelete:Cascade — Phase 50f защищает только paid/ready через API проверки.
+model DriverKickback {
+  id             String @id @default(uuid())
+  washEventId    String
+  counterAgentId String
+  driverName     String
+  driverPhone    String @default("")
+  plate          String @default("")
+  amount         Float
+
+  /// 'pending' (default) — мойка оформлена, ждём оплаты от контрагента
+  /// 'ready'             — менеджер пометил после оплаты счёта (Q2 рекомендация: manual select)
+  /// 'paid'              — деньги отданы водителю + Expense(category='driver-kickback')
+  status String @default("pending")
+
+  createdAt DateTime  @default(now())
+  readyAt   DateTime?
+  paidAt    DateTime?
+  paidBy    String? // employeeId менеджера
+
+  washEvent    WashEvent    @relation(fields: [washEventId], references: [id], onDelete: Cascade)
+  counterAgent CounterAgent @relation(fields: [counterAgentId], references: [id], onDelete: Cascade)
+
+  @@index([counterAgentId, status])
+  @@index([washEventId])
+  @@index([status])
 }
 
 /// Phase 22 (finding `#3` АРХ-НАХОДКИ / `#20` ТЕХ-ДОЛГ): persistence для счетов клиентам.
@@ -248,9 +287,12 @@ model WashEvent {
   /// и подсвечивает несовпадение.
   createdByEmployeeId      String?
 
-  aggregator   Aggregator?         @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
-  counterAgent CounterAgent?       @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
-  employees    WashEventEmployee[]
+  aggregator      Aggregator?         @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
+  counterAgent    CounterAgent?       @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
+  employees       WashEventEmployee[]
+  /// Phase 50 (V2-#4 split-pricing): связь с DriverKickback (бонус водителю).
+  /// Создаётся 1 запись на каждую split-услугу в WashEvent.services.
+  driverKickbacks DriverKickback[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
