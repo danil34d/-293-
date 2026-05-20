@@ -139,8 +139,17 @@ function LiveKpi({
 }
 
 // ─── BoxCard V2 ───
+// Phase 49: status «pending» добавлен — камера видит машину в боксе, но
+// мойка ещё не оформлена. Раньше показывали "свободен" + "Ожидает: ? (—)" —
+// вводило в заблуждение, особенно когда грузовик прямо на видео в боксе.
+type BoxStatus = 'busy' | 'pending' | 'idle' | 'offline';
 
-type BoxStatus = 'busy' | 'idle' | 'offline';
+const VEHICLE_CLASS_RU: Record<string, string> = {
+  car: 'легковая',
+  truck: 'грузовик',
+  bus: 'автобус',
+  van: 'микроавтобус',
+};
 
 function BoxCard({
   boxNumber,
@@ -167,27 +176,39 @@ function BoxCard({
   const lastEvent = sorted[0];
   const lastEventMinAgo = lastEvent ? minutesAgo(lastEvent.timestamp) : Infinity;
 
-  // Heuristic статус:
+  // Phase 49: 4-status heuristic с приоритетом pending над idle.
   //   нет сотрудников → offline (нет смены)
-  //   последняя мойка < 30 мин назад → "ещё активный" (показываем как busy с recent wash)
-  //   иначе → idle
+  //   последняя мойка < 30 мин назад → busy (мойка только что прошла или ещё идёт)
+  //   есть pending vehicles → pending («камера видит машину, нужно оформить»)
+  //   иначе → idle (свободен реально)
   const status: BoxStatus = useMemo(() => {
     if (employees.length === 0) return 'offline';
     if (lastEvent && lastEventMinAgo < 30) return 'busy';
+    if (pendingVehicles.length > 0) return 'pending';
     return 'idle';
-  }, [employees.length, lastEvent, lastEventMinAgo]);
+  }, [employees.length, lastEvent, lastEventMinAgo, pendingVehicles.length]);
 
   const isBusy = status === 'busy';
+  const isPending = status === 'pending';
   const isIdle = status === 'idle';
   const isOffline = status === 'offline';
 
+  // Phase 49: pending = amber gradient (внимание!), busy = blue, idle = green, offline = grey
   const headBg = isBusy
     ? 'linear-gradient(135deg, #0088CC 0%, #00D4FF 100%)'
+    : isPending
+    ? 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)'
     : isIdle
     ? 'linear-gradient(135deg, #10b981 0%, #14b8a6 100%)'
     : 'linear-gradient(135deg, #94a3b8 0%, #64748b 100%)';
 
-  const statusLabel = isBusy ? 'идёт мойка' : isIdle ? 'свободен' : 'офлайн';
+  const statusLabel = isBusy
+    ? 'идёт мойка'
+    : isPending
+    ? `ждёт оформления · ${pendingVehicles.length}`
+    : isIdle
+    ? 'свободен'
+    : 'офлайн';
 
   // Для busy: progress estimate
   const recentWash = isBusy ? lastEvent : null;
@@ -286,20 +307,66 @@ function BoxCard({
           </div>
         )}
 
+        {/* Pending state — Phase 49: камера видит машину, оформления нет */}
+        {isPending && (() => {
+          const v = pendingVehicles[0];
+          const plateLabel = v.plateNumber || 'без номера';
+          const plateIsKnown = !!v.plateNumber;
+          const vehicleClass = v.vehicleClass ? VEHICLE_CLASS_RU[v.vehicleClass] || v.vehicleClass : null;
+          const startTime = v.start ? formatHHmm(v.start.replace('_', 'T')) : null;
+          const ageMin = v.start ? minutesAgo(v.start.replace('_', 'T')) : null;
+          return (
+            <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
+              <div className="flex items-start gap-2 mb-2">
+                <Camera className="w-5 h-5 text-amber-700 flex-shrink-0 animate-pulse" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-bold text-amber-900">
+                    Машина в боксе — нужно оформить
+                  </div>
+                  <div className="text-[11px] text-amber-800 mt-0.5">
+                    {pendingVehicles.length === 1
+                      ? '1 машина'
+                      : `${pendingVehicles.length} машин(ы)`}{' '}
+                    зафиксированы камерой
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <code
+                  className={
+                    'px-2 py-0.5 rounded text-[12px] font-bold tracking-wider ' +
+                    (plateIsKnown ? 'bg-amber-200 text-amber-900' : 'bg-slate-200 text-slate-700 italic')
+                  }
+                >
+                  {plateLabel}
+                </code>
+                {vehicleClass && (
+                  <span className="text-[11px] text-amber-800">· {vehicleClass}</span>
+                )}
+                {startTime && (
+                  <span className="text-[11px] text-amber-700">
+                    · с {startTime}
+                    {ageMin !== null && ageMin > 0 && ` (${ageMin}м)`}
+                  </span>
+                )}
+              </div>
+              <Link
+                href={`/workstation?box=${boxNumber}`}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 text-[12px] font-bold transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Оформить заказ
+              </Link>
+            </div>
+          );
+        })()}
+
         {/* Idle state */}
         {isIdle && (
           <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 p-3 text-center">
             <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
             <div className="text-[12px] font-semibold text-emerald-800">Бокс свободен</div>
-            {pendingVehicles.length > 0 && (
-              <div className="mt-2 text-[11px] text-slate-700">
-                Ожидает:{' '}
-                <code className="bg-amber-100 px-1.5 py-0.5 rounded text-[11px] font-bold">
-                  {pendingVehicles[0].plateNumber || '?'}
-                </code>{' '}
-                ({formatHHmm(pendingVehicles[0].start?.replace('_', 'T'))})
-              </div>
-            )}
+            <div className="text-[10px] text-emerald-700 mt-0.5">Машин на территории не видно</div>
           </div>
         )}
 
@@ -514,15 +581,22 @@ export function OperationsClient({
   const totalEmployees = box1Employees.length + box2Employees.length;
   const totalRevenue = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
-  // Heuristic: busy = последний event в боксе < 30 мин
+  // Phase 49: KPI «занято» считает как busy И pending (камера видит машину).
+  // Иначе «1/2 работает» противоречит большому amber-блоку «машина ждёт оформления».
   const boxesBusy = useMemo(() => {
     let busy = 0;
-    [box1Events, box2Events].forEach((events) => {
+    const boxPairs: Array<[WashEvent[], PendingCameraVehicle[]]> = [
+      [box1Events, box1PendingVehicles],
+      [box2Events, box2PendingVehicles],
+    ];
+    boxPairs.forEach(([events, pending]) => {
       const last = events[0] ? [...events].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))[0] : null;
-      if (last && minutesAgo(last.timestamp) < 30) busy++;
+      const hasRecentEvent = last && minutesAgo(last.timestamp) < 30;
+      const hasPending = pending.length > 0;
+      if (hasRecentEvent || hasPending) busy++;
     });
     return busy;
-  }, [box1Events, box2Events]);
+  }, [box1Events, box2Events, box1PendingVehicles, box2PendingVehicles]);
 
   const boxesTotal = washId === 'wash_1' ? 2 : 1; // wash_1 имеет 2 бокса, wash_2 пока 1
 
