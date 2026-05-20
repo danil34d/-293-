@@ -41,6 +41,77 @@ function avatarColor(seed: string): string {
   return `hsl(${hue}, 65%, 50%)`;
 }
 
+/**
+ * Phase 46: SVG sparkline без библиотек. Принимает массив N значений,
+ * рендерит как area + line внутри viewBox. Поддерживает amber/blue/green palette.
+ */
+function Sparkline({
+  data,
+  color = '#0088CC',
+  height = 40,
+  width = 240,
+  showLabels = true,
+  unit = '',
+}: {
+  data: number[];
+  color?: string;
+  height?: number;
+  width?: number;
+  showLabels?: boolean;
+  unit?: string;
+}) {
+  if (data.length === 0) {
+    return (
+      <div className="flex items-center justify-center text-[10px] text-slate-400" style={{ height }}>
+        нет данных
+      </div>
+    );
+  }
+  const max = Math.max(...data, 1);
+  const min = 0;
+  const range = max - min || 1;
+  const stepX = width / Math.max(1, data.length - 1);
+  const points = data
+    .map((v, i) => {
+      const x = i * stepX;
+      const y = height - 4 - ((v - min) / range) * (height - 8);
+      return `${x},${y}`;
+    })
+    .join(' ');
+  const areaPoints = `0,${height} ${points} ${(data.length - 1) * stepX},${height}`;
+  const last = data[data.length - 1];
+  const prev = data.length > 1 ? data[data.length - 2] : 0;
+  const trendUp = last >= prev;
+
+  return (
+    <div className="relative">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ height }} preserveAspectRatio="none">
+        <polygon points={areaPoints} fill={color} opacity={0.12} />
+        <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+        {/* Dot на последней точке */}
+        {(() => {
+          const x = (data.length - 1) * stepX;
+          const y = height - 4 - ((last - min) / range) * (height - 8);
+          return <circle cx={x} cy={y} r={2.5} fill={color} />;
+        })()}
+      </svg>
+      {showLabels && (
+        <div className="flex items-center justify-between text-[9px] text-slate-400 mt-0.5">
+          <span>12 нед назад</span>
+          <span className="tabular-nums">
+            <b style={{ color }}>{last}{unit}</b>
+            {data.length > 1 && (
+              <span className={trendUp ? 'text-emerald-600 ml-1' : 'text-rose-600 ml-1'}>
+                {trendUp ? '↑' : '↓'}
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MiniStat({
   label, value, Icon, color,
 }: {
@@ -65,7 +136,9 @@ function MiniStat({
 }
 
 export function ExpandedEmployee({ employee, salaryScheme, metrics }: Props) {
-  const [events, setEvents] = React.useState<WashEvent[] | null>(null);
+  // Phase 39 (was): только recent 5. Phase 46: храним все события сотрудника
+  // для агрегации 12-недельной sparkline. recentEvents — derived.
+  const [allEvents, setAllEvents] = React.useState<WashEvent[] | null>(null);
   const [loadingEvents, setLoadingEvents] = React.useState(false);
   const [eventsError, setEventsError] = React.useState<string | null>(null);
 
@@ -80,12 +153,11 @@ export function ExpandedEmployee({ employee, salaryScheme, metrics }: Props) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = (await r.json()) as WashEvent[];
         if (!cancelled && Array.isArray(data)) {
-          // Filter to this employee + sort newest first + take 5
+          // Filter to this employee + sort newest first
           const filtered = data
             .filter((e) => Array.isArray(e.employeeIds) && e.employeeIds.includes(employee.id))
-            .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
-            .slice(0, 5);
-          setEvents(filtered);
+            .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+          setAllEvents(filtered);
         }
       } catch (e: any) {
         if (!cancelled) setEventsError(e.message);
@@ -98,6 +170,43 @@ export function ExpandedEmployee({ employee, salaryScheme, metrics }: Props) {
       cancelled = true;
     };
   }, [employee.id]);
+
+  // Phase 46: derived recent 5 для списка (сохраняем backward-compat с UI)
+  const events = React.useMemo(() => (allEvents ? allEvents.slice(0, 5) : null), [allEvents]);
+
+  // Phase 46: 12-week buckets sparkline
+  const weeklyBuckets = React.useMemo<number[]>(() => {
+    if (!allEvents) return [];
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    // 12 buckets: index 0 = старая неделя, index 11 = текущая
+    const buckets: number[] = new Array(12).fill(0);
+    for (const e of allEvents) {
+      const t = Date.parse(e.timestamp || '');
+      if (!Number.isFinite(t)) continue;
+      const weeksAgo = Math.floor((nowMs - t) / WEEK_MS);
+      if (weeksAgo < 0 || weeksAgo >= 12) continue;
+      buckets[11 - weeksAgo]++;
+    }
+    return buckets;
+  }, [allEvents]);
+
+  // Phase 46: revenue 12-week buckets (отдельно для денежного спарклайна — share of revenue)
+  const weeklyRevenue = React.useMemo<number[]>(() => {
+    if (!allEvents) return [];
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const buckets: number[] = new Array(12).fill(0);
+    for (const e of allEvents) {
+      const t = Date.parse(e.timestamp || '');
+      if (!Number.isFinite(t)) continue;
+      const weeksAgo = Math.floor((nowMs - t) / WEEK_MS);
+      if (weeksAgo < 0 || weeksAgo >= 12) continue;
+      const empCount = (e.employeeIds || []).length || 1;
+      buckets[11 - weeksAgo] += (e.totalAmount || 0) / empCount; // shared revenue
+    }
+    return buckets.map((v) => Math.round(v));
+  }, [allEvents]);
 
   // Computed
   const isOwner = employee.id === "emp_manager_admin";
@@ -242,6 +351,26 @@ export function ExpandedEmployee({ employee, salaryScheme, metrics }: Props) {
               )}
             </div>
           </div>
+
+          {/* Phase 46: 12-week sparkline (моек по неделям + выручка по неделям) */}
+          {allEvents && allEvents.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-3 mb-2 grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1 flex items-center gap-1">
+                  <Droplets className="w-3 h-3 text-blue-600" />
+                  Моек / неделя (12 нед)
+                </div>
+                <Sparkline data={weeklyBuckets} color="#0088CC" width={240} height={36} unit="" />
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1 flex items-center gap-1">
+                  <Wallet className="w-3 h-3 text-emerald-600" />
+                  Выручка / неделя (₽)
+                </div>
+                <Sparkline data={weeklyRevenue} color="#10b981" width={240} height={36} unit="₽" />
+              </div>
+            </div>
+          )}
 
           {/* 6 mini-stats — Phase 39 показывает то что есть */}
           <div className="grid grid-cols-3 gap-2">
