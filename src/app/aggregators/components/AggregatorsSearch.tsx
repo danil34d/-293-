@@ -8,6 +8,7 @@ import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmation
 import { SetActivePriceButton } from './SetActivePriceButton';
 import { SwitchPriceModal } from './SwitchPriceModal';
 import { SafetyBar } from '@/components/admin';
+import { type AgentSignal, SIGNAL_COLORS } from '@/lib/counter-agent-signals';
 
 function formatMoney(n: number): string {
   return n.toLocaleString('ru-RU');
@@ -57,9 +58,11 @@ function getActivePriceList(aggregator: Aggregator): NamedPriceList | null {
 interface AggregatorsSearchProps {
   allAggregators: Aggregator[];
   fetchError: string | null;
+  /** Phase 43 / V2-#10 deferred: precomputed derived signals per aggregator. */
+  signalsByAggregatorId?: Record<string, AgentSignal[]>;
 }
 
-export default function AggregatorsSearch({ allAggregators, fetchError }: AggregatorsSearchProps) {
+export default function AggregatorsSearch({ allAggregators, fetchError, signalsByAggregatorId = {} }: AggregatorsSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentView, setCurrentView] = useState<AggregatorsView>('active');
   // Phase 27a: state модала смены прайса — в parent чтобы не закрывался
@@ -237,6 +240,37 @@ export default function AggregatorsSearch({ allAggregators, fetchError }: Aggreg
                 <tr key={aggregator.id} className="aggregators-table-row">
                   <td className="aggregators-table-cell align-top">
                     <div className="aggregator-name">{aggregator.name}</div>
+                    {/* Phase 43 / V2-#10 deferred: derived signals — top 3 */}
+                    {(() => {
+                      const signals = signalsByAggregatorId[aggregator.id] || [];
+                      const topSignals = signals.slice(0, 3);
+                      if (topSignals.length === 0) return null;
+                      return (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {topSignals.map((s) => {
+                            const c = SIGNAL_COLORS[s.level];
+                            return (
+                              <span
+                                key={s.id}
+                                title={s.description}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border"
+                                style={{ background: c.bg, color: c.text, borderColor: c.border }}
+                              >
+                                {s.label}
+                              </span>
+                            );
+                          })}
+                          {signals.length > 3 && (
+                            <span
+                              title={`Ещё ${signals.length - 3} сигналов`}
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 bg-slate-100"
+                            >
+                              +{signals.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {aggregator.archived && (
                       <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
                         Архив
