@@ -208,6 +208,13 @@ export interface Employee {
   targetShiftsPerMonth?: number; // Р–РµР»Р°РµРјРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ СЃРјРµРЅ РІ РјРµСЃСЏС†
   wantsMoreShifts?: boolean; // Хочет больше смен при авторасределении (legacy)
 
+  /**
+   * Phase 52 / V2-NEW-1: персональная норма расхода химии в граммах на одну мойку.
+   * UI бэйдж эффективности на /inventory «Канистры у сотрудников»:
+   *   ≤600 = экономно (зелёный) / 601-650 = норма (синий) / >650 = перерасход (красный).
+   */
+  avgChemPerWash?: number;
+
   // Расширенные предпочтения расписания
   shiftLoadPreference?: 'less' | 'standard' | 'more'; // Нагрузка: меньше / стандарт / больше смен
   availableDays?: 'all' | 'weekdays_only' | 'weekends_only'; // Доступность: все / только будни / только выходные
@@ -497,7 +504,17 @@ export interface Report {
   updatedAt: string;
 }
 
-export type EmployeeTransactionType = 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off';
+/**
+ * Phase 52 / V2-NEW-1: расширен 'salary-deduction' для канистр-режима «В счёт ЗП».
+ * 'purchase' / 'bonus' уже были (использовались для других целей раньше).
+ */
+export type EmployeeTransactionType =
+  | 'payment'
+  | 'loan'
+  | 'bonus'
+  | 'purchase'
+  | 'salary-deduction'
+  | 'debt_write_off';
 
 export interface EmployeeTransaction {
   id: string;
@@ -761,15 +778,33 @@ export interface StockMovement {
 }
 
 // РљР°РЅРёСЃС‚СЂР° С…РёРјРёРё Сѓ СЃРѕС‚СЂСѓРґРЅРёРєР°
+/**
+ * Phase 52 / V2-NEW-1: 4 режима выдачи канистры.
+ * - purchase: долг сотрудника (-3000₽ EmployeeTransaction)
+ * - bonus: премия без денег (EmployeeTransaction amount=0 с reason)
+ * - gift: расход мойки (NEW Expense category='gift')
+ * - salary-deduction: удержание из ЗП (-3000₽ EmployeeTransaction)
+ */
+export type CanisterMode = 'purchase' | 'bonus' | 'gift' | 'salary-deduction';
+
 export interface EmployeeChemicalCanister {
   id: string;
   employeeId: string;
-  issuedAt: string; // Р”Р°С‚Р° РІС‹РґР°С‡Рё
-  initialAmountGrams: number; // РќР°С‡Р°Р»СЊРЅС‹Р№ РѕР±СЉС‘Рј (РѕР±С‹С‡РЅРѕ 20000-21000 Рі)
-  remainingAmountGrams: number; // РўРµРєСѓС‰РёР№ РѕСЃС‚Р°С‚РѕРє
-  priceRub: number; // РЎС‚РѕРёРјРѕСЃС‚СЊ РєР°РЅРёСЃС‚СЂС‹ (РґРѕР»Рі СЃРѕС‚СЂСѓРґРЅРёРєР°)
+  issuedAt: string; // Дата выдачи
+  initialAmountGrams: number; // Начальный объём (обычно 20000-21000 г)
+  remainingAmountGrams: number; // Текущий остаток
+  priceRub: number; // Стоимость канистры (3000₽ — для всех режимов кроме bonus)
   status: 'active' | 'empty' | 'returned';
-  transactionId?: string; // РЎРІСЏР·СЊ СЃ С‚СЂР°РЅР·Р°РєС†РёРµР№ РґРѕР»РіР°
+  transactionId?: string; // Связь с EmployeeTransaction (purchase/bonus/salary-deduction)
+                          // или Expense.id (gift) — для audit-trail
+  /** Phase 52: 4 режима выдачи. Default 'purchase' для совместимости. */
+  mode?: CanisterMode;
+  /** Phase 52: admin employeeId выдавшего канистру. */
+  issuedBy?: string;
+  /** Phase 52: reason для bonus / комментарий («Лидер мая · 64 мойки»). */
+  notes?: string;
+  /** Phase 52: привязка к мойке (wash_1 / wash_2) на момент выдачи. */
+  washPoint?: string;
 }
 
 // РќР°СЃС‚СЂРѕР№РєРё СЃРєР»Р°РґР°

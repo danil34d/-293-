@@ -119,6 +119,19 @@ export const getEmployeeChangeLog: (
 ) => Promise<import('@/types').EmployeeChangeLogEntry[]> =
   adapter.getEmployeeChangeLog ?? (async () => []);
 
+// Phase 52 / V2-NEW-1: канистры — atomic issue
+export const issueCanisterAtomic: (input: {
+  employeeId: string;
+  mode: import('@/types').CanisterMode;
+  amountGrams?: number;
+  priceRub?: number;
+  washPoint?: string;
+  notes?: string;
+  issuedBy: string;
+  materialId?: string;
+}) => Promise<import('@/types').EmployeeChemicalCanister> =
+  adapter.issueCanisterAtomic ?? (async () => { throw new Error('issueCanisterAtomic requires DATA_SOURCE=postgres'); });
+
 // Phase 50 / V2-#4: split-pricing DriverKickback
 
 export const getDriverKickbacks: (filters?: {

@@ -48,6 +48,11 @@ model Employee {
   targetShiftsPerMonth      Int?
   wantsMoreShifts           Boolean?
 
+  /// Phase 52 / V2-NEW-1 канистры: персональная норма расхода химии в граммах на мойку.
+  /// UI бэйдж эффективности: ≤600 = экономно (зелёный), 601-650 = норма (синий), >650 = перерасход (красный).
+  /// Вычисляется или вручную, или авто из последних N моек (chemicalConsumptionGrams / count).
+  avgChemPerWash Int?
+
   // UX-safety: soft delete вместо hard delete с cascade на 7 таблиц.
   // См. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #1 + Phase 6.2.
   archived   Boolean @default(false)
@@ -501,6 +506,12 @@ model StockMovement {
   employeeId        String?
   createdBy         String?
 
+  /// Phase 52 / V2-NEW-1 multi-warehouse: к какому складу относится движение.
+  /// 'main' = главный склад (закупки), 'wash_1' / 'wash_2' = склады моек (для мойок).
+  /// Перемещения создают 2 записи: -X на источнике + +X на цели.
+  /// Default 'main' для backward compat с существующими StockMovement.
+  warehouse String @default("main")
+
   material InventoryMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
   employee Employee?         @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
@@ -521,10 +532,29 @@ model EmployeeCanister {
   status               String // 'active' | 'empty' | 'returned'
   transactionId        String?
 
+  /// Phase 52 / V2-NEW-1: 4 режима выдачи канистры (CANISTER_MODES).
+  ///   'purchase'         — долг сотрудника, EmployeeTransaction(type='purchase', amount=-price)
+  ///   'bonus'            — премия, EmployeeTransaction(type='bonus', amount=0, description=notes)
+  ///   'gift'             — расход мойки, NEW Expense(category='gift', amount=price)
+  ///   'salary-deduction' — удержание из ЗП, EmployeeTransaction(type='salary-deduction', amount=-price)
+  /// Default 'purchase' для совместимости с существующими записями.
+  mode String @default("purchase")
+
+  /// Phase 52: кто выдал (admin employeeId) — audit.
+  issuedBy String?
+
+  /// Phase 52: reason для bonus / комментарий менеджера ("Лидер мая", "Поощрение").
+  notes String @default("")
+
+  /// Phase 52: к какой мойке привязан сотрудник на момент выдачи (wash_1 / wash_2).
+  /// Используется для бизнес-аналитики «канистры на складе мойки» в /inventory.
+  washPoint String?
+
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
   @@index([status])
+  @@index([mode])
 }
 
 // ─── Конфигурация (синглтоны) ─────────────────────────────────

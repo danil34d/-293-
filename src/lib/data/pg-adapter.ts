@@ -220,6 +220,11 @@ function canisterFromPrisma(row: any): EmployeeChemicalCanister {
     priceRub: row.priceRub,
     status: row.status as any,
     transactionId: row.transactionId ?? undefined,
+    // Phase 52 / V2-NEW-1 канистры
+    mode: row.mode as any,
+    issuedBy: row.issuedBy ?? undefined,
+    notes: row.notes ?? '',
+    washPoint: row.washPoint ?? undefined,
   };
 }
 
@@ -2919,6 +2924,181 @@ export async function getCounterAgentImpact(id: string): Promise<{
     findSchemesUsingRateSource('counterAgent', id),
   ]);
   return { washEvents, clientTransactions, schemesUsingAsRateSource: schemes };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Phase 52 (V2-NEW-1): канистры — atomic issue с 4 режимами выдачи
+// ────────────────────────────────────────────────────────────────────
+
+const CANISTER_DEFAULT_GRAMS = 22000;
+const CANISTER_DEFAULT_PRICE = 3000;
+
+export interface IssueCanisterInput {
+  employeeId: string;
+  mode: import('@/types').CanisterMode;
+  amountGrams?: number; // default 22000 (1 канистра 22 кг)
+  priceRub?: number;    // default 3000 ₽; для bonus игнорируется (всё равно 0 в EmployeeTransaction)
+  washPoint?: string;   // 'wash_1' | 'wash_2' (опционально)
+  notes?: string;       // reason для bonus, комментарий
+  issuedBy: string;     // admin employeeId
+  materialId?: string;  // default — первый chemical isActive
+}
+
+/**
+ * Phase 52a: atomic выдача канистры с 4 режимами.
+ *
+ * В одной $transaction:
+ *  1. EmployeeCanister(status='active', mode, issuedBy, notes, washPoint)
+ *  2. StockMovement (kind='issue', warehouse='main', amount=-grams)
+ *  3. По mode либо EmployeeTransaction либо Expense:
+ *     - purchase           → EmployeeTransaction(type='purchase', amount=-priceRub)
+ *     - bonus              → EmployeeTransaction(type='bonus', amount=0, description=notes)
+ *     - gift               → Expense(category='gift', amount=priceRub, description="Канистра ...")
+ *     - salary-deduction   → EmployeeTransaction(type='salary-deduction', amount=-priceRub)
+ *  4. canister.transactionId связывается с созданной транзакцией / Expense (audit).
+ *
+ * Note: списание со склада осуществляется через StockMovement (warehouse='main').
+ * InventoryMaterial.currentStock пересчитывается отдельно (см. recomputeInventoryStock).
+ */
+export async function issueCanisterAtomic(
+  input: IssueCanisterInput,
+): Promise<import('@/types').EmployeeChemicalCanister> {
+  const amountGrams = input.amountGrams ?? CANISTER_DEFAULT_GRAMS;
+  const priceRub = input.priceRub ?? CANISTER_DEFAULT_PRICE;
+  const now = new Date();
+  const canisterId = `ec_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  // Find primary chemical material if not specified
+  let materialId = input.materialId;
+  if (!materialId) {
+    const primary = await prisma.inventoryMaterial.findFirst({
+      where: { category: 'chemical', isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    materialId = primary?.id;
+  }
+
+  const employee = await prisma.employee.findUnique({ where: { id: input.employeeId } });
+  if (!employee) {
+    throw new Error(`Employee ${input.employeeId} not found`);
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    // 1. EmployeeCanister
+    const canister = await tx.employeeCanister.create({
+      data: {
+        id: canisterId,
+        employeeId: input.employeeId,
+        issuedAt: now,
+        initialAmountGrams: amountGrams,
+        remainingAmountGrams: amountGrams,
+        priceRub: input.mode === 'bonus' ? 0 : priceRub,
+        status: 'active',
+        mode: input.mode,
+        issuedBy: input.issuedBy,
+        notes: input.notes ?? '',
+        washPoint: input.washPoint,
+      },
+    });
+
+    // 2. StockMovement (списание со склада)
+    if (materialId) {
+      // Find current balance for materialId on main warehouse
+      const lastMov = await tx.stockMovement.findFirst({
+        where: { materialId, warehouse: 'main' },
+        orderBy: { date: 'desc' },
+      });
+      const prevBalance = lastMov?.balanceAfter ?? 0;
+      const newBalance = prevBalance - amountGrams;
+
+      await tx.stockMovement.create({
+        data: {
+          id: `sm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          materialId,
+          type: 'issue',
+          amount: -amountGrams,
+          balanceAfter: newBalance,
+          date: now,
+          description: `Канистра ${input.mode} → ${employee.fullName}`,
+          relatedEntityType: 'employee_canister',
+          relatedEntityId: canisterId,
+          employeeId: input.employeeId,
+          createdBy: input.issuedBy,
+          warehouse: 'main',
+        },
+      });
+
+      // Update material currentStock
+      await tx.inventoryMaterial.update({
+        where: { id: materialId },
+        data: { currentStock: newBalance },
+      });
+    }
+
+    // 3. EmployeeTransaction или Expense по mode
+    let txnId: string | null = null;
+    if (input.mode === 'purchase') {
+      const t = await tx.employeeTransaction.create({
+        data: {
+          id: `et_canister_${canisterId}`,
+          employeeId: input.employeeId,
+          date: now,
+          type: 'purchase',
+          amount: priceRub, // положительная сумма = долг (читается как удержание в salary-report)
+          description: `Канистра (покупка) · ${amountGrams / 1000}кг`,
+        },
+      });
+      txnId = t.id;
+    } else if (input.mode === 'bonus') {
+      const t = await tx.employeeTransaction.create({
+        data: {
+          id: `et_canister_${canisterId}`,
+          employeeId: input.employeeId,
+          date: now,
+          type: 'bonus',
+          amount: 0,
+          description: `Канистра (премия) · ${input.notes || 'без причины'}`,
+        },
+      });
+      txnId = t.id;
+    } else if (input.mode === 'salary-deduction') {
+      const t = await tx.employeeTransaction.create({
+        data: {
+          id: `et_canister_${canisterId}`,
+          employeeId: input.employeeId,
+          date: now,
+          type: 'salary-deduction',
+          amount: priceRub, // положительная сумма = удержание
+          description: `Канистра (в счёт ЗП) · ${amountGrams / 1000}кг`,
+        },
+      });
+      txnId = t.id;
+    } else if (input.mode === 'gift') {
+      const e = await tx.expense.create({
+        data: {
+          id: `exp_canister_${canisterId}`,
+          date: now,
+          category: 'gift',
+          description: `Канистра (подарок) · ${employee.fullName} · ${input.notes || ''}`.trim(),
+          amount: priceRub,
+        },
+      });
+      txnId = e.id;
+    }
+
+    // 4. Link canister to transaction/expense
+    if (txnId) {
+      await tx.employeeCanister.update({
+        where: { id: canisterId },
+        data: { transactionId: txnId },
+      });
+    }
+
+    return tx.employeeCanister.findUnique({ where: { id: canisterId } });
+  });
+
+  if (!created) throw new Error('Canister was not created');
+  return canisterFromPrisma(created);
 }
 
 // ────────────────────────────────────────────────────────────────────
