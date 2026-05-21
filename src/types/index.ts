@@ -58,6 +58,21 @@ export interface PriceListItem {
   isCustom?: boolean;
   chemicalConsumption?: number; // Norma per service, in grams
   employeeConsumptions?: EmployeeConsumption[]; // Actual consumption per employee
+  /**
+   * Phase 51e / V2-#4 split-pricing: схема разделения дохода.
+   * Если установлен — услуга split.
+   *   Контрагент платит `price` →
+   *     `driverBonus` водителю (DriverKickback workflow Phase 50)
+   *     остаток × `employeePct`/100 — мойщику (через ZP)
+   *     остаток × (100-employeePct)/100 — мойке (прибыль)
+   * Используется для UI бэйджа 🔀 и SplitEditor money-flow viz.
+   * Backend Phase 50d также читает SalaryScheme.rates[].splitDriverBonus
+   * для создания DriverKickback при POST WashEvent.
+   */
+  split?: {
+    driverBonus: number;
+    employeePct: number; // 0-100
+  };
 }
 
 export interface RetailPriceConfig {
