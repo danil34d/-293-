@@ -20,8 +20,20 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CompanyAccordion, companySchema, baseCompany } from "@/components/common/CompanyAccordion";
 import { PriceListEditor, priceListItemSchema } from "@/components/common/PriceListEditor";
+import { DriversEditor } from "./DriversEditor";
 import { Cog, Copy, Save, X, Scale, HandCoins } from "lucide-react";
 import { DangerGate } from "@/components/admin";
+
+/**
+ * Phase 51b / V2-#4 split-pricing: schema водителя контрагента.
+ * Хранится как CounterAgent.drivers Json. Используется в /workstation
+ * для auto-match по plate при оформлении split-услуги.
+ */
+const driverSchema = z.object({
+  name: z.string().min(2, "ФИО водителя — минимум 2 символа"),
+  phone: z.string().optional(),
+  plates: z.string().optional(), // multi-line text, parsed на submit
+});
 
 const schema = z.object({
   name: z.string().min(2, "Имя агента должно содержать не менее 2 символов."),
@@ -44,6 +56,8 @@ const schema = z.object({
   additionalPriceList: z.array(priceListItemSchema).optional(),
   allowCustomServices: z.boolean().optional(),
   balance: z.coerce.number().optional(),
+  /** Phase 51b: список водителей для split-услуг */
+  drivers: z.array(driverSchema).optional(),
 });
 
 type Values = z.infer<typeof schema>;
@@ -139,6 +153,12 @@ export function CounterAgentForm({
     additionalPriceList: normalizeItems(initialData?.additionalPriceList),
     allowCustomServices: initialData?.allowCustomServices ?? true,
     balance: initialData?.balance ?? 0,
+    // Phase 51b: drivers из CounterAgent.drivers Json (plates → multi-line text)
+    drivers: (initialData?.drivers || []).map((d) => ({
+      name: d.name || "",
+      phone: d.phone || "",
+      plates: (d.plates || []).join("\n"),
+    })),
   }), [initialData]);
 
   const form = useForm<Values>({
@@ -405,6 +425,19 @@ export function CounterAgentForm({
       return;
     }
 
+    // Phase 51b / V2-#4: serialize drivers (plates multi-line → string[]).
+    // Пустые имена/без plates отфильтруем — невалидные записи.
+    const driversToSave = (data.drivers || [])
+      .map((d) => ({
+        name: (d.name || '').trim(),
+        phone: (d.phone || '').trim(),
+        plates: (d.plates || '')
+          .split('\n')
+          .map((p) => normalizeLicensePlate(p.trim()))
+          .filter(Boolean),
+      }))
+      .filter((d) => d.name.length >= 2);
+
     const agentToSave: CounterAgent = {
       id: currentAgentId,
       name: data.name,
@@ -419,6 +452,7 @@ export function CounterAgentForm({
       additionalPriceList: data.additionalPriceList || [],
       allowCustomServices: data.allowCustomServices,
       balance: data.balance,
+      drivers: driversToSave,
     };
 
     try {
@@ -775,6 +809,9 @@ export function CounterAgentForm({
                 </div>
               </CardContent>
             </Card>
+
+            {/* Phase 51b / V2-#4: водители для split-услуг */}
+            <DriversEditor control={form.control} />
           </TabsContent>
 
           <TabsContent value="pricing" className="space-y-6">
