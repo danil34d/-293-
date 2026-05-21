@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import PageHeader from '@/components/layout/PageHeader';
-import { CounterAgentForm } from '../../components/CounterAgentForm';
+import { CounterAgentEditTabs } from '../../components/CounterAgentEditTabs';
 import type { CounterAgent, WashEvent } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
@@ -62,8 +62,8 @@ export default async function EditCounterAgentPage({ params }: { params: { id: s
         title={`Редактировать контрагента`}
         description={`Обновление данных для ${agent.name}.`}
       />
-      <CounterAgentForm
-        initialData={agent}
+      <CounterAgentEditTabs
+        agent={agent}
         agentId={agentIdFromParams}
         referenceAgents={allAgents}
         washEvents={washEvents}
