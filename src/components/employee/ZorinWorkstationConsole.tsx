@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment } from '@/types';
 import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
+import { SplitDriverCard, DriverPickerModal } from './SplitDriverWidgets';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -208,6 +209,14 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   const [lastWashServices, setLastWashServices] = useState<(PriceListItem & { id: string, isFromLastWash?: boolean })[] | null>(null);
   const [lastWashComment, setLastWashComment] = useState<WashComment | null>(null);
   const [driverComment, setDriverComment] = useState('');
+
+  // Phase 51c / V2-#4 split-pricing: выбранный водитель + UI state для модала.
+  // Активируется когда среди выбранных услуг есть split.driverBonus > 0.
+  // Без выбранного водителя кнопка «Подтвердить» disabled.
+  const [selectedDriver, setSelectedDriver] = useState<{ name: string; phone?: string } | null>(null);
+  const [driverPickerOpen, setDriverPickerOpen] = useState(false);
+  const [newDriverName, setNewDriverName] = useState('');
+  const [newDriverPhone, setNewDriverPhone] = useState('');
 
   const lastConsumptionRef = useRef<Record<string, Record<string, number>>>({});
 
@@ -1123,6 +1132,16 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
          new Date().toISOString())
       : new Date().toISOString();
 
+    // Phase 51c / V2-#4 split-pricing: подмешиваем driverKickback meta если split-услуга.
+    const hasSplitServiceLocal = washServices.some((s) => (s as any).split?.driverBonus > 0);
+    const driverKickbackPayload = hasSplitServiceLocal && selectedDriver?.name
+      ? {
+          driverName: selectedDriver.name,
+          driverPhone: selectedDriver.phone || undefined,
+          plate: normalizedVehicleNumber || undefined,
+        }
+      : undefined;
+
 	    const washEventToSave: Omit<WashEvent, 'driverComments'> & { driverComments?: WashComment[] } = {
         id: `we_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
         timestamp: washTimestamp,
@@ -1151,6 +1170,9 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         shiftId: activeShiftId || undefined,
         boxNumber: selectedBoxNumber as 1 | 2,
         cameraSession: cameraSessionLink,
+        // Phase 51c: метаданные водителя для backend Phase 50d
+        // (создаст DriverKickback после atomic POST)
+        ...(driverKickbackPayload ? { driverKickback: driverKickbackPayload } : {}),
     };
 
     try {
@@ -1200,6 +1222,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
     setFoundAggregators([]);
     setSelectedPaymentMethod(null);
     setSelectedAggregator(null);
+    // Phase 51c: reset split-driver state на новую мойку
+    setSelectedDriver(null);
+    setDriverPickerOpen(false);
+    setNewDriverName('');
+    setNewDriverPhone('');
     setWashServices([]);
     setCustomExtraServiceName('');
     setCustomExtraServicePrice('');
@@ -1892,11 +1919,30 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 }</p>
                 <p><strong>Исполнители:</strong> {selectedEmployees.map(e => e.fullName).join(', ')}</p>
 
+                {/* Phase 51c / V2-#4: split-services карточка водителя */}
+                <SplitDriverCard
+                  washServices={washServices}
+                  counterAgent={foundCounterAgent}
+                  normalizedVehicleNumber={normalizedVehicleNumber}
+                  selectedDriver={selectedDriver}
+                  onPickDriver={() => setDriverPickerOpen(true)}
+                  onClearDriver={() => setSelectedDriver(null)}
+                />
+
                 <hr />
                 <p className="font-semibold">Оказанные услуги:</p>
                 <ul className="list-disc pl-5 space-y-1">
                   {washServices.map((s, i) => (
-                      <li key={`confirm-${s.id}`}>{s.serviceName}{showPrices && ` - ${s.price} руб.`}{i === 0 && ' (Основная)'}</li>
+                      <li key={`confirm-${s.id}`}>
+                        {s.serviceName}
+                        {showPrices && ` - ${s.price} руб.`}
+                        {i === 0 && ' (Основная)'}
+                        {(s as any).split?.driverBonus > 0 && (
+                          <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-violet-100 text-violet-700">
+                            🔀 split · водителю {(s as any).split.driverBonus}₽
+                          </span>
+                        )}
+                      </li>
                   ))}
                 </ul>
 
@@ -1973,10 +2019,21 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 )}
 
                 <div className="flex space-x-3 pt-3">
-                  <button onClick={confirmWash} disabled={isLoading} className="zorin-button primary flex-1">
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Подтвердить и зарегистрировать
-                  </button>
+                  {(() => {
+                    const hasSplitConfirm = washServices.some((s) => (s as any).split?.driverBonus > 0);
+                    const splitBlockedNoDriver = hasSplitConfirm && !selectedDriver?.name;
+                    return (
+                      <button
+                        onClick={confirmWash}
+                        disabled={isLoading || splitBlockedNoDriver}
+                        className="zorin-button primary flex-1"
+                        title={splitBlockedNoDriver ? 'Выберите водителя для split-услуги' : ''}
+                      >
+                        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {splitBlockedNoDriver ? 'Выберите водителя →' : 'Подтвердить и зарегистрировать'}
+                      </button>
+                    );
+                  })()}
                   <button onClick={() => setCurrentStep("serviceSelection")} className="zorin-button secondary">
                     Назад к услугам
                   </button>
@@ -1992,6 +2049,19 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           )}
         </div>
       )}
+
+      {/* Phase 51c / V2-#4: Driver picker modal — открывается из SplitDriverCard */}
+      <DriverPickerModal
+        open={driverPickerOpen}
+        onOpenChange={setDriverPickerOpen}
+        counterAgent={foundCounterAgent}
+        normalizedVehicleNumber={normalizedVehicleNumber}
+        onPick={(driver) => setSelectedDriver(driver)}
+        newDriverName={newDriverName}
+        setNewDriverName={setNewDriverName}
+        newDriverPhone={newDriverPhone}
+        setNewDriverPhone={setNewDriverPhone}
+      />
 
       <PlateRecognitionDialog
         open={isPlateDialogOpen}
