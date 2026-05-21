@@ -24,7 +24,8 @@ import {
   WashingMachine,
   CalendarDays,
   Calculator,
-  Bot
+  Bot,
+  ListChecks,
 } from 'lucide-react';
 import type { Employee } from '@/types';
 import { isEmployeeAdmin } from '@/lib/employee-role';
@@ -70,6 +71,7 @@ const navGroups: NavGroup[] = [
       { href: '/expenses', label: 'Расходы', icon: ShoppingCart },
       { href: '/inventory', label: 'Склад', icon: Warehouse },
       { href: '/calculator', label: 'Калькулятор мойки', icon: Calculator, adminOnly: true },
+      { href: '/price-lists', label: 'Прайс-листы', icon: ListChecks, adminOnly: true },
       { href: '/settings', label: 'Прайс-лист "Наличка"', icon: Settings, notificationKey: 'newServices' },
     ],
   },
