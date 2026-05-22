@@ -3330,23 +3330,36 @@ export async function saveOurCompany(data: Partial<import('@/types').OurCompany>
     }
 
     const existing = await tx.ourCompany.findUnique({ where: { id: data.id } });
+    // Хелпер: если поле явно передано в data — использует его значение (включая null),
+    // иначе — берёт из existing. Нужен чтобы `archivedAt: null` при unarchive
+    // корректно записывал null, а не откатывался к старому значению через `??`.
+    function pick<T>(key: string, fallback: T): T {
+      if (key in data) {
+        const v = (data as any)[key];
+        return v !== undefined ? v : fallback;
+      }
+      const v = (existing as any)?.[key];
+      return v !== undefined ? v : fallback;
+    }
+
     const payload = {
       shortName: data.shortName ?? existing?.shortName ?? '',
       fullName: data.fullName ?? existing?.fullName ?? '',
-      inn: data.inn ?? existing?.inn ?? null,
-      kpp: data.kpp ?? existing?.kpp ?? null,
-      ogrn: data.ogrn ?? existing?.ogrn ?? null,
-      ownerName: data.ownerName ?? existing?.ownerName ?? null,
-      legalAddress: data.legalAddress ?? existing?.legalAddress ?? null,
-      bankName: data.bankName ?? existing?.bankName ?? null,
-      settlementAccount: data.settlementAccount ?? existing?.settlementAccount ?? null,
-      correspondentAccount: data.correspondentAccount ?? existing?.correspondentAccount ?? null,
-      bik: data.bik ?? existing?.bik ?? null,
-      taxRegime: data.taxRegime ?? existing?.taxRegime ?? null,
+      inn: pick('inn', null),
+      kpp: pick('kpp', null),
+      ogrn: pick('ogrn', null),
+      ownerName: pick('ownerName', null),
+      legalAddress: pick('legalAddress', null),
+      bankName: pick('bankName', null),
+      settlementAccount: pick('settlementAccount', null),
+      correspondentAccount: pick('correspondentAccount', null),
+      bik: pick('bik', null),
+      taxRegime: pick('taxRegime', null),
       cardAcquiringPercentage: data.cardAcquiringPercentage ?? existing?.cardAcquiringPercentage ?? null,
       isPrimary: willBePrimary,
       archived: data.archived ?? existing?.archived ?? false,
-      archivedAt: data.archivedAt ?? existing?.archivedAt ?? null,
+      // Явный null при unarchive корректно стирает archivedAt (pick учитывает `null in data`)
+      archivedAt: pick('archivedAt', null),
     };
 
     if (existing) {
