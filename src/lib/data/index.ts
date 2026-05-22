@@ -119,6 +119,40 @@ export const getEmployeeChangeLog: (
 ) => Promise<import('@/types').EmployeeChangeLogEntry[]> =
   adapter.getEmployeeChangeLog ?? (async () => []);
 
+// Phase 57 / multi-company: OurCompany CRUD + helper
+
+export const getOurCompaniesData: () => Promise<import('@/types').OurCompany[]> =
+  adapter.getOurCompaniesData ?? (async () => []);
+
+export const getOurCompanyById: (id: string) => Promise<import('@/types').OurCompany | null> =
+  adapter.getOurCompanyById ?? (async () => null);
+
+export const getPrimaryOurCompany: () => Promise<import('@/types').OurCompany | null> =
+  adapter.getPrimaryOurCompany ?? (async () => null);
+
+export const saveOurCompany: (data: Partial<import('@/types').OurCompany> & { id: string }) => Promise<import('@/types').OurCompany> =
+  adapter.saveOurCompany ?? (async () => { throw new Error('saveOurCompany requires DATA_SOURCE=postgres'); });
+
+export const archiveOurCompany: (id: string) => Promise<void> =
+  adapter.archiveOurCompany ?? (async () => {});
+
+export const unarchiveOurCompany: (id: string) => Promise<void> =
+  adapter.unarchiveOurCompany ?? (async () => {});
+
+/**
+ * Phase 57a: автоматическое определение ourCompanyId при POST WashEvent.
+ *   counterAgent → preferredOurCompanyId
+ *   aggregator → preferredOurCompanyId
+ *   розница → primary OurCompany
+ *   override через washEvent.ourCompanyId (admin)
+ */
+export const resolveOurCompanyIdForWashEvent: (washEvent: {
+  paymentMethod: string;
+  sourceId?: string;
+  ourCompanyId?: string | null;
+}) => Promise<string | null> =
+  adapter.resolveOurCompanyIdForWashEvent ?? (async () => null);
+
 // Phase 52 / V2-NEW-1: канистры — atomic issue
 export const issueCanisterAtomic: (input: {
   employeeId: string;

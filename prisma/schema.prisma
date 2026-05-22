@@ -9,6 +9,62 @@ datasource db {
 
 // ─── Справочники ──────────────────────────────────────────────
 
+/// Phase 57 / multi-company (V2 handoff кейс ЭкоФуд): НАШИ юр.лица-исполнители.
+/// У владельца 2 ИП — Абанин (основное, primary) и Орлов (для ЭкоФуд скотовоза).
+/// Каждая WashEvent / Invoice / Expense / ClientTransaction помечается ourCompanyId
+/// чтобы бухгалтерия видела выручку/расход каждого ИП раздельно.
+///
+/// Workflow:
+///   - Контрагент → preferredOurCompanyId (дефолт при оформлении)
+///   - WashEvent.ourCompanyId фиксирует кто оказал услугу
+///   - Invoice.ourCompanyId печатает НАШИ реквизиты подписанта
+///   - Expense.ourCompanyId — на чей расход (бонус водителю, химия, etc)
+///   - ClientTransaction.ourCompanyId — на чей счёт пришёл платёж
+model OurCompany {
+  id           String  @id @default(uuid())
+  shortName    String // «ИП Абанин Д.А.» / «ИП Орлов К.Р.»
+  fullName     String  @default("") // полное юридическое имя
+  inn          String?
+  kpp          String?
+  ogrn         String?
+  ownerName    String? // ФИО руководителя для подписи в счетах
+  legalAddress String?
+
+  // Банковские реквизиты для печати на счетах
+  bankName             String?
+  settlementAccount    String? // расчётный счёт
+  correspondentAccount String? // корреспондентский счёт
+  bik                  String?
+
+  /// Налоговый режим (для будущих бухгалтерских отчётов):
+  /// 'usn-6' | 'usn-15' | 'osno' | 'patent' | null
+  taxRegime String?
+
+  /// Acquiring % — у каждого ИП может быть свой эквайринг.
+  /// Если задано — используется на терминале вместо общего из retailPriceConfig.
+  cardAcquiringPercentage Float?
+
+  /// Primary флаг — одно ИП = primary (для розницы и default).
+  /// Гарантируется application-level (не unique constraint, чтобы можно было сменить).
+  isPrimary Boolean @default(false)
+
+  archived   Boolean @default(false)
+  archivedAt String?
+
+  washEvents               WashEvent[]
+  invoices                 Invoice[]
+  expenses                 Expense[]
+  clientTransactions       ClientTransaction[]
+  preferredByCounterAgents CounterAgent[]
+  preferredByAggregators   Aggregator[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([archived])
+  @@index([isPrimary])
+}
+
 model SalaryScheme {
   id             String @id
   name           String
@@ -90,13 +146,19 @@ model Aggregator {
   archived   Boolean @default(false)
   archivedAt String?
 
-  washEvents         WashEvent[]
-  clientTransactions ClientTransaction[]
+  /// Phase 57 / multi-company: какое НАШЕ ИП работает с этим агрегатором по умолчанию.
+  /// При POST WashEvent с этим агрегатором — ourCompanyId инициализируется из этого поля.
+  preferredOurCompanyId String?
+
+  washEvents          WashEvent[]
+  clientTransactions  ClientTransaction[]
+  preferredOurCompany OurCompany?         @relation(fields: [preferredOurCompanyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([archived])
+  @@index([preferredOurCompanyId])
 }
 
 model CounterAgent {
@@ -117,13 +179,21 @@ model CounterAgent {
   /// Q1 решён вариантом (а) — Json field, не отдельная таблица Driver.
   drivers Json @default("[]")
 
-  washEvents         WashEvent[]
-  clientTransactions ClientTransaction[]
-  invoices           Invoice[]
-  driverKickbacks    DriverKickback[]
+  /// Phase 57 / multi-company: какое НАШЕ ИП работает с этим контрагентом по умолчанию.
+  /// Пример: ЭкоФуд → ИП Орлов (договор на скотовоз заключён через Орлова).
+  /// При POST WashEvent с этим контрагентом — ourCompanyId автоматически = это поле.
+  preferredOurCompanyId String?
+
+  washEvents          WashEvent[]
+  clientTransactions  ClientTransaction[]
+  invoices            Invoice[]
+  driverKickbacks     DriverKickback[]
+  preferredOurCompany OurCompany?         @relation(fields: [preferredOurCompanyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([preferredOurCompanyId])
 }
 
 /// Phase 50 (V2-#4 split-pricing): бонус водителю за услугу со split-pricing.
@@ -196,7 +266,13 @@ model Invoice {
 
   notes String? @default("")
 
+  /// Phase 57 / multi-company: НАШЕ юр.лицо-исполнитель на счёте.
+  /// Реквизиты подписанта (банк, ИНН, ОГРН) берутся из OurCompany на момент create
+  /// (snapshot — если позже изменим OurCompany, старые счета сохраняют свои реквизиты).
+  ourCompanyId String?
+
   counterAgent CounterAgent @relation(fields: [counterAgentId], references: [id], onDelete: Restrict)
+  ourCompany   OurCompany?  @relation(fields: [ourCompanyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -206,6 +282,7 @@ model Invoice {
   @@index([periodStart])
   @@index([number])
   @@index([createdAt])
+  @@index([ourCompanyId])
 }
 
 /// Phase 23 (finding `#4` АРХ-НАХОДКИ / `#21` ТЕХ-ДОЛГ): persistence для AI-аналитических отчётов.
@@ -292,8 +369,16 @@ model WashEvent {
   /// и подсвечивает несовпадение.
   createdByEmployeeId      String?
 
+  /// Phase 57 / multi-company: какое НАШЕ ИП оказало услугу.
+  /// Определяется при POST: если counterAgent/aggregator → preferredOurCompanyId,
+  /// иначе → primary OurCompany (розница). Override возможен на терминале.
+  /// Audit-snapshot: после save не меняется (даже если admin сменит preferredOurCompanyId
+  /// у контрагента — старые мойки остаются на старом ИП).
+  ourCompanyId String?
+
   aggregator      Aggregator?         @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
   counterAgent    CounterAgent?       @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
+  ourCompany      OurCompany?         @relation(fields: [ourCompanyId], references: [id], onDelete: SetNull)
   employees       WashEventEmployee[]
   /// Phase 50 (V2-#4 split-pricing): связь с DriverKickback (бонус водителю).
   /// Создаётся 1 запись на каждую split-услугу в WashEvent.services.
@@ -310,6 +395,7 @@ model WashEvent {
   @@index([shiftId])
   @@index([createdInClosedPeriod])
   @@index([createdByEmployeeId])
+  @@index([ourCompanyId])
 }
 
 model WashEventEmployee {
@@ -351,14 +437,21 @@ model ClientTransaction {
   amount         Float
   description    String   @default("")
 
+  /// Phase 57 / multi-company: на чей расчётный счёт пришёл платёж.
+  /// Inherited из CounterAgent.preferredOurCompanyId или Aggregator.preferredOurCompanyId.
+  /// Если клиент перевёл на «не своё» ИП — admin может override.
+  ourCompanyId String?
+
   aggregator   Aggregator?   @relation(fields: [aggregatorId], references: [id], onDelete: Cascade)
   counterAgent CounterAgent? @relation(fields: [counterAgentId], references: [id], onDelete: Cascade)
+  ourCompany   OurCompany?   @relation(fields: [ourCompanyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
   @@index([aggregatorId])
   @@index([counterAgentId])
   @@index([date])
+  @@index([ourCompanyId])
 }
 
 model Expense {
@@ -371,11 +464,21 @@ model Expense {
   unit         String?
   pricePerUnit Float?
 
+  /// Phase 57 / multi-company: на чей расход списан Expense.
+  /// Для split-pricing бонусов водителю (driver-kickback): ourCompanyId = тот ИП,
+  /// который оказал split-услугу (Икафут → ИП Орлов; розница → ИП Абанин).
+  /// Для канистры-подарка (gift): ourCompanyId = primary OurCompany по умолчанию.
+  /// Иначе backfill = primary.
+  ourCompanyId String?
+
+  ourCompany OurCompany? @relation(fields: [ourCompanyId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([date])
   @@index([category])
+  @@index([ourCompanyId])
 }
 
 // ─── Смены и расписание ───────────────────────────────────────

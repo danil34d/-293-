@@ -96,6 +96,11 @@ export interface CounterAgent {
   allowCustomServices?: boolean;
   /** Phase 50 / V2-#4: список водителей для split-услуг (мойка скотовоза). */
   drivers?: CounterAgentDriver[];
+  /**
+   * Phase 57 / multi-company: дефолтное НАШЕ ИП для оформления моек этого контрагента.
+   * Пример: ЭкоФуд → ИП Орлов К.Р. (договор подписан через Орлова).
+   */
+  preferredOurCompanyId?: string;
 }
 
 export interface CounterAgentDriver {
@@ -141,6 +146,8 @@ export interface Aggregator {
   cars: Car[];
   priceLists: NamedPriceList[];
   activePriceListName?: string;
+  /** Phase 57 / multi-company: дефолтное НАШЕ ИП для моек через этот агрегатор. */
+  preferredOurCompanyId?: string;
 }
 
 export type PaymentType = 'cash' | 'card' | 'transfer';
@@ -252,6 +259,39 @@ export interface SalaryRate {
    * Пример: Мойка скотовоза 9000₽ → rate=3500, splitDriverBonus=2000, остаток 3500 мойке.
    */
   splitDriverBonus?: number;
+}
+
+/**
+ * Phase 57 / multi-company (ЭкоФуд кейс): НАШЕ юр.лицо-исполнитель.
+ *
+ * У владельца 2 ИП: Абанин (primary, основное) и Орлов К.Р. (для договора с ЭкоФуд).
+ * Каждая WashEvent / Invoice / Expense / ClientTransaction помечается ourCompanyId,
+ * чтобы бухгалтерия видела выручку/расход каждого ИП раздельно.
+ */
+export interface OurCompany {
+  id: string;
+  shortName: string; // «ИП Абанин» / «ИП Орлов К.Р.»
+  fullName: string; // полное юридическое имя
+  inn?: string;
+  kpp?: string;
+  ogrn?: string;
+  ownerName?: string; // ФИО руководителя для подписи на счетах
+  legalAddress?: string;
+  // Банковские реквизиты для счетов
+  bankName?: string;
+  settlementAccount?: string;
+  correspondentAccount?: string;
+  bik?: string;
+  /** 'usn-6' | 'usn-15' | 'osno' | 'patent' | null */
+  taxRegime?: string;
+  /** Acquiring % — если задано, override общего из retailPriceConfig для карт. */
+  cardAcquiringPercentage?: number;
+  /** Primary флаг — одно ИП по умолчанию (для розницы). */
+  isPrimary: boolean;
+  archived: boolean;
+  archivedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RateSource {
@@ -411,6 +451,13 @@ export interface WashEvent {
     driverPhone?: string;
     plate?: string;
   };
+  /**
+   * Phase 57 / multi-company: какое НАШЕ ИП оказало услугу.
+   * Определяется resolveOurCompanyIdForWashEvent на момент POST.
+   * Audit-snapshot — после save не меняется автоматически (даже если admin сменит
+   * preferredOurCompanyId у контрагента).
+   */
+  ourCompanyId?: string;
 }
 
 // ─── Phase 22 / Invoice ─────────────────────────────────────────

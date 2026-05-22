@@ -7,6 +7,7 @@ import {
   getEmployeesData,
   getSalarySchemesData,
   createDriverKickback,
+  resolveOurCompanyIdForWashEvent,
   isSalaryPeriodClosed,
   findShiftForTimestamp,
 } from '@/lib/data';
@@ -294,6 +295,24 @@ export async function createWashEvent(washEvent: WashEvent): Promise<WashEvent> 
     if (!washEvent.sourceId) {
       throw new Error('Split-услуга требует counterAgent (sourceId)');
     }
+  }
+
+  // Phase 57 / multi-company: автоопределение ourCompanyId если client не передал.
+  // Логика: counterAgent → preferredOurCompanyId / aggregator → preferredOurCompanyId / иначе primary.
+  // Если client передал washEvent.ourCompanyId — оставляем как override.
+  try {
+    if (!washEvent.ourCompanyId) {
+      const resolved = await resolveOurCompanyIdForWashEvent({
+        paymentMethod: washEvent.paymentMethod,
+        sourceId: washEvent.sourceId,
+        ourCompanyId: washEvent.ourCompanyId,
+      });
+      if (resolved) {
+        washEvent.ourCompanyId = resolved;
+      }
+    }
+  } catch (err) {
+    console.warn('[wash-event] ourCompanyId resolve failed (proceeding without):', err);
   }
 
   // Atomic write: wash event + stock movement + inventory + client balance

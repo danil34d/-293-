@@ -62,6 +62,8 @@ function washEventFromPrisma(row: any): WashEvent {
     closedPeriodAtCreate: row.closedPeriodAtCreate ?? undefined,
     // Phase 10 / finding #40
     createdByEmployeeId: row.createdByEmployeeId ?? undefined,
+    // Phase 57 / multi-company
+    ourCompanyId: row.ourCompanyId ?? undefined,
   };
 }
 
@@ -101,6 +103,8 @@ function aggregatorFromPrisma(row: any): Aggregator {
     cars: parseJsonField(row.cars, []),
     priceLists: parseJsonField(row.priceLists, []),
     activePriceListName: row.activePriceListName ?? undefined,
+    // Phase 57 / multi-company
+    preferredOurCompanyId: row.preferredOurCompanyId ?? undefined,
   };
 }
 
@@ -123,6 +127,10 @@ function counterAgentFromPrisma(row: any): CounterAgent {
     allowCustomServices: row.allowCustomServices,
     archived: row.archived,
     archivedAt: row.archivedAt ?? undefined,
+    // Phase 50 / V2-#4: drivers (Json) — split-pricing
+    drivers: parseJsonField(row.drivers, []),
+    // Phase 57 / multi-company
+    preferredOurCompanyId: row.preferredOurCompanyId ?? undefined,
   };
 }
 
@@ -652,6 +660,8 @@ export async function saveWashEvent(data: any): Promise<void> {
       // Phase 10 / finding #40 — НЕ перезаписываем при upsert update,
       // чтобы не потерять оригинального автора при последующих edit'ах.
       // (Update path — это PUT, у нас createdByEmployeeId фиксируется только на create.)
+      // Phase 57 / multi-company — admin может сменить ИП через UI (override)
+      ourCompanyId: data.ourCompanyId ?? null,
     },
     create: {
       id: data.id,
@@ -687,6 +697,8 @@ export async function saveWashEvent(data: any): Promise<void> {
       closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
       // Phase 10 / finding #40 — фиксируется только на create (PUT не трогает)
       createdByEmployeeId: data.createdByEmployeeId ?? null,
+      // Phase 57 / multi-company — какое НАШЕ ИП оказало услугу
+      ourCompanyId: data.ourCompanyId ?? null,
     },
   });
 
@@ -3251,4 +3263,154 @@ export async function getWashEventKickbackBlockers(washEventId: string): Promise
     if (s in counts) counts[s] = g._count._all;
   }
   return counts;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Phase 57 (multi-company / ЭкоФуд кейс): OurCompany CRUD + primary helper
+// ────────────────────────────────────────────────────────────────────
+
+function ourCompanyFromPrisma(row: any): import('@/types').OurCompany {
+  return {
+    id: row.id,
+    shortName: row.shortName,
+    fullName: row.fullName ?? '',
+    inn: row.inn ?? undefined,
+    kpp: row.kpp ?? undefined,
+    ogrn: row.ogrn ?? undefined,
+    ownerName: row.ownerName ?? undefined,
+    legalAddress: row.legalAddress ?? undefined,
+    bankName: row.bankName ?? undefined,
+    settlementAccount: row.settlementAccount ?? undefined,
+    correspondentAccount: row.correspondentAccount ?? undefined,
+    bik: row.bik ?? undefined,
+    taxRegime: row.taxRegime ?? undefined,
+    cardAcquiringPercentage: row.cardAcquiringPercentage ?? undefined,
+    isPrimary: row.isPrimary,
+    archived: row.archived,
+    archivedAt: row.archivedAt ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export async function getOurCompaniesData(): Promise<import('@/types').OurCompany[]> {
+  const rows = await prisma.ourCompany.findMany({
+    orderBy: [{ isPrimary: 'desc' }, { archived: 'asc' }, { shortName: 'asc' }],
+  });
+  return rows.map(ourCompanyFromPrisma);
+}
+
+export async function getOurCompanyById(id: string): Promise<import('@/types').OurCompany | null> {
+  const row = await prisma.ourCompany.findUnique({ where: { id } });
+  return row ? ourCompanyFromPrisma(row) : null;
+}
+
+export async function getPrimaryOurCompany(): Promise<import('@/types').OurCompany | null> {
+  const row = await prisma.ourCompany.findFirst({
+    where: { isPrimary: true, archived: false },
+    orderBy: { createdAt: 'asc' },
+  });
+  return row ? ourCompanyFromPrisma(row) : null;
+}
+
+/**
+ * Phase 57a: Upsert OurCompany. При isPrimary=true автоматически снимает primary
+ * со всех других компаний (одно primary в системе).
+ */
+export async function saveOurCompany(data: Partial<import('@/types').OurCompany> & { id: string }): Promise<import('@/types').OurCompany> {
+  const willBePrimary = !!data.isPrimary;
+
+  const result = await prisma.$transaction(async (tx) => {
+    if (willBePrimary) {
+      // Снять primary со всех других
+      await tx.ourCompany.updateMany({
+        where: { id: { not: data.id }, isPrimary: true },
+        data: { isPrimary: false },
+      });
+    }
+
+    const existing = await tx.ourCompany.findUnique({ where: { id: data.id } });
+    const payload = {
+      shortName: data.shortName ?? existing?.shortName ?? '',
+      fullName: data.fullName ?? existing?.fullName ?? '',
+      inn: data.inn ?? existing?.inn ?? null,
+      kpp: data.kpp ?? existing?.kpp ?? null,
+      ogrn: data.ogrn ?? existing?.ogrn ?? null,
+      ownerName: data.ownerName ?? existing?.ownerName ?? null,
+      legalAddress: data.legalAddress ?? existing?.legalAddress ?? null,
+      bankName: data.bankName ?? existing?.bankName ?? null,
+      settlementAccount: data.settlementAccount ?? existing?.settlementAccount ?? null,
+      correspondentAccount: data.correspondentAccount ?? existing?.correspondentAccount ?? null,
+      bik: data.bik ?? existing?.bik ?? null,
+      taxRegime: data.taxRegime ?? existing?.taxRegime ?? null,
+      cardAcquiringPercentage: data.cardAcquiringPercentage ?? existing?.cardAcquiringPercentage ?? null,
+      isPrimary: willBePrimary,
+      archived: data.archived ?? existing?.archived ?? false,
+      archivedAt: data.archivedAt ?? existing?.archivedAt ?? null,
+    };
+
+    if (existing) {
+      return tx.ourCompany.update({ where: { id: data.id }, data: payload });
+    }
+    return tx.ourCompany.create({ data: { id: data.id, ...payload } });
+  });
+
+  return ourCompanyFromPrisma(result);
+}
+
+export async function archiveOurCompany(id: string): Promise<void> {
+  await prisma.ourCompany.update({
+    where: { id },
+    data: { archived: true, archivedAt: new Date().toISOString() },
+  });
+}
+
+export async function unarchiveOurCompany(id: string): Promise<void> {
+  await prisma.ourCompany.update({
+    where: { id },
+    data: { archived: false, archivedAt: null },
+  });
+}
+
+/**
+ * Phase 57a: «Под каким нашим ИП оформить эту мойку?» — server-side helper.
+ * Используется в wash-event-create-service для авто-определения ourCompanyId.
+ *
+ * Логика:
+ *   1. Если paymentMethod='counterAgentContract' и contractor.preferredOurCompanyId — использовать его
+ *   2. Если paymentMethod='aggregator' и aggregator.preferredOurCompanyId — использовать его
+ *   3. Иначе (розница cash/card/transfer) — primary OurCompany
+ *
+ * Override через UI поле washEvent.ourCompanyId (admin может сменить вручную).
+ */
+export async function resolveOurCompanyIdForWashEvent(washEvent: {
+  paymentMethod: string;
+  sourceId?: string;
+  ourCompanyId?: string | null;
+}): Promise<string | null> {
+  // Если ourCompanyId явно установлен (override) — используем его
+  if (washEvent.ourCompanyId) return washEvent.ourCompanyId;
+
+  if (washEvent.paymentMethod === 'counterAgentContract' && washEvent.sourceId) {
+    const ca = await prisma.counterAgent.findUnique({
+      where: { id: washEvent.sourceId },
+      select: { preferredOurCompanyId: true },
+    });
+    if (ca?.preferredOurCompanyId) return ca.preferredOurCompanyId;
+  }
+
+  if (washEvent.paymentMethod === 'aggregator' && washEvent.sourceId) {
+    const agg = await prisma.aggregator.findUnique({
+      where: { id: washEvent.sourceId },
+      select: { preferredOurCompanyId: true },
+    });
+    if (agg?.preferredOurCompanyId) return agg.preferredOurCompanyId;
+  }
+
+  // Розница или нет preferred — primary
+  const primary = await prisma.ourCompany.findFirst({
+    where: { isPrimary: true, archived: false },
+    select: { id: true },
+  });
+  return primary?.id ?? null;
 }
