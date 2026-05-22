@@ -18,14 +18,14 @@ const COMPANIES = [
     shortName: 'ИП Абанин',
     fullName: 'Индивидуальный предприниматель Абанин',
     isPrimary: true,
-    taxRegime: 'usn-6', // допущение — владелец уточнит
+    taxRegime: 'patent', // подтверждено владельцем 22.05
   },
   {
     id: 'oc_orlov',
     shortName: 'ИП Орлов К.Р.',
     fullName: 'Индивидуальный предприниматель Орлов К.Р.',
     isPrimary: false,
-    taxRegime: 'usn-6', // допущение
+    taxRegime: 'patent',
   },
 ];
 
