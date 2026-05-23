@@ -1,11 +1,14 @@
+export const dynamic = 'force-dynamic';
+
 import PageHeader from '@/components/layout/PageHeader';
 import { CounterAgentForm } from '../components/CounterAgentForm';
-import { getCounterAgentsData, getWashEventsData } from '@/lib/data';
+import { getCounterAgentsData, getWashEventsData, getOurCompaniesData } from '@/lib/data';
 
 export default async function NewCounterAgentPage() {
-  const [referenceAgents, washEvents] = await Promise.all([
+  const [referenceAgents, washEvents, ourCompanies] = await Promise.all([
     getCounterAgentsData(),
     getWashEventsData(),
+    getOurCompaniesData().catch(() => []),
   ]);
 
   return (
@@ -14,7 +17,11 @@ export default async function NewCounterAgentPage() {
         title="Новый контрагент"
         description="Добавьте нового корпоративного клиента в систему."
       />
-      <CounterAgentForm referenceAgents={referenceAgents} washEvents={washEvents} />
+      <CounterAgentForm
+        referenceAgents={referenceAgents}
+        washEvents={washEvents}
+        ourCompanies={ourCompanies}
+      />
     </div>
   );
 }

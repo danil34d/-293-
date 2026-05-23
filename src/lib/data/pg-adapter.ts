@@ -144,6 +144,8 @@ function expenseFromPrisma(row: any): Expense {
     quantity: row.quantity ?? undefined,
     unit: row.unit ?? undefined,
     pricePerUnit: row.pricePerUnit ?? undefined,
+    // Phase 57 / multi-company
+    ourCompanyId: row.ourCompanyId ?? undefined,
   };
 }
 
@@ -166,6 +168,8 @@ function clientTransactionFromPrisma(row: any): ClientTransaction {
     type: row.type as any,
     amount: row.amount,
     description: row.description,
+    // Phase 57 / multi-company
+    ourCompanyId: row.ourCompanyId ?? undefined,
   };
 }
 
@@ -1047,6 +1051,8 @@ function invoiceFromPrisma(row: any): import('@/types').Invoice {
     paidVia: row.paidVia ?? undefined,
     paidTransactionId: row.paidTransactionId ?? undefined,
     notes: row.notes ?? '',
+    // Phase 57b.1: multi-company FK
+    ourCompanyId: row.ourCompanyId ?? undefined,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
   };
@@ -1234,8 +1240,29 @@ export async function createInvoice(data: {
   items: import('@/types').InvoiceItems;
   createdByEmployeeId?: string;
   notes?: string;
+  // Phase 57b.1: multi-company FK. Если не указан — резолвится из counterAgent.preferredOurCompanyId или primary.
+  ourCompanyId?: string | null;
 }): Promise<import('@/types').Invoice> {
   const number = await generateInvoiceNumber(data.periodStart);
+
+  // Auto-resolve ourCompanyId если не передали явно: counterAgent.preferredOurCompanyId → primary
+  let resolvedOurCompanyId: string | null = data.ourCompanyId ?? null;
+  if (!resolvedOurCompanyId) {
+    const agent = await prisma.counterAgent.findUnique({
+      where: { id: data.counterAgentId },
+      select: { preferredOurCompanyId: true },
+    });
+    if (agent?.preferredOurCompanyId) {
+      resolvedOurCompanyId = agent.preferredOurCompanyId;
+    } else {
+      const primary = await prisma.ourCompany.findFirst({
+        where: { isPrimary: true, archived: false },
+        select: { id: true },
+      });
+      resolvedOurCompanyId = primary?.id ?? null;
+    }
+  }
+
   const created = await prisma.invoice.create({
     data: {
       number,
@@ -1251,6 +1278,8 @@ export async function createInvoice(data: {
       items: data.items as any,
       createdByEmployeeId: data.createdByEmployeeId ?? null,
       notes: data.notes ?? '',
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: resolvedOurCompanyId,
     },
     include: { counterAgent: { select: { name: true } } },
   });
@@ -1669,6 +1698,8 @@ export async function saveAggregator(data: any): Promise<void> {
       // Phase 7 / finding #26: archived поля раньше игнорировались, PATCH не работал.
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
     create: {
       id: data.id,
@@ -1680,6 +1711,8 @@ export async function saveAggregator(data: any): Promise<void> {
       activePriceListName: data.activePriceListName ?? null,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
   });
 }
@@ -1719,6 +1752,8 @@ export async function saveCounterAgent(data: any): Promise<void> {
       allowCustomServices: data.allowCustomServices ?? false,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
     create: {
       id: data.id,
@@ -1731,6 +1766,8 @@ export async function saveCounterAgent(data: any): Promise<void> {
       allowCustomServices: data.allowCustomServices ?? false,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
   });
 }
@@ -1770,6 +1807,8 @@ export async function saveExpense(data: any): Promise<void> {
       quantity: data.quantity ?? null,
       unit: data.unit ?? null,
       pricePerUnit: data.pricePerUnit ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: data.ourCompanyId ?? null,
     },
     create: {
       id: data.id,
@@ -1780,6 +1819,8 @@ export async function saveExpense(data: any): Promise<void> {
       quantity: data.quantity ?? null,
       unit: data.unit ?? null,
       pricePerUnit: data.pricePerUnit ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: data.ourCompanyId ?? null,
     },
   });
 }
@@ -2050,6 +2091,8 @@ export async function saveClientTransaction(data: any): Promise<void> {
       type: data.type ?? 'payment',
       amount: data.amount,
       description: data.description ?? '',
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: data.ourCompanyId ?? null,
     },
     create: {
       id: data.id,
@@ -2060,6 +2103,8 @@ export async function saveClientTransaction(data: any): Promise<void> {
       type: data.type ?? 'payment',
       amount: data.amount,
       description: data.description ?? '',
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: data.ourCompanyId ?? null,
     },
   });
 }
@@ -2087,6 +2132,8 @@ export async function saveClientTransactions(clientId: string, transactions: any
           type: t.type ?? 'payment',
           amount: t.amount,
           description: t.description ?? '',
+          // Phase 57b.1: multi-company FK persistence
+          ourCompanyId: t.ourCompanyId ?? null,
         },
       })
     ),

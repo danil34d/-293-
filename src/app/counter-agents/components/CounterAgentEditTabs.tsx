@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Users, UserCircle2 } from 'lucide-react';
-import type { CounterAgent, WashEvent } from '@/types';
+import type { CounterAgent, WashEvent, OurCompany } from '@/types';
 import { CounterAgentForm } from './CounterAgentForm';
 import { DriversTab } from './DriversTab';
 
@@ -19,9 +19,11 @@ interface Props {
   agentId: string;
   referenceAgents: CounterAgent[];
   washEvents: WashEvent[];
+  /** Phase 57c: для CounterAgentForm Select preferredOurCompanyId. */
+  ourCompanies?: OurCompany[];
 }
 
-export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEvents }: Props) {
+export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEvents, ourCompanies = [] }: Props) {
   const [activeTab, setActiveTab] = React.useState<'profile' | 'drivers'>('profile');
   const [pendingCount, setPendingCount] = React.useState<number | null>(null);
 
@@ -79,6 +81,7 @@ export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEven
           agentId={agentId}
           referenceAgents={referenceAgents}
           washEvents={washEvents}
+          ourCompanies={ourCompanies}
         />
       )}
       {activeTab === 'drivers' && (

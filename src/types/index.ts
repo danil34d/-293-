@@ -514,6 +514,9 @@ export interface Invoice {
 
   notes?: string;
 
+  /** Phase 57: ИП-получатель платежа (для печати реквизитов). Auto-resolved из counterAgent.preferredOurCompanyId. */
+  ourCompanyId?: string;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -579,6 +582,8 @@ export interface ClientTransaction {
   type: 'payment';
   amount: number;
   description: string;
+  /** Phase 57: ИП-получатель этого платежа. Inherited из aggregator/counterAgent.preferredOurCompanyId. */
+  ourCompanyId?: string;
 }
 
 
@@ -622,6 +627,8 @@ export interface Expense {
   quantity?: number;
   unit?: string;
   pricePerUnit?: number;
+  /** Phase 57: на чей расход. Driver-kickback → ourCompanyId из WashEvent. Прочие → primary. */
+  ourCompanyId?: string;
 }
 
 // --- Structures for Chemical Analytics ---

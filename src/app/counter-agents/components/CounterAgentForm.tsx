@@ -4,7 +4,7 @@ import React, { useEffect } from "react";
 import { useForm, type FieldErrors } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@/lib/zod-resolver";
-import type { CounterAgent, WashEvent } from "@/types";
+import type { CounterAgent, WashEvent, OurCompany } from "@/types";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeLicensePlate } from "@/lib/utils";
@@ -58,6 +58,8 @@ const schema = z.object({
   balance: z.coerce.number().optional(),
   /** Phase 51b: список водителей для split-услуг */
   drivers: z.array(driverSchema).optional(),
+  /** Phase 57c: предпочитаемое ИП для платежей по этому контрагенту. "" = default (primary). */
+  preferredOurCompanyId: z.string().optional(),
 });
 
 type Values = z.infer<typeof schema>;
@@ -69,6 +71,8 @@ interface Props {
   agentId?: string;
   referenceAgents?: CounterAgent[];
   washEvents?: WashEvent[];
+  /** Phase 57c: список наших ИП для выбора preferredOurCompanyId. */
+  ourCompanies?: OurCompany[];
 }
 
 const RECENT_DAYS = 30;
@@ -127,6 +131,7 @@ export function CounterAgentForm({
   agentId,
   referenceAgents = [],
   washEvents = [],
+  ourCompanies = [],
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -159,6 +164,8 @@ export function CounterAgentForm({
       phone: d.phone || "",
       plates: (d.plates || []).join("\n"),
     })),
+    // Phase 57c: preferredOurCompanyId — "" = default (primary)
+    preferredOurCompanyId: initialData?.preferredOurCompanyId || "",
   }), [initialData]);
 
   const form = useForm<Values>({
@@ -453,6 +460,8 @@ export function CounterAgentForm({
       allowCustomServices: data.allowCustomServices,
       balance: data.balance,
       drivers: driversToSave,
+      // Phase 57c: preferredOurCompanyId — "" → null (default к primary ИП)
+      preferredOurCompanyId: data.preferredOurCompanyId ? data.preferredOurCompanyId : undefined,
     };
 
     try {
@@ -572,6 +581,43 @@ export function CounterAgentForm({
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem><FormLabel>Имя агента</FormLabel><FormControl><Input placeholder="например, ООО 'Авто Коммерц'" {...field} className="text-base" /></FormControl><FormMessage /></FormItem>
                 )} />
+                {/* Phase 57c: preferredOurCompanyId — на чьё ИП пойдут платежи по этому контрагенту */}
+                {ourCompanies.length > 0 && (
+                  <FormField control={form.control} name="preferredOurCompanyId" render={({ field }) => {
+                    const activeCompanies = ourCompanies.filter(c => !c.archived);
+                    const primary = activeCompanies.find(c => c.isPrimary);
+                    return (
+                      <FormItem>
+                        <FormLabel>От имени какого ИП работает этот контрагент</FormLabel>
+                        <Select
+                          value={field.value || "__default__"}
+                          onValueChange={(v) => field.onChange(v === "__default__" ? "" : v)}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="text-base">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__default__">
+                              По умолчанию ({primary?.shortName || "основное ИП"})
+                            </SelectItem>
+                            {activeCompanies.map((oc) => (
+                              <SelectItem key={oc.id} value={oc.id}>
+                                {oc.shortName}
+                                {oc.isPrimary ? " ⭐" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          Все мойки и платежи от этого контрагента будут учитываться на выбранном ИП. Если оставить «По умолчанию» — пойдёт на основное ИП.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }} />
+                )}
                 {/* Phase 6.3: balance был под DangerGate.
                     Phase 25 (17.05.2026): backend теперь ИГНОРИРУЕТ balance в PUT
                     (server-side audit enforcement, см. /api/counter-agents/[id]/route.ts).

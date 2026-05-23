@@ -3,23 +3,25 @@ export const dynamic = 'force-dynamic';
 
 import PageHeader from '@/components/layout/PageHeader';
 import { CounterAgentEditTabs } from '../../components/CounterAgentEditTabs';
-import type { CounterAgent, WashEvent } from '@/types';
+import type { CounterAgent, WashEvent, OurCompany } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getCounterAgentById, getCounterAgentsData, getWashEventsData } from '@/lib/data';
+import { getCounterAgentById, getCounterAgentsData, getWashEventsData, getOurCompaniesData } from '@/lib/data';
 
 export default async function EditCounterAgentPage({ params }: { params: { id: string } }) {
   const agentIdFromParams = params.id;
   let agent: CounterAgent | null = null;
   let allAgents: CounterAgent[] = [];
   let washEvents: WashEvent[] = [];
+  let ourCompanies: OurCompany[] = [];
   let fetchError: string | null = null;
 
   try {
-    [agent, allAgents, washEvents] = await Promise.all([
+    [agent, allAgents, washEvents, ourCompanies] = await Promise.all([
       getCounterAgentById(agentIdFromParams),
       getCounterAgentsData(),
       getWashEventsData(),
+      getOurCompaniesData().catch(() => []),
     ]);
     if (!agent) {
       fetchError = `Контрагент с ID "${agentIdFromParams}" не найден.`;
@@ -67,6 +69,7 @@ export default async function EditCounterAgentPage({ params }: { params: { id: s
         agentId={agentIdFromParams}
         referenceAgents={allAgents}
         washEvents={washEvents}
+        ourCompanies={ourCompanies}
       />
     </div>
   );
