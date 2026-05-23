@@ -2565,6 +2565,10 @@ export async function createWashEventWithSideEffects(
         cameraSession: washEvent.cameraSession ?? undefined,
         dismissal: washEvent.dismissal ?? undefined,
         restoration: washEvent.restoration ?? undefined,
+        // Phase 57b.1: multi-company FK — resolved upstream by resolveOurCompanyIdForWashEvent
+        ourCompanyId: washEvent.ourCompanyId ?? null,
+        // Phase 10 / finding #40 — author fixed only on create
+        createdByEmployeeId: washEvent.createdByEmployeeId ?? null,
       },
     });
 
