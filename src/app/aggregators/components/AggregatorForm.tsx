@@ -9,7 +9,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlusCircle, Trash2, Save, X } from "lucide-react";
-import type { Aggregator } from "@/types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { Aggregator, OurCompany } from "@/types";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import React, { useEffect } from 'react';
@@ -33,6 +34,8 @@ const aggregatorFormSchema = z.object({
   priceLists: z.array(namedPriceListSchema).min(1, "Должен быть как минимум один прайс-лист."),
   activePriceListName: z.string().optional(),
   balance: z.coerce.number().optional(),
+  /** Phase 57c: предпочитаемое ИП для платежей по этому агрегатору. "" = default (primary). */
+  preferredOurCompanyId: z.string().optional(),
 }).refine(data => {
   if (data.priceLists && data.priceLists.length > 0) {
     // Если есть прайс-листы, то должен быть выбран активный, и он должен существовать в списке
@@ -50,9 +53,11 @@ type AggregatorFormValues = z.infer<typeof aggregatorFormSchema>;
 interface AggregatorFormProps {
   initialData?: Aggregator | null;
   aggregatorId?: string;
+  /** Phase 57c: список наших ИП для выбора preferredOurCompanyId. */
+  ourCompanies?: OurCompany[];
 }
 
-export function AggregatorForm({ initialData, aggregatorId }: AggregatorFormProps) {
+export function AggregatorForm({ initialData, aggregatorId, ourCompanies = [] }: AggregatorFormProps) {
   const router = useRouter();
   const { toast } = useToast();
   // Phase 6.3: balance под DangerGate-замком на edit (на create — открыт)
@@ -79,6 +84,8 @@ export function AggregatorForm({ initialData, aggregatorId }: AggregatorFormProp
         priceLists: formPriceLists,
         activePriceListName: activeName,
         balance: initialData.balance ?? 0,
+        // Phase 57c: preferredOurCompanyId — "" = default (primary)
+        preferredOurCompanyId: initialData.preferredOurCompanyId || "",
       };
     }
     return {
@@ -88,6 +95,7 @@ export function AggregatorForm({ initialData, aggregatorId }: AggregatorFormProp
       priceLists: [{ name: "Основной", services: [] }],
       activePriceListName: "Основной",
       balance: 0,
+      preferredOurCompanyId: "",
     };
   }, [initialData]);
 
@@ -154,6 +162,8 @@ export function AggregatorForm({ initialData, aggregatorId }: AggregatorFormProp
       priceLists: data.priceLists || [],
       activePriceListName: data.activePriceListName,
       balance: data.balance,
+      // Phase 57c: "" → undefined (default к primary ИП)
+      preferredOurCompanyId: data.preferredOurCompanyId ? data.preferredOurCompanyId : undefined,
     };
 
     try {
@@ -215,6 +225,43 @@ export function AggregatorForm({ initialData, aggregatorId }: AggregatorFormProp
                 </FormItem>
               )}
             />
+            {/* Phase 57c: preferredOurCompanyId — на чьё ИП пойдут платежи через этот агрегатор */}
+            {ourCompanies.length > 0 && (
+              <FormField control={form.control} name="preferredOurCompanyId" render={({ field }) => {
+                const activeCompanies = ourCompanies.filter(c => !c.archived);
+                const primary = activeCompanies.find(c => c.isPrimary);
+                return (
+                  <FormItem>
+                    <FormLabel>От имени какого ИП работает этот агрегатор</FormLabel>
+                    <Select
+                      value={field.value || "__default__"}
+                      onValueChange={(v) => field.onChange(v === "__default__" ? "" : v)}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="text-base">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__default__">
+                          По умолчанию ({primary?.shortName || "основное ИП"})
+                        </SelectItem>
+                        {activeCompanies.map((oc) => (
+                          <SelectItem key={oc.id} value={oc.id}>
+                            {oc.shortName}
+                            {oc.isPrimary ? " ⭐" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Все мойки и платежи через этого агрегатора будут учитываться на выбранном ИП. По умолчанию — на основное.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }} />
+            )}
              {/* Phase 6.3: balance под DangerGate.
                  Прямая правка обходит ClientTransaction (нет audit trail). */}
              {isExisting ? (

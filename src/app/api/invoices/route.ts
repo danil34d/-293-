@@ -48,7 +48,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { counterAgentId, periodStart, periodEnd, discountPercent, notes, preview } = body;
+    // Phase 57c: ourCompanyId — опциональный override. Если не передан, createInvoice
+    // авто-резолвит из counterAgent.preferredOurCompanyId → primary.
+    const { counterAgentId, periodStart, periodEnd, discountPercent, notes, preview, ourCompanyId } = body;
 
     if (!counterAgentId || !periodStart || !periodEnd) {
       return NextResponse.json(
@@ -93,6 +95,8 @@ export async function POST(request: NextRequest) {
       items: previewData.items,
       createdByEmployeeId: auth.id,
       notes,
+      // Phase 57c: явный override (если null/undefined — createInvoice резолвит сам)
+      ourCompanyId: ourCompanyId ?? null,
     });
 
     return NextResponse.json({ message: 'Invoice created', invoice }, { status: 201 });

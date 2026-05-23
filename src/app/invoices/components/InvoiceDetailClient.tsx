@@ -26,11 +26,13 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, Banknote, Send, Trash2, Loader2, Printer, CheckCircle2, AlertTriangle } from "lucide-react";
 import { HazardPill, CheckItem } from "@/components/admin";
-import type { CounterAgent, Invoice, InvoiceStatus, InvoicePaidVia } from "@/types";
+import type { CounterAgent, Invoice, InvoiceStatus, InvoicePaidVia, OurCompany } from "@/types";
 
 interface Props {
   invoice: Invoice;
   counterAgent: CounterAgent | null;
+  /** Phase 57c: ИП-исполнитель счёта (наше юр.лицо). */
+  ourCompany?: OurCompany | null;
 }
 
 const STATUS_COLORS: Record<InvoiceStatus, { label: string; bg: string; fg: string }> = {
@@ -44,7 +46,7 @@ function formatMoney(amount: number): string {
   return amount.toLocaleString("ru-RU") + " ₽";
 }
 
-export function InvoiceDetailClient({ invoice: initial, counterAgent }: Props) {
+export function InvoiceDetailClient({ invoice: initial, counterAgent, ourCompany }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [invoice, setInvoice] = React.useState<Invoice>(initial);
@@ -167,8 +169,22 @@ export function InvoiceDetailClient({ invoice: initial, counterAgent }: Props) {
           <div className="grid grid-cols-2 gap-6 p-5 bg-gray-50 rounded-lg mb-6">
             <div>
               <div className="text-[10px] uppercase text-gray-500 font-semibold tracking-wider">Исполнитель</div>
-              <div className="text-sm mt-1 font-semibold">ИП Абанин Даниил Олегович</div>
-              <div className="text-[12px] text-gray-600 mt-1">ИНН 333801382869</div>
+              {/* Phase 57c: динамические реквизиты ИП из БД (вместо hardcoded). */}
+              <div className="text-sm mt-1 font-semibold">
+                {ourCompany?.fullName || ourCompany?.shortName || "ИП Абанин Даниил Олегович"}
+                {ourCompany?.isPrimary && <span className="ml-1.5 text-amber-600">⭐</span>}
+              </div>
+              <div className="text-[12px] text-gray-600 mt-1">
+                {ourCompany?.inn ? `ИНН ${ourCompany.inn}` : "ИНН 333801382869"}
+                {ourCompany?.ogrn ? <> · ОГРН {ourCompany.ogrn}</> : null}
+              </div>
+              {ourCompany?.bankName && (
+                <div className="text-[11px] text-gray-500 mt-1 leading-snug">
+                  {ourCompany.bankName}
+                  {ourCompany.settlementAccount ? <><br/>р/с {ourCompany.settlementAccount}</> : null}
+                  {ourCompany.bik ? <> · БИК {ourCompany.bik}</> : null}
+                </div>
+              )}
             </div>
             <div>
               <div className="text-[10px] uppercase text-gray-500 font-semibold tracking-wider">Заказчик</div>

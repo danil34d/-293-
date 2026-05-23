@@ -31,7 +31,7 @@ import {
   X,
   ArrowRight,
 } from 'lucide-react';
-import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment } from '@/types';
+import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment, OurCompany } from '@/types';
 import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
 import { SplitDriverCard, DriverPickerModal } from './SplitDriverWidgets';
 import { Badge } from '@/components/ui/badge';
@@ -288,6 +288,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   const [allAggregators, setAllAggregators] = useState<Aggregator[]>([]);
   const [allWashEvents, setAllWashEvents] = useState<WashEvent[]>([]);
   const [retailPriceConfig, setRetailPriceConfig] = useState<RetailPriceConfig>({ mainPriceList: [], additionalPriceList: [], allowCustomRetailServices: true, cardAcquiringPercentage: 1.2 });
+  // Phase 57c: список наших ИП для отображения бейджа «От имени ИП» в шаге подтверждения
+  const [allOurCompanies, setAllOurCompanies] = useState<OurCompany[]>([]);
 
   useEffect(() => {
     setBoxShiftStateByBox({
@@ -444,24 +446,27 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
       if (isShiftActive) {
         setIsLoading(true);
         try {
-          const [agentsRes, aggregatorsRes, retailRes, employeesRes, washEventsRes] = await Promise.all([
+          const [agentsRes, aggregatorsRes, retailRes, employeesRes, washEventsRes, ourCompaniesRes] = await Promise.all([
             fetch('/api/counter-agents'),
             fetch('/api/aggregators'),
             fetch('/api/retail-price-config'),
             fetch('/api/employees'),
             fetch('/api/wash-events'),
+            // Phase 57c: список наших ИП для бейджа «От имени ИП» (best-effort)
+            fetch('/api/our-companies').catch(() => null),
           ]);
 
           if (!agentsRes.ok || !aggregatorsRes.ok || !retailRes.ok || !employeesRes.ok || !washEventsRes.ok) {
             throw new Error('API error');
           }
 
-          const [agentsData, aggregatorsData, retailData, employeesData, washEventsData] = await Promise.all([
+          const [agentsData, aggregatorsData, retailData, employeesData, washEventsData, ourCompaniesData] = await Promise.all([
             agentsRes.json(),
             aggregatorsRes.json(),
             retailRes.json(),
             employeesRes.json(),
             washEventsRes.json(),
+            ourCompaniesRes && ourCompaniesRes.ok ? ourCompaniesRes.json() : [],
           ]);
 
           // Filter active counter agents
@@ -473,6 +478,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           setAllEmployees(activeEmployees);
           setEmployeeMap(new Map(activeEmployees.map((e: any) => [e.id, e.fullName])));
           setAllWashEvents(washEventsData);
+          // Phase 57c: ИП для бейджа (best-effort, не блокирует терминал)
+          setAllOurCompanies(Array.isArray(ourCompaniesData) ? ourCompaniesData : []);
         } catch (error) {
           console.error("Error fetching data for workstation:", error);
           toast({ title: "Ошибка", description: "Не удалось загрузить данные для рабочей станции.", variant: "destructive"});
@@ -480,6 +487,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           setAllAggregators([]);
           setAllEmployees([]);
           setAllWashEvents([]);
+          setAllOurCompanies([]);
           setRetailPriceConfig({ mainPriceList: [], additionalPriceList: [], allowCustomRetailServices: true, cardAcquiringPercentage: 1.2 });
         } finally {
           setIsLoading(false);
@@ -1918,6 +1926,36 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                   selectedPaymentMethod ? (paymentMethodLabels[selectedPaymentMethod] || 'Не определен') : 'Не определен'
                 }</p>
                 <p><strong>Исполнители:</strong> {selectedEmployees.map(e => e.fullName).join(', ')}</p>
+
+                {/* Phase 57c: бейдж «От имени ИП» — какое наше юр.лицо оформит мойку.
+                    Логика дублирует серверный resolveOurCompanyIdForWashEvent: counterAgent.preferredOurCompanyId
+                    → aggregator.preferredOurCompanyId → primary. Сотрудник видит куда пойдут деньги. */}
+                {(() => {
+                  if (allOurCompanies.length === 0) return null;
+                  const active = allOurCompanies.filter(c => !c.archived);
+                  let targetOc: OurCompany | undefined;
+                  let reasonHint = '';
+                  if (selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent?.preferredOurCompanyId) {
+                    targetOc = active.find(c => c.id === foundCounterAgent.preferredOurCompanyId);
+                    reasonHint = `назначено контрагенту ${foundCounterAgent.name}`;
+                  } else if (selectedPaymentMethod === 'aggregator' && selectedAggregator?.preferredOurCompanyId) {
+                    targetOc = active.find(c => c.id === selectedAggregator.preferredOurCompanyId);
+                    reasonHint = `назначено агрегатору ${selectedAggregator.name}`;
+                  }
+                  if (!targetOc) {
+                    targetOc = active.find(c => c.isPrimary);
+                    reasonHint = 'основное ИП по умолчанию';
+                  }
+                  if (!targetOc) return null;
+                  return (
+                    <p style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', margin: '8px 0' }}>
+                      <strong>От имени ИП:</strong>{' '}
+                      <span style={{ fontWeight: 700 }}>{targetOc.shortName}</span>
+                      {targetOc.isPrimary && <span style={{ marginLeft: 6 }}>⭐</span>}
+                      <span style={{ marginLeft: 8, fontSize: 12, color: '#6366f1' }}>({reasonHint})</span>
+                    </p>
+                  );
+                })()}
 
                 {/* Phase 51c / V2-#4: split-services карточка водителя */}
                 <SplitDriverCard

@@ -4,10 +4,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { DateRange } from "react-day-picker";
 import { startOfMonth, endOfMonth, startOfDay, endOfDay, format } from "date-fns";
-import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, EmployeeTransactionType, SalaryReportData } from '@/types';
+import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, EmployeeTransactionType, SalaryReportData, OurCompany } from '@/types';
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, FilePieChart, TrendingUp, Wallet, AlertTriangle, Trophy, EyeOff, Eye, Car } from 'lucide-react';
+import { Loader2, FilePieChart, TrendingUp, Wallet, AlertTriangle, Trophy, EyeOff, Eye, Car, Building2 } from 'lucide-react';
 import { getEmployeesData, getWashEventsData, getSalarySchemesData, getAllEmployeeTransactions, getViolationsData } from "@/lib/data-loader";
 import { SalaryReportRow } from "./SalaryReportRow";
 import { generateSalaryReport } from "@/services/salary-calculator";
@@ -40,6 +40,18 @@ export function SalaryReportClient() {
     const [periodWashEvents, setPeriodWashEvents] = useState<WashEvent[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showInactive, setShowInactive] = useState(false);
+    // Phase 57d: фильтр по ourCompanyId (ИП). "all" = без фильтра. Перезагружает отчёт.
+    const [allOurCompanies, setAllOurCompanies] = useState<OurCompany[]>([]);
+    const [selectedOurCompanyId, setSelectedOurCompanyId] = useState<string>("all");
+
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/our-companies')
+            .then(r => r.ok ? r.json() : [])
+            .then(list => { if (!cancelled && Array.isArray(list)) setAllOurCompanies(list); })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, []);
 
     // UX-safety (Phase 4C3): статус закрытия периода ЗП.
     // Используется в /api/wash-events/[id] для 423 Locked при попытке правки.
@@ -85,13 +97,21 @@ export function SalaryReportClient() {
     const fetchAndProcessData = async () => {
         setIsLoading(true);
         try {
-            const [allEmployeesRaw, allWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
+            const [allEmployeesRaw, rawWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
                 getEmployeesData(),
                 getWashEventsData(),
                 getSalarySchemesData(),
                 getAllEmployeeTransactions(),
                 getViolationsData(),
             ]);
+
+            // Phase 57d: фильтрация моек по ourCompanyId. "all" = без фильтра.
+            // ВАЖНО: только мойки с этим ourCompanyId попадают в расчёт ЗП — позволяет видеть
+            // отдельно сколько заработали сотрудники именно от ИП Орлов vs ИП Абанин.
+            const allWashEvents = selectedOurCompanyId === "all"
+                ? rawWashEvents
+                : rawWashEvents.filter(w => (w as any).ourCompanyId === selectedOurCompanyId);
+
             // employees — кому считаем зарплату (без admin и kiosk).
             // allEmployeesRaw — полный список (с kiosk!) для определения команды
             // в generateSalaryReport (иначе делитель numEmployeesOnWash будет неправильным).
@@ -190,7 +210,7 @@ export function SalaryReportClient() {
     useEffect(() => {
         fetchAndProcessData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dateRange]);
+    }, [dateRange, selectedOurCompanyId]);
 
     const { activeEmployees, inactiveEmployees } = useMemo(() => {
         const active: FullEmployeeData[] = [];
@@ -267,6 +287,46 @@ export function SalaryReportClient() {
                     />
                 )}
             </div>
+
+            {/* Phase 57d: фильтр «По какому ИП показывать»  */}
+            {allOurCompanies.length > 1 && (
+                <div className="flex items-center gap-2 flex-wrap p-3 rounded-xl bg-indigo-50/40 border border-indigo-100">
+                    <Building2 className="w-4 h-4 text-indigo-600" />
+                    <span className="text-[12px] text-indigo-900 font-semibold mr-1">Фильтр по ИП:</span>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedOurCompanyId("all")}
+                        className={cn(
+                            "px-3 py-1 rounded-full text-[12px] font-semibold border transition-colors",
+                            selectedOurCompanyId === "all"
+                                ? "bg-indigo-600 text-white border-indigo-600"
+                                : "bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                        )}
+                    >
+                        Все ИП
+                    </button>
+                    {allOurCompanies.filter(c => !c.archived).map(oc => (
+                        <button
+                            key={oc.id}
+                            type="button"
+                            onClick={() => setSelectedOurCompanyId(oc.id)}
+                            className={cn(
+                                "px-3 py-1 rounded-full text-[12px] font-semibold border transition-colors",
+                                selectedOurCompanyId === oc.id
+                                    ? "bg-indigo-600 text-white border-indigo-600"
+                                    : "bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                            )}
+                        >
+                            {oc.shortName}{oc.isPrimary ? " ⭐" : ""}
+                        </button>
+                    ))}
+                    {selectedOurCompanyId !== "all" && (
+                        <span className="text-[11px] text-indigo-600 ml-2">
+                            ← в отчёте только мойки этого ИП
+                        </span>
+                    )}
+                </div>
+            )}
 
             {/* UX-safety: SafetyBar со статусом периода ЗП */}
             {!isLoading && reportMonth && (
