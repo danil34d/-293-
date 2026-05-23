@@ -29,28 +29,50 @@ function detectSplitServices(
   washEvent: WashEvent,
   scheme: SalaryScheme | undefined,
 ): Array<{ serviceName: string; splitDriverBonus: number }> {
-  if (!scheme?.rates || scheme.rates.length === 0) return [];
-  const rates: SalaryRate[] = scheme.rates;
+  // Phase 50g (2026-05-23): service.split в прайс-листе — единственный источник истины.
+  // Раньше смотрели только scheme.rates[i].splitDriverBonus — это работало только для rate-схем,
+  // percentage-схемы (например «Стандарт 45%») никогда не триггерили split-flow, даже если у услуги
+  // в прайсе был {driverBonus, employeePct}. Теперь split определяется по самой услуге (per-service
+  // override), независимо от схемы сотрудника. scheme.rates[i].splitDriverBonus оставлен как legacy.
 
-  const allServices: Array<{ serviceName: string }> = [];
+  type SvcShape = { serviceName?: string; split?: { driverBonus?: number; employeePct?: number } };
+  const allServices: SvcShape[] = [];
   if (washEvent.services?.main?.serviceName) {
-    allServices.push({ serviceName: washEvent.services.main.serviceName });
+    allServices.push(washEvent.services.main as SvcShape);
   }
   if (Array.isArray(washEvent.services?.additional)) {
     for (const s of washEvent.services.additional) {
-      if (s.serviceName) allServices.push({ serviceName: s.serviceName });
+      if (s.serviceName) allServices.push(s as SvcShape);
     }
   }
 
   const result: Array<{ serviceName: string; splitDriverBonus: number }> = [];
+
+  // 1) Authoritative: service.split (per-service override)
   for (const svc of allServices) {
-    const rate = rates.find(
-      (r) => r.serviceName === svc.serviceName && typeof r.splitDriverBonus === 'number' && r.splitDriverBonus > 0
-    );
-    if (rate) {
-      result.push({ serviceName: svc.serviceName, splitDriverBonus: rate.splitDriverBonus! });
+    const sn = svc.serviceName;
+    if (!sn) continue;
+    const dB = svc.split?.driverBonus;
+    if (typeof dB === 'number' && dB > 0) {
+      result.push({ serviceName: sn, splitDriverBonus: dB });
     }
   }
+
+  // 2) Legacy fallback: scheme.rates[i].splitDriverBonus — оставлен для старых схем где split задан в схеме
+  if (scheme?.rates && scheme.rates.length > 0) {
+    const rates: SalaryRate[] = scheme.rates;
+    for (const svc of allServices) {
+      if (!svc.serviceName) continue;
+      if (result.find(r => r.serviceName === svc.serviceName)) continue; // уже найден через service.split
+      const rate = rates.find(
+        (r) => r.serviceName === svc.serviceName && typeof r.splitDriverBonus === 'number' && r.splitDriverBonus > 0
+      );
+      if (rate) {
+        result.push({ serviceName: svc.serviceName, splitDriverBonus: rate.splitDriverBonus! });
+      }
+    }
+  }
+
   return result;
 }
 

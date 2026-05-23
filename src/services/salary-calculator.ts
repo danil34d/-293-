@@ -43,28 +43,73 @@ function calculateIndividualShare(
 
   if (numEmployeesOnWash <= 0) return result;
 
+  // Phase 50g (2026-05-23): per-service split-pricing — индивидуальный override схемы.
+  // Если у конкретной услуги в прайсе стоит {driverBonus, employeePct}, эта услуга
+  // считается отдельно: бригаде (price - driverBonus) × employeePct / N, схема игнорируется
+  // для этой строки. Driver bonus отдельно учитывается через DriverKickback (Phase 50d).
+  const allServicesAny = [washEvent.services?.main, ...(washEvent.services?.additional || [])] as any[];
+  let splitEarnings = 0;
+  const splitFormulaParts: string[] = [];
+  const splitServiceNames = new Set<string>();
+  for (const svc of allServicesAny) {
+    if (!svc?.serviceName) continue;
+    const dB = svc.split?.driverBonus;
+    const eP = svc.split?.employeePct;
+    const price = svc.price ?? 0;
+    if (typeof dB === 'number' && dB > 0 && typeof eP === 'number' && eP > 0 && price > 0) {
+      const remaining = Math.max(0, price - dB);
+      const share = (remaining * (eP / 100)) / numEmployeesOnWash;
+      splitEarnings += share;
+      splitServiceNames.add(svc.serviceName);
+      splitFormulaParts.push(
+        `(${price}−${dB})×${eP}%${numEmployeesOnWash > 1 ? `/${numEmployeesOnWash}` : ''}`
+      );
+    }
+  }
+
   if (employeeScheme.type === 'percentage') {
     // For percentage-based schemes:
-    const totalBaseAmount = washEvent.netAmount !== undefined ? washEvent.netAmount : washEvent.totalAmount;
-    const totalAmountAfterDeduction = totalBaseAmount - (employeeScheme.fixedDeduction ?? 0);
-    const percentage = employeeScheme.percentage ?? 0;
-    const totalSalaryPool = totalAmountAfterDeduction * (percentage / 100);
-    const earning = totalSalaryPool / numEmployeesOnWash;
+    // Phase 50g: split-услуги уже посчитаны выше и НЕ должны входить в общую базу.
+    // Считаем сумму НЕ-split услуг и применяем к ней процент.
+    const nonSplitTotal = allServicesAny.reduce((sum, svc) => {
+      if (!svc?.serviceName) return sum;
+      if (splitServiceNames.has(svc.serviceName)) return sum;
+      return sum + (svc.price ?? 0);
+    }, 0);
 
-    result.earnings = earning > 0 ? Math.round(earning * 100) / 100 : 0;
+    // Если split услуг нет — сохраняем старое поведение (использовать netAmount/totalAmount).
+    // Это важно для розницы где totalAmount может включать дополнительные позиции.
+    const hasSplit = splitServiceNames.size > 0;
+    const baseForScheme = hasSplit
+      ? nonSplitTotal
+      : (washEvent.netAmount !== undefined ? washEvent.netAmount : washEvent.totalAmount);
+
+    const afterDeduction = Math.max(0, baseForScheme - (employeeScheme.fixedDeduction ?? 0));
+    const percentage = employeeScheme.percentage ?? 0;
+    const schemePool = afterDeduction * (percentage / 100);
+    const schemeShare = schemePool / numEmployeesOnWash;
+    const totalEarning = splitEarnings + schemeShare;
+
+    result.earnings = totalEarning > 0 ? Math.round(totalEarning * 100) / 100 : 0;
 
     // Build formula string
-    let formulaParts: string[] = [];
-    if (employeeScheme.fixedDeduction && employeeScheme.fixedDeduction > 0) {
-      formulaParts.push(`(${formatRubles(totalBaseAmount)} - ${formatRubles(employeeScheme.fixedDeduction)})`);
-    } else {
-      formulaParts.push(formatRubles(totalBaseAmount));
+    const formulaParts: string[] = [];
+    if (splitFormulaParts.length > 0) {
+      formulaParts.push(`split: ${splitFormulaParts.join(' + ')}`);
     }
-    formulaParts.push(`× ${percentage}%`);
-    if (numEmployeesOnWash > 1) {
-      formulaParts.push(`/ ${numEmployeesOnWash} чел.`);
+    if (baseForScheme > 0 && percentage > 0) {
+      let schemeFormula = '';
+      if (employeeScheme.fixedDeduction && employeeScheme.fixedDeduction > 0) {
+        schemeFormula = `(${formatRubles(baseForScheme)} - ${formatRubles(employeeScheme.fixedDeduction)}) × ${percentage}%`;
+      } else {
+        schemeFormula = `${formatRubles(baseForScheme)} × ${percentage}%`;
+      }
+      if (numEmployeesOnWash > 1) {
+        schemeFormula += ` / ${numEmployeesOnWash} чел.`;
+      }
+      formulaParts.push(schemeFormula);
     }
-    result.formula = formulaParts.join(' ');
+    result.formula = formulaParts.join(' + ');
 
     return result;
   }
@@ -96,6 +141,7 @@ function calculateIndividualShare(
 
 
     // 2. Calculate the total rate for all services performed, applying per-service deductions.
+    // Phase 50g: split-услуги уже посчитаны выше — пропускаем их при подсчёте rate.
     const allServices = [washEvent.services.main, ...washEvent.services.additional];
     let totalRateForWash = 0;
     const rateMap = new Map<string, SalaryRate>(employeeScheme.rates?.map(r => [r.serviceName, r]) || []);
@@ -103,6 +149,7 @@ function calculateIndividualShare(
 
     for (const service of allServices) {
       if (!service?.serviceName) continue;
+      if (splitServiceNames.has(service.serviceName)) continue; // Phase 50g: split overrides rate
       const rateItem = rateMap.get(service.serviceName);
       if (rateItem && rateItem.rate > 0) {
         const earningForService = (rateItem.rate ?? 0) - (rateItem.deduction ?? 0);
@@ -122,18 +169,24 @@ function calculateIndividualShare(
       }
     }
 
-    // 3. The employee's earning is their share of the total calculated rate.
-    const earning = totalRateForWash / numEmployeesOnWash;
-    result.earnings = earning > 0 ? Math.round(earning * 100) / 100 : 0;
+    // 3. The employee's earning = split share (Phase 50g) + rate share / N
+    const rateEarning = totalRateForWash / numEmployeesOnWash;
+    const totalEarning = splitEarnings + (rateEarning > 0 ? rateEarning : 0);
+    result.earnings = totalEarning > 0 ? Math.round(totalEarning * 100) / 100 : 0;
 
-    // Build formula string for rate-based
-    if (rateDetails.length > 0) {
-      let formula = `(${rateDetails.join(' + ')}) руб.`;
-      if (numEmployeesOnWash > 1) {
-        formula += ` / ${numEmployeesOnWash} чел.`;
-      }
-      result.formula = formula;
+    // Build formula string
+    const formulaParts: string[] = [];
+    if (splitFormulaParts.length > 0) {
+      formulaParts.push(`split: ${splitFormulaParts.join(' + ')}`);
     }
+    if (rateDetails.length > 0) {
+      let rateFormula = `(${rateDetails.join(' + ')}) руб.`;
+      if (numEmployeesOnWash > 1) {
+        rateFormula += ` / ${numEmployeesOnWash} чел.`;
+      }
+      formulaParts.push(rateFormula);
+    }
+    result.formula = formulaParts.join(' + ');
 
     return result;
   }
