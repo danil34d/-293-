@@ -861,7 +861,8 @@ export async function reverseExpenseStockMovements(
       await tx.stockMovement.create({
         data: {
           id: reverseId,
-          materialId: m.materialId,
+          // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
+          material: { connect: { id: m.materialId } },
           type: 'adjustment',
           amount: reverseAmount,
           balanceAfter: newStock,
@@ -869,7 +870,7 @@ export async function reverseExpenseStockMovements(
           description: `Авто-реверс при удалении Expense ${expenseId} (оригинал SM ${m.id}, ${m.type})`,
           relatedEntityType: 'expense_reversal',
           relatedEntityId: expenseId,
-          employeeId: employeeId ?? null,
+          ...(employeeId ? { employee: { connect: { id: employeeId } } } : {}),
           createdBy: employeeId ?? null,
         },
       });
@@ -2611,7 +2612,8 @@ export async function createWashEventWithSideEffects(
       await tx.stockMovement.create({
         data: {
           id: stockMovement.id,
-          materialId: stockMovement.materialId,
+          // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
+          material: { connect: { id: stockMovement.materialId } },
           type: stockMovement.type,
           amount: stockMovement.amount,
           balanceAfter: stockMovement.balanceAfter,
@@ -2619,7 +2621,7 @@ export async function createWashEventWithSideEffects(
           description: stockMovement.description ?? '',
           relatedEntityType: stockMovement.relatedEntityType ?? null,
           relatedEntityId: stockMovement.relatedEntityId ?? null,
-          employeeId: stockMovement.employeeId ?? null,
+          ...(stockMovement.employeeId ? { employee: { connect: { id: stockMovement.employeeId } } } : {}),
         },
       });
     }
@@ -3064,7 +3066,8 @@ export async function issueCanisterAtomic(
     const canister = await tx.employeeCanister.create({
       data: {
         id: canisterId,
-        employeeId: input.employeeId,
+        // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
+        employee: { connect: { id: input.employeeId } },
         issuedAt: now,
         initialAmountGrams: amountGrams,
         remainingAmountGrams: amountGrams,
@@ -3090,7 +3093,8 @@ export async function issueCanisterAtomic(
       await tx.stockMovement.create({
         data: {
           id: `sm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-          materialId,
+          // Phase 60 — relation connect для FK
+          material: { connect: { id: materialId } },
           type: 'issue',
           amount: -amountGrams,
           balanceAfter: newBalance,
@@ -3098,7 +3102,7 @@ export async function issueCanisterAtomic(
           description: `Канистра ${input.mode} → ${employee.fullName}`,
           relatedEntityType: 'employee_canister',
           relatedEntityId: canisterId,
-          employeeId: input.employeeId,
+          employee: { connect: { id: input.employeeId } },
           createdBy: input.issuedBy,
           warehouse: 'main',
         },
@@ -3117,7 +3121,8 @@ export async function issueCanisterAtomic(
       const t = await tx.employeeTransaction.create({
         data: {
           id: `et_canister_${canisterId}`,
-          employeeId: input.employeeId,
+          // Phase 60 — relation connect для FK
+          employee: { connect: { id: input.employeeId } },
           date: now,
           type: 'purchase',
           amount: priceRub, // положительная сумма = долг (читается как удержание в salary-report)
@@ -3129,7 +3134,7 @@ export async function issueCanisterAtomic(
       const t = await tx.employeeTransaction.create({
         data: {
           id: `et_canister_${canisterId}`,
-          employeeId: input.employeeId,
+          employee: { connect: { id: input.employeeId } },
           date: now,
           type: 'bonus',
           amount: 0,
@@ -3141,7 +3146,7 @@ export async function issueCanisterAtomic(
       const t = await tx.employeeTransaction.create({
         data: {
           id: `et_canister_${canisterId}`,
-          employeeId: input.employeeId,
+          employee: { connect: { id: input.employeeId } },
           date: now,
           type: 'salary-deduction',
           amount: priceRub, // положительная сумма = удержание
