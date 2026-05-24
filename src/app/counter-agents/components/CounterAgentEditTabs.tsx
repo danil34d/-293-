@@ -5,6 +5,7 @@ import { Users, UserCircle2 } from 'lucide-react';
 import type { CounterAgent, WashEvent, OurCompany } from '@/types';
 import { CounterAgentForm } from './CounterAgentForm';
 import { DriversTab } from './DriversTab';
+import { CounterAgentHeaderCard } from './CounterAgentHeaderCard';
 
 /**
  * Phase 51a / V2-#4 split-pricing: Tabs обёртка для /counter-agents/[id]/edit.
@@ -39,8 +40,27 @@ export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEven
     return () => { cancelled = true; };
   }, [agentId]);
 
+  // Phase 59-ui-a: резолвим ourCompany по preferredOurCompanyId (или primary fallback)
+  const resolvedOurCompany = React.useMemo(() => {
+    const active = (ourCompanies || []).filter(c => !c.archived);
+    if (agent.preferredOurCompanyId) {
+      const m = active.find(c => c.id === agent.preferredOurCompanyId);
+      if (m) return m;
+    }
+    return active.find(c => c.isPrimary) ?? null;
+  }, [ourCompanies, agent.preferredOurCompanyId]);
+
   return (
     <div>
+      {/* Phase 59-ui-a: Header-сводка */}
+      <CounterAgentHeaderCard
+        agent={agent}
+        agentId={agentId}
+        washEvents={washEvents}
+        ourCompany={resolvedOurCompany}
+        pendingKickbacks={pendingCount}
+      />
+
       {/* Tabs header */}
       <div className="flex items-center gap-1 border-b border-slate-200 mb-4 -mt-2">
         <button
