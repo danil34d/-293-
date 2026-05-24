@@ -474,7 +474,8 @@ export interface VedomostRow {
   date: string;            // dd.MM.yyyy
   mark: string;            // марка/категория автомобиля
   plate: string;           // ГРН
-  services: string;        // перечень услуг через ; (или что захотел пользователь)
+  services: string;        // основная услуга (например «Мойка внутри прицепа + трап»)
+  extra: string;           // доп. работы (например «3× Доп час», «+побелка стен»)
   totalRub: number;        // сумма за строку, руб
   driver: string;          // ФИО водителя (или пусто)
 }
@@ -509,22 +510,24 @@ export function vedomostRowsFromWashes(agent: CounterAgent, washes: WashEvent[])
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
     .map(w => {
       const info = carInfoMap.get(w.vehicleNumber || '') || {};
-      const mark = info.mark || info.category || '—';
-      const svcList: string[] = [];
-      if (w.services?.main?.serviceName) svcList.push(w.services.main.serviceName);
+      const mark = info.mark || info.category || '';
+      // Phase 59-doc-vedomost-extra: разделяем main vs additional на 2 колонки
+      const mainService = w.services?.main?.serviceName || '';
+      const extraParts: string[] = [];
       if (Array.isArray(w.services?.additional)) {
         const groups = new Map<string, number>();
         w.services.additional.forEach(s => {
           if (s.serviceName) groups.set(s.serviceName, (groups.get(s.serviceName) ?? 0) + 1);
         });
-        groups.forEach((cnt, name) => svcList.push(cnt > 1 ? `${cnt}× ${name}` : name));
+        groups.forEach((cnt, name) => extraParts.push(cnt > 1 ? `${cnt}× ${name}` : name));
       }
       const driverComment = (w.driverComments && w.driverComments[0]?.text) || '';
       return {
         date: format(new Date(w.timestamp), 'dd.MM.yyyy'),
         mark,
         plate: w.vehicleNumber || '',
-        services: svcList.join('; '),
+        services: mainService,
+        extra: extraParts.join('; '),
         totalRub: w.totalAmount ?? 0,
         driver: driverComment,
       };
@@ -562,27 +565,26 @@ export function buildVedomostDocx({
     spacing: { after: 300 },
   }));
 
-  // Готовим строки
+  // Phase 59-doc-vedomost-extra: 8 колонок (добавлена «Доп. работы» между основной и стоимостью)
   const headerCells = [
     cell('Дата', { bold: true, shade: true, center: true }),
     cell('Марка автомобиля', { bold: true, shade: true, center: true }),
     cell('Гос. номер автомобиля', { bold: true, shade: true, center: true }),
     cell('Перечень выполненных работ', { bold: true, shade: true, center: true }),
+    cell('Доп. работы', { bold: true, shade: true, center: true }),
     cell('Стоимость, руб.', { bold: true, shade: true, center: true }),
     cell('ФИО водителя', { bold: true, shade: true, center: true }),
     cell('Подпись водителя / уполномоченного лица', { bold: true, shade: true, center: true }),
   ];
 
   const dataRows: TableRow[] = [];
-  // Helper: Phase 59-doc-vedomost-print — cantSplit запрещает разрыв строки между страницами
   function makeRow(cells: TableCell[]): TableRow {
     return new TableRow({ children: cells, cantSplit: true });
   }
   if (blank) {
-    // 15 пустых строк — комфортно влезает на A4 landscape с шапкой и подписями
     for (let i = 0; i < 15; i++) {
       dataRows.push(makeRow([
-        cell(' '), cell(' '), cell(' '), cell(' '),
+        cell(' '), cell(' '), cell(' '), cell(' '), cell(' '),
         cell(' ', { right: true }), cell(' '), cell(' '),
       ]));
     }
@@ -593,20 +595,21 @@ export function buildVedomostDocx({
         cell(r.mark),
         cell(r.plate),
         cell(r.services),
-        // Phase 59-doc-vedomost-blank: 0 → пусто (заполняется руками для бланка/расчёта по факту)
+        cell(r.extra),
         cell(r.totalRub > 0 ? r.totalRub.toLocaleString('ru-RU') : ' ', { right: true }),
         cell(r.driver),
         cell(' '),
       ]));
     });
     const totalCalc = sourceRows.reduce((s, r) => s + (r.totalRub ?? 0), 0);
-    // Итого показываем только если есть реальные суммы (т.е. это не пустой бланк)
+    // Итого только если есть реальные суммы
     if (sourceRows.length > 0 && totalCalc > 0) {
       dataRows.push(makeRow([
         cell('Итого:', { bold: true, shade: true }),
         cell(' ', { shade: true }),
         cell(' ', { shade: true }),
-        cell(` ${sourceRows.length} моек`, { shade: true, right: true }),
+        cell(`${sourceRows.length} моек`, { shade: true, right: true }),
+        cell(' ', { shade: true }),
         cell(totalCalc.toLocaleString('ru-RU'), { bold: true, shade: true, right: true }),
         cell(' ', { shade: true }),
         cell(' ', { shade: true }),

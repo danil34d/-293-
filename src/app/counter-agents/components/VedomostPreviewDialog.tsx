@@ -80,6 +80,7 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
           mark: defaultBlankMark,
           plate: defaultBlankPlate,
           services: defaultBlankService,
+          extra: '',
           totalRub: 0,
           driver: '',
         }))
@@ -102,7 +103,7 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
     setRows(prev => prev.filter((_, i) => i !== idx));
   }
   function addRow() {
-    setRows(prev => [...prev, { date: '', mark: '', plate: '', services: '', totalRub: 0, driver: '' }]);
+    setRows(prev => [...prev, { date: '', mark: '', plate: '', services: '', extra: '', totalRub: 0, driver: '' }]);
   }
 
   const monthName = MONTHS[monthIdx];
@@ -120,18 +121,21 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
         <td>${escapeHtml(r.mark)}</td>
         <td>${escapeHtml(r.plate)}</td>
         <td>${escapeHtml(r.services)}</td>
+        <td>${escapeHtml(r.extra || '')}</td>
         <td style="text-align:right">${r.totalRub > 0 ? (r.totalRub).toLocaleString('ru-RU') : ''}</td>
         <td>${escapeHtml(r.driver)}</td>
         <td></td>
       </tr>
     `).join('');
 
-    const totalRowHtml = rows.length > 0 ? `
+    // Итого только если есть РЕАЛЬНЫЕ суммы (для пустого бланка не нужно)
+    const totalRowHtml = total > 0 ? `
       <tr style="background:#E7E6E6; font-weight:bold">
         <td>Итого:</td>
         <td></td>
         <td></td>
         <td style="text-align:right">${rows.length} моек</td>
+        <td></td>
         <td style="text-align:right">${total.toLocaleString('ru-RU')}</td>
         <td></td>
         <td></td>
@@ -187,6 +191,7 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
       <th>Марка автомобиля</th>
       <th>Гос. номер</th>
       <th>Перечень выполненных работ</th>
+      <th>Доп. работы</th>
       <th>Стоимость, руб.</th>
       <th>ФИО водителя</th>
       <th>Подпись</th>
@@ -308,18 +313,19 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
             <thead className="bg-slate-100 sticky top-0">
               <tr>
                 <th className="text-left p-2 w-24 font-semibold border-b border-slate-200">Дата</th>
-                <th className="text-left p-2 w-32 font-semibold border-b border-slate-200">Марка</th>
-                <th className="text-left p-2 w-28 font-semibold border-b border-slate-200">ГРН</th>
-                <th className="text-left p-2 font-semibold border-b border-slate-200">Услуги</th>
+                <th className="text-left p-2 w-28 font-semibold border-b border-slate-200">Марка</th>
+                <th className="text-left p-2 w-24 font-semibold border-b border-slate-200">ГРН</th>
+                <th className="text-left p-2 font-semibold border-b border-slate-200">Основные услуги</th>
+                <th className="text-left p-2 font-semibold border-b border-slate-200">Доп. работы</th>
                 <th className="text-right p-2 w-24 font-semibold border-b border-slate-200">Сумма, ₽</th>
-                <th className="text-left p-2 w-40 font-semibold border-b border-slate-200">ФИО водителя</th>
+                <th className="text-left p-2 w-36 font-semibold border-b border-slate-200">ФИО водителя</th>
                 <th className="w-10 border-b border-slate-200"></th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center p-8 text-slate-400">
+                  <td colSpan={8} className="text-center p-8 text-slate-400">
                     Моек за {monthName} {year} не найдено. Жми «+ Добавить строку» если нужно вручную.
                   </td>
                 </tr>
@@ -359,7 +365,15 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
                     />
                   </td>
                   <td className="p-1">
-                    {/* Phase 59-doc-vedomost-blank: 0 показываем как пусто (заполняется руками потом) */}
+                    <textarea
+                      value={r.extra || ''}
+                      onChange={e => updateRow(idx, { extra: e.target.value })}
+                      rows={1}
+                      placeholder={blank ? '+1 час, побелка...' : ''}
+                      className="w-full px-1 py-1 border border-transparent hover:border-slate-300 rounded text-[12px] resize-y min-h-[26px] focus:outline-none focus:border-indigo-400 focus:bg-white"
+                    />
+                  </td>
+                  <td className="p-1">
                     <input
                       type="number"
                       value={r.totalRub === 0 ? '' : r.totalRub}
