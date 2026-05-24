@@ -466,7 +466,187 @@ export function buildAppendix3Docx({ agent, ourCompany, contractNumber, contract
   });
 }
 
-// ─── 4. Акт оказанных услуг (за месяц) ───────────────────────────────────────
+// ─── 4. Ведомость учёта обслуженного автотранспорта (за месяц / per volume) ──
+
+export interface VedomostOptions {
+  agent: CounterAgent;
+  ourCompany: OurCompany;
+  washes: WashEvent[];
+  year: number;
+  monthIdx: number;
+  monthName: string;
+  contractNumber?: string;
+  contractDate?: Date;
+  /** Если в месяце моек больше, чем влезает в одну ведомость — указать том. По умолчанию 1. */
+  volumeNumber?: number;
+  /** Если true — таблица пустая (для ручного заполнения водителем). По умолчанию false — заполнена. */
+  blank?: boolean;
+}
+
+export function buildVedomostDocx({
+  agent, ourCompany, washes, year, monthIdx, monthName,
+  contractNumber, contractDate, volumeNumber, blank,
+}: VedomostOptions): Document {
+  const cnum = contractNumber || generateContractNumber(contractDate);
+  const cdate = contractDate || new Date();
+  const contractDateStr = format(cdate, 'dd.MM.yyyy');
+  const customer = agent.companies?.[0] || ({} as any);
+  const customerName = customer.companyName || agent.name;
+  const ourName = ourCompany.fullName || ourCompany.shortName;
+  const volSuffix = volumeNumber && volumeNumber > 1 ? ` (том ${volumeNumber})` : '';
+
+  // Сопоставление ГРН → марка/категория из автопарка
+  const carInfoMap = new Map<string, { mark?: string; category?: string }>();
+  (agent.cars || []).forEach(c => {
+    carInfoMap.set(c.licensePlate, { mark: (c as any).mark, category: (c as any).category });
+  });
+
+  const children: any[] = [];
+
+  children.push(p(`Ведомость учёта обслуженного автотранспорта Заказчика${volSuffix}`, {
+    heading: HeadingLevel.HEADING_1,
+    align: AlignmentType.CENTER,
+    spacing: { after: 100 },
+  }));
+  children.push(p(`по Договору на оказание услуг № ${cnum} от ${contractDateStr} г.`, {
+    align: AlignmentType.CENTER,
+    spacing: { after: 100 },
+  }));
+  children.push(p(`Период: ${monthName} ${year} г.`, {
+    align: AlignmentType.CENTER,
+    bold: true,
+    spacing: { after: 300 },
+  }));
+
+  // Готовим строки
+  const headerCells = [
+    cell('Дата', { bold: true, shade: true, center: true }),
+    cell('Марка автомобиля', { bold: true, shade: true, center: true }),
+    cell('Гос. номер автомобиля', { bold: true, shade: true, center: true }),
+    cell('Перечень выполненных работ', { bold: true, shade: true, center: true }),
+    cell('Стоимость, руб.', { bold: true, shade: true, center: true }),
+    cell('ФИО водителя', { bold: true, shade: true, center: true }),
+    cell('Подпись водителя / уполномоченного лица', { bold: true, shade: true, center: true }),
+  ];
+
+  const dataRows: TableRow[] = [];
+  if (blank) {
+    // 20 пустых строк для ручного заполнения
+    for (let i = 0; i < 20; i++) {
+      dataRows.push(new TableRow({
+        children: [
+          cell(' '), cell(' '), cell(' '), cell(' '),
+          cell(' ', { right: true }), cell(' '), cell(' '),
+        ],
+      }));
+    }
+  } else {
+    // Заполняем из washes
+    const sortedWashes = washes.slice().sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    sortedWashes.forEach(w => {
+      const date = format(new Date(w.timestamp), 'dd.MM.yyyy');
+      const info = carInfoMap.get(w.vehicleNumber || '') || {};
+      const mark = info.mark || info.category || '—';
+      const svcList: string[] = [];
+      if (w.services?.main?.serviceName) svcList.push(w.services.main.serviceName);
+      if (Array.isArray(w.services?.additional)) {
+        const groups = new Map<string, number>();
+        w.services.additional.forEach(s => {
+          if (s.serviceName) groups.set(s.serviceName, (groups.get(s.serviceName) ?? 0) + 1);
+        });
+        groups.forEach((cnt, name) => svcList.push(cnt > 1 ? `${cnt}× ${name}` : name));
+      }
+      const services = svcList.join('; ');
+      const price = (w.totalAmount ?? 0).toLocaleString('ru-RU');
+      const driverComment = (w.driverComments && w.driverComments[0]?.text) || '';
+
+      dataRows.push(new TableRow({
+        children: [
+          cell(date, { center: true }),
+          cell(mark),
+          cell(w.vehicleNumber || ''),
+          cell(services),
+          cell(price, { right: true }),
+          cell(driverComment), // если в driverComment есть ФИО водителя
+          cell(' '), // подпись — пустое, ручкой
+        ],
+      }));
+    });
+
+    // Итого
+    if (sortedWashes.length > 0) {
+      const total = sortedWashes.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
+      dataRows.push(new TableRow({
+        children: [
+          cell('Итого:', { bold: true, shade: true }),
+          cell(' ', { shade: true }),
+          cell(' ', { shade: true }),
+          cell(` ${sortedWashes.length} моек`, { shade: true, right: true }),
+          cell(total.toLocaleString('ru-RU'), { bold: true, shade: true, right: true }),
+          cell(' ', { shade: true }),
+          cell(' ', { shade: true }),
+        ],
+      }));
+    }
+  }
+
+  children.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: BORDERS,
+    rows: [new TableRow({ tableHeader: true, children: headerCells }), ...dataRows],
+  }));
+
+  children.push(p(' ', { spacing: { after: 300 } }));
+
+  // Подписи
+  const ourShortSig = ourCompany.shortName?.replace(/^ИП\s*/i, '').trim() + ' ___________' || '___________';
+  const customerSig = customer.ownerName || '___________';
+
+  children.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+      bottom: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+      left: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+      right: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+      insideHorizontal: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+      insideVertical: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [
+              p('Исполнитель:', { bold: true }),
+              p(ourCompany.shortName, { bold: true }),
+              p(' '),
+              p(`______________ ${ourShortSig}`),
+            ],
+          }),
+          new TableCell({
+            children: [
+              p('Заказчик:', { bold: true }),
+              p(customerName, { bold: true }),
+              p(' '),
+              p(`______________ ${customerSig}`),
+            ],
+          }),
+        ],
+      }),
+    ],
+  }));
+
+  return new Document({
+    creator: 'Carwash Manager',
+    styles: DOC_DEFAULT_STYLES,
+    title: `Ведомость ${customerName} ${monthName} ${year}${volSuffix}`,
+    sections: [{ properties: {}, children }],
+  });
+}
+
+// ─── 5. Акт оказанных услуг (за месяц) ───────────────────────────────────────
 
 export interface ActOptions {
   agent: CounterAgent;

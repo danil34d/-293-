@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import type { CounterAgent, WashEvent, OurCompany } from '@/types';
 import {
-  buildContractDocx, buildAppendix1Docx, buildAppendix3Docx, buildActDocx,
+  buildContractDocx, buildAppendix1Docx, buildAppendix3Docx, buildActDocx, buildVedomostDocx,
   generateContractNumber,
 } from './document-builders';
 
@@ -200,9 +200,15 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
   // Phase 59-doc-ux: модал-инструкция перед запуском system folder picker
   const [pickerHintOpen, setPickerHintOpen] = React.useState(false);
   const [pickerWarning, setPickerWarning] = React.useState<string | null>(null);
+  // Phase 59-doc-vedomost: модал для Ведомости с месяцем + опцией пустого бланка + том
+  const [vedDialogOpen, setVedDialogOpen] = React.useState(false);
   const now = new Date();
   const [actYear, setActYear] = React.useState(now.getFullYear());
   const [actMonthIdx, setActMonthIdx] = React.useState(now.getMonth());
+  const [vedYear, setVedYear] = React.useState(now.getFullYear());
+  const [vedMonthIdx, setVedMonthIdx] = React.useState(now.getMonth());
+  const [vedVolume, setVedVolume] = React.useState(1);
+  const [vedBlank, setVedBlank] = React.useState(false);
 
   React.useEffect(() => {
     loadRootHandle().then(h => setRootHandle(h));
@@ -268,7 +274,7 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
     return { rootHandle, ourCompany, agentName: agent.name, subfolder };
   }
 
-  async function generate(kind: 'contract' | 'app1' | 'app3' | 'act') {
+  async function generate(kind: 'contract' | 'app1' | 'app3' | 'act' | 'ved') {
     if (!ourCompany) {
       alert('Для генерации нужно назначить ИП-исполнителя контрагенту (Профиль → Основное → «От имени какого ИП работает...»).');
       return;
@@ -290,8 +296,7 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
       } else if (kind === 'app3') {
         doc = buildAppendix3Docx({ agent, ourCompany });
         filename = makeFilename('Приложение №3 Прейскурант', agent.name);
-      } else {
-        // Act
+      } else if (kind === 'act') {
         const monthWashes = washEvents.filter(w => {
           const linked = (w as any).counterAgentId ?? (w as any).sourceId;
           if (linked !== agent.id) return false;
@@ -305,6 +310,24 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
         filename = makeFilename(`Акт ${MONTHS[actMonthIdx]} ${actYear}`, agent.name);
         subfolder = `${actYear}-${String(actMonthIdx + 1).padStart(2, '0')} ${MONTHS[actMonthIdx]}`;
         setActDialogOpen(false);
+      } else {
+        // Ведомость
+        const monthWashes = vedBlank ? [] : washEvents.filter(w => {
+          const linked = (w as any).counterAgentId ?? (w as any).sourceId;
+          if (linked !== agent.id) return false;
+          const d = new Date(w.timestamp);
+          return d.getFullYear() === vedYear && d.getMonth() === vedMonthIdx;
+        });
+        doc = buildVedomostDocx({
+          agent, ourCompany, washes: monthWashes,
+          year: vedYear, monthIdx: vedMonthIdx, monthName: MONTHS[vedMonthIdx],
+          volumeNumber: vedVolume, blank: vedBlank,
+        });
+        const volSuffix = vedVolume > 1 ? ` том ${vedVolume}` : '';
+        const blankSuffix = vedBlank ? ' (бланк)' : '';
+        filename = makeFilename(`Ведомость ${MONTHS[vedMonthIdx]} ${vedYear}${volSuffix}${blankSuffix}`, agent.name);
+        subfolder = `${vedYear}-${String(vedMonthIdx + 1).padStart(2, '0')} ${MONTHS[vedMonthIdx]}`;
+        setVedDialogOpen(false);
       }
 
       const res = await saveDocxSmart(makeCtx(subfolder), filename, doc);
@@ -406,6 +429,14 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
           busy={busy === 'act'}
           disabled={ipMissing}
         />
+        <DocButton
+          icon={<FileText className="w-5 h-5 text-rose-600" />}
+          title="Ведомость учёта (за месяц)"
+          desc="Таблица: дата · ГРН · услуги · стоимость · ФИО водителя · подпись. Заполняется автоматически по мойкам месяца, либо пустой бланк для ручного заполнения. Можно сделать том №2, №3 если в одну не влезает."
+          onClick={() => setVedDialogOpen(true)}
+          busy={busy === 'ved'}
+          disabled={ipMissing}
+        />
       </div>
 
       {/* Last result */}
@@ -500,6 +531,74 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
           </button>
         </div>
       )}
+
+      {/* Phase 59-doc-vedomost: Vedomost dialog */}
+      <Dialog open={vedDialogOpen} onOpenChange={setVedDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-rose-500" />
+              Ведомость учёта за месяц
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[12px] font-semibold text-slate-600 mb-1">Месяц</label>
+                <select value={vedMonthIdx} onChange={e => setVedMonthIdx(Number(e.target.value))} className="w-full px-2 py-2 text-sm border border-slate-200 rounded-md bg-white">
+                  {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-slate-600 mb-1">Год</label>
+                <select value={vedYear} onChange={e => setVedYear(Number(e.target.value))} className="w-full px-2 py-2 text-sm border border-slate-200 rounded-md bg-white">
+                  {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[12px] font-semibold text-slate-600 mb-1">
+                Том ведомости (1 = единственная за месяц; 2, 3… — если первая забилась)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={vedVolume}
+                onChange={e => setVedVolume(Math.max(1, Number(e.target.value)))}
+                className="w-full px-2 py-2 text-sm border border-slate-200 rounded-md bg-white"
+              />
+            </div>
+
+            <label className="flex items-start gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50 border border-slate-200">
+              <input
+                type="checkbox"
+                checked={vedBlank}
+                onChange={e => setVedBlank(e.target.checked)}
+                className="mt-0.5"
+              />
+              <div className="text-[12px] flex-1">
+                <div className="font-semibold text-slate-900">Пустой бланк</div>
+                <div className="text-slate-500">20 пустых строк — для ручного заполнения водителем при каждой мойке.</div>
+              </div>
+            </label>
+
+            {!vedBlank && (
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-2 text-[12px] text-blue-900">
+                Будет заполнена данными моек за {MONTHS[vedMonthIdx]} {vedYear}. Если моек нет — таблица будет пустой (только заголовки + итого).
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVedDialogOpen(false)} disabled={busy === 'ved'}>Отмена</Button>
+            <Button onClick={() => generate('ved')} disabled={busy === 'ved'} className="bg-rose-600 hover:bg-rose-700">
+              {busy === 'ved' ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />}
+              Сформировать
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Act month dialog */}
       <Dialog open={actDialogOpen} onOpenChange={setActDialogOpen}>
