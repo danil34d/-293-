@@ -66,6 +66,7 @@ export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEven
         washEvents={washEvents}
         ourCompany={resolvedOurCompany}
         pendingKickbacks={pendingCount}
+        transactions={transactions}
       />
 
       {/* Tabs header */}

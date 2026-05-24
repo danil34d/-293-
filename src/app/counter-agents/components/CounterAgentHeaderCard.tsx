@@ -7,10 +7,11 @@ import {
   Building2, Wallet, Car, ListChecks, Users, FileText, Receipt,
   HandCoins, BarChart3, FolderOpen, Sparkles, AlertTriangle, Star,
 } from 'lucide-react';
-import type { CounterAgent, WashEvent, OurCompany } from '@/types';
+import type { CounterAgent, WashEvent, OurCompany, ClientTransaction } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PaymentModal } from './PaymentModal';
+import { MonthlyReportButton } from './MonthlyReportButton';
 
 /**
  * Phase 59-ui-a: Header-карточка-сводка на странице редактирования контрагента.
@@ -33,6 +34,8 @@ interface Props {
   ourCompany?: OurCompany | null;
   /** Кол-во DriverKickback со статусом pending — родитель уже подтягивает для badge таба Водители. */
   pendingKickbacks?: number | null;
+  /** Phase 59-report-month: транзакции для кнопки «Отчёт за месяц». */
+  transactions?: ClientTransaction[];
   onNavigateTab?: (tab: 'finance' | 'documents' | 'invoices') => void;
 }
 
@@ -51,6 +54,7 @@ export function CounterAgentHeaderCard({
   washEvents,
   ourCompany,
   pendingKickbacks,
+  transactions = [],
 }: Props) {
   const router = useRouter();
   const [paymentOpen, setPaymentOpen] = React.useState(false);
@@ -211,17 +215,13 @@ export function CounterAgentHeaderCard({
           <FileText className="w-4 h-4 mr-1.5" /> Документы
           <span className="ml-1.5 text-[9px] rounded-full bg-slate-200 px-1.5 py-0.5 font-bold">скоро</span>
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-9 text-slate-500"
-          disabled
-          title="В разработке: генерация Отчёт за месяц для папки на рабочем столе"
-        >
-          <FolderOpen className="w-4 h-4 mr-1.5" /> Отчёт за месяц
-          <span className="ml-1.5 text-[9px] rounded-full bg-slate-200 px-1.5 py-0.5 font-bold">скоро</span>
-        </Button>
+        {/* Phase 59-report-month: client-side .md generation */}
+        <MonthlyReportButton
+          agent={agent}
+          washEvents={washEvents}
+          transactions={transactions}
+          ourCompany={ourCompany}
+        />
       </div>
 
       {/* Payment modal — re-uses existing component from /counter-agents list */}
