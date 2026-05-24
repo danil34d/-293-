@@ -10,18 +10,23 @@
  *  - CheckItem  — кликабельная галка для confirm-чек-листов
  *  - SafetyBar  — узкий бар-статус (3+ фактов в строке)
  *  - DangerGate — locked-поле с явным unlock + live preview
+ *
+ * Phase 55 (2026-05-23): добавлены Zorin* алиасы. Можно использовать
+ * `ZorinHazardPill` / `ZorinDangerGate` / etc. — это те же самые компоненты,
+ * просто с брендовым префиксом. Старые имена (HazardPill...) сохранены
+ * для обратной совместимости — оба работают идентично, файлы не переименованы.
  */
-export { HazardPill, HAZARD_COLORS } from "./HazardPill";
-export type { HazardLevel, HazardSpec, HazardPillProps } from "./HazardPill";
+export { HazardPill, HazardPill as ZorinHazardPill, HAZARD_COLORS } from "./HazardPill";
+export type { HazardLevel, HazardSpec, HazardPillProps, HazardPillProps as ZorinHazardPillProps } from "./HazardPill";
 
-export { Impact } from "./Impact";
-export type { ImpactProps } from "./Impact";
+export { Impact, Impact as ZorinImpact } from "./Impact";
+export type { ImpactProps, ImpactProps as ZorinImpactProps } from "./Impact";
 
-export { CheckItem } from "./CheckItem";
-export type { CheckItemProps } from "./CheckItem";
+export { CheckItem, CheckItem as ZorinCheckItem } from "./CheckItem";
+export type { CheckItemProps, CheckItemProps as ZorinCheckItemProps } from "./CheckItem";
 
-export { SafetyBar } from "./SafetyBar";
-export type { SafetyBarProps, SafetyBarItem } from "./SafetyBar";
+export { SafetyBar, SafetyBar as ZorinSafetyBar } from "./SafetyBar";
+export type { SafetyBarProps, SafetyBarItem, SafetyBarProps as ZorinSafetyBarProps, SafetyBarItem as ZorinSafetyBarItem } from "./SafetyBar";
 
-export { DangerGate } from "./DangerGate";
-export type { DangerGateProps } from "./DangerGate";
+export { DangerGate, DangerGate as ZorinDangerGate } from "./DangerGate";
+export type { DangerGateProps, DangerGateProps as ZorinDangerGateProps } from "./DangerGate";
