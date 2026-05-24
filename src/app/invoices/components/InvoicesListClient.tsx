@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { ru } from "date-fns/locale";
@@ -33,6 +33,7 @@ function formatMoney(amount: number): string {
 
 export function InvoicesListClient({ initialInvoices, counterAgents }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [invoices, setInvoices] = React.useState<Invoice[]>(initialInvoices);
   const [statusFilter, setStatusFilter] = React.useState<"all" | InvoiceStatus>("all");
@@ -47,6 +48,41 @@ export function InvoicesListClient({ initialInvoices, counterAgents }: Props) {
   });
   const [creating, setCreating] = React.useState(false);
   const [preview, setPreview] = React.useState<any>(null);
+
+  // Phase 59-invoice-quick: URL ?createFor=<agentId>&period=YYYY-MM —
+  // открыть диалог создания с предзаполненным контрагентом и месяцем.
+  // Это подключение от CounterAgentHeaderCard «Счёт за месяц».
+  React.useEffect(() => {
+    if (!searchParams) return;
+    const createFor = searchParams.get('createFor');
+    const period = searchParams.get('period'); // формат YYYY-MM
+    if (!createFor) return;
+    // Проверим что КА существует
+    if (!counterAgents.some(c => c.id === createFor)) return;
+    let periodStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
+    let periodEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
+    if (period && /^\d{4}-\d{2}$/.test(period)) {
+      const [y, m] = period.split('-').map(Number);
+      const base = new Date(y, m - 1, 1);
+      periodStart = format(startOfMonth(base), 'yyyy-MM-dd');
+      periodEnd = format(endOfMonth(base), 'yyyy-MM-dd');
+    }
+    setCreateForm(prev => ({
+      ...prev,
+      counterAgentId: createFor,
+      periodStart,
+      periodEnd,
+    }));
+    setCreateOpen(true);
+    // Чистим query чтоб refresh не открывал повторно
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('createFor');
+      url.searchParams.delete('period');
+      window.history.replaceState({}, '', url.toString());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const counterAgentMap = React.useMemo(
     () => new Map(counterAgents.map(c => [c.id, c.name])),

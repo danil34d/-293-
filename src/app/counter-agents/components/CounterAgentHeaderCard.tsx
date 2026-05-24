@@ -202,8 +202,13 @@ export function CounterAgentHeaderCard({
           variant="outline"
           size="sm"
           className="h-9"
-          onClick={() => router.push('/invoices')}
-          title="Перейти к счетам (выбрать «Создать счёт»)"
+          onClick={() => {
+            // Phase 59-invoice-quick: предзаполненный счёт за текущий месяц для этого КА
+            const now = new Date();
+            const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            router.push(`/invoices?createFor=${encodeURIComponent(agentId)}&period=${period}`);
+          }}
+          title="Открыть /invoices с автозаполненным контрагентом и текущим месяцем"
         >
           <Receipt className="w-4 h-4 mr-1.5" /> Счёт за месяц
         </Button>
