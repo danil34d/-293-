@@ -1545,10 +1545,12 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         throw new Error(err.error || 'Не удалось завершить смену');
       }
       const data = await res.json();
-      const summary = data.summary || { totalWashes: 0, totalAmount: 0 };
+      const summary = data.summary || { totalWashes: 0 };
+      // Phase 60g — НЕ показываем общую выручку сотруднику (включает безнал/контрагентов).
+      // Касса смены (нал/карта/перевод) была видна на главной /kiosk весь день.
       toast({
         title: "Смена завершена",
-        description: `Моек: ${summary.totalWashes}, Выручка: ${summary.totalAmount.toLocaleString('ru-RU')} ₽`,
+        description: `Моек за смену: ${summary.totalWashes}. Хорошая работа!`,
       });
       setActiveShiftId(null);
       setIsShiftActive(false);
@@ -2233,8 +2235,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                         {showPrices && ` - ${s.price} руб.`}
                         {i === 0 && ' (Основная)'}
                         {(s as any).split?.driverBonus > 0 && (
-                          <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-violet-100 text-violet-700">
-                            🔀 split · водителю {(s as any).split.driverBonus}₽
+                          <span
+                            className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-violet-100 text-violet-700"
+                            title="Услуга с разделением расчёта водителю"
+                          >
+                            🔀 split
                           </span>
                         )}
                       </li>

@@ -89,10 +89,13 @@ export function KioskHistoryClient({ box1Events, box2Events, unprocessed }: Prop
     unprocessed: unprocessed.length,
   }), [box1Events, box2Events, unprocessed]);
 
-  // Каса по боксам — отображаем в активном tab'е
+  // Каса по боксам — Phase 60g privacy: только физические деньги (нал/карта/перевод),
+  // безнал/контрагенты НЕ суммируем (это финансы владельца).
+  const isPhysical = (e: WashEvent) =>
+    e.paymentMethod === 'cash' || e.paymentMethod === 'card' || e.paymentMethod === 'transfer';
   const totals = useMemo(() => ({
-    box1: box1Events.reduce((s, e) => s + (e.totalAmount || 0), 0),
-    box2: box2Events.reduce((s, e) => s + (e.totalAmount || 0), 0),
+    box1: box1Events.filter(isPhysical).reduce((s, e) => s + (e.totalAmount || 0), 0),
+    box2: box2Events.filter(isPhysical).reduce((s, e) => s + (e.totalAmount || 0), 0),
   }), [box1Events, box2Events]);
 
   return (
@@ -228,12 +231,20 @@ function EventList({ events, emptyText }: { events: WashEvent[]; emptyText: stri
               )}
             </div>
           </div>
+          {/* Phase 60g — сумма видна только для физических оплат (нал/карта/перевод).
+              Безнал/договорные мойки → placeholder «по договору» без суммы. */}
           {e.totalAmount > 0 && (
             <div className="text-right flex-shrink-0">
-              <div className="text-lg font-extrabold tabular-nums text-emerald-600">
-                {e.totalAmount.toLocaleString('ru-RU')}
-              </div>
-              <div className="text-[10px] font-semibold text-emerald-600/70 uppercase">руб</div>
+              {(e.paymentMethod === 'cash' || e.paymentMethod === 'card' || e.paymentMethod === 'transfer') ? (
+                <>
+                  <div className="text-lg font-extrabold tabular-nums text-emerald-600">
+                    {e.totalAmount.toLocaleString('ru-RU')}
+                  </div>
+                  <div className="text-[10px] font-semibold text-emerald-600/70 uppercase">руб</div>
+                </>
+              ) : (
+                <div className="text-xs italic text-slate-400">по договору</div>
+              )}
             </div>
           )}
         </div>

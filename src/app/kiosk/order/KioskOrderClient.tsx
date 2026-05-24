@@ -23,6 +23,11 @@ function EventRow({ event, employees }: { event: WashEvent; employees: Employee[
     .map(id => employees.find(e => e.id === id)?.fullName?.split(' ')[0] || '')
     .filter(Boolean)
     .join(', ');
+  // Phase 60g — privacy: показываем сумму только для физ.оплаты, для безнала «по договору» вместо ₽
+  const isPhysical = event.paymentMethod === 'cash' || event.paymentMethod === 'card' || event.paymentMethod === 'transfer';
+  const amountLabel = isPhysical
+    ? (event.totalAmount ? `${event.totalAmount} ₽` : '')
+    : 'безнал';
 
   return (
     <div className="flex items-center justify-between py-2 px-4 border-b last:border-0">
@@ -34,7 +39,7 @@ function EventRow({ event, employees }: { event: WashEvent; employees: Employee[
         </div>
       </div>
       <div className="text-right flex-shrink-0">
-        <span className="text-sm font-medium">{event.totalAmount ? `${event.totalAmount} ₽` : ''}</span>
+        <span className={`text-sm font-medium ${isPhysical ? '' : 'text-slate-400 italic text-xs'}`}>{amountLabel}</span>
         <span className="text-xs text-muted-foreground ml-1.5">{time}</span>
       </div>
     </div>
@@ -56,9 +61,13 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
   const box1PendingVehicles = pendingVehicles.filter((vehicle) => vehicle.boxNumber === 1);
   const box2PendingVehicles = pendingVehicles.filter((vehicle) => vehicle.boxNumber === 2);
 
-  const totalAmount = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
-  const box1Total = box1Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
-  const box2Total = box2Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  // Phase 60g — privacy: суммы только по физическим деньгам (касса/банк/перевод),
+  // безнал/агрегаторы/контрагенты НЕ включаем (это финансы владельца).
+  const isPhysicalPayment = (e: WashEvent) =>
+    e.paymentMethod === 'cash' || e.paymentMethod === 'card' || e.paymentMethod === 'transfer';
+  const totalAmount = todayEvents.filter(isPhysicalPayment).reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  const box1Total = box1Events.filter(isPhysicalPayment).reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  const box2Total = box2Events.filter(isPhysicalPayment).reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
   useEffect(() => {
     let ignore = false;

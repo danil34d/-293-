@@ -57,9 +57,10 @@ export function SplitDriverCard({
             Сплит-услуга: водитель обязателен
           </div>
           <div className="text-[11px] text-violet-700 mt-0.5 leading-snug">
+            {/* Phase 60g — убрана сумма бонуса водителю (это финансы владельца, не сотрудника) */}
             {splitServices.length === 1
-              ? `«${splitServices[0].serviceName}» — водителю фиксированный бонус ${totalDriverBonus}₽ после оплаты счёта.`
-              : `${splitServices.length} услуг(и) — суммарный бонус водителю ${totalDriverBonus}₽.`}
+              ? `«${splitServices[0].serviceName}» — выберите водителя для оформления.`
+              : `${splitServices.length} услуг(и) с разделением расчёта — выберите водителя.`}
           </div>
 
           {selectedDriver ? (
