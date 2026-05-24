@@ -66,8 +66,10 @@ const DOC_DEFAULT_STYLES = {
  * Явное `align` overrides — например для центрирования заголовков.
  */
 function p(text: string, opts: { bold?: boolean; size?: number; spacing?: { before?: number; after?: number }; heading?: any; align?: any; italic?: boolean } = {}): Paragraph {
+  // Phase 59-doc-style: всегда явно задаём font+size — Word гарантированно применит.
+  const size = opts.size ?? (opts.heading === HeadingLevel.HEADING_1 ? 32 : opts.heading === HeadingLevel.HEADING_2 ? 26 : 24);
   return new Paragraph({
-    children: [new TextRun({ text, bold: opts.bold, size: opts.size, italics: opts.italic, font: 'Times New Roman' })],
+    children: [new TextRun({ text, bold: opts.bold ?? !!opts.heading, size, italics: opts.italic, font: 'Times New Roman' })],
     spacing: opts.spacing,
     heading: opts.heading,
     alignment: opts.align ?? (opts.heading ? AlignmentType.LEFT : AlignmentType.BOTH),
@@ -79,7 +81,9 @@ function cell(text: string, opts: { bold?: boolean; right?: boolean; center?: bo
     shading: opts.shade ? { type: ShadingType.CLEAR, color: 'auto', fill: 'E7E6E6' } : undefined,
     children: [
       new Paragraph({
-        children: [new TextRun({ text, bold: opts.bold, font: 'Times New Roman' })],
+        // Phase 59-doc-style: явно задаём font+size в TextRun чтобы Word точно применил
+        // (style defaults иногда не пробрасываются в таблицы).
+        children: [new TextRun({ text, bold: opts.bold, font: 'Times New Roman', size: 24 })],
         alignment: opts.right ? AlignmentType.RIGHT : opts.center ? AlignmentType.CENTER : AlignmentType.LEFT,
       }),
     ],
