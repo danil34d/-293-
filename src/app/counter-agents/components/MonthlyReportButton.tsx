@@ -57,9 +57,10 @@ function pluralWash(n: number): string {
 
 function p(text: string, opts: { bold?: boolean; size?: number; spacing?: { before?: number; after?: number }; heading?: HeadingLevel } = {}): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: opts.bold, size: opts.size })],
+    children: [new TextRun({ text, bold: opts.bold, size: opts.size, font: 'Times New Roman' })],
     spacing: opts.spacing,
     heading: opts.heading,
+    alignment: opts.heading ? AlignmentType.LEFT : AlignmentType.BOTH,
   });
 }
 
@@ -69,7 +70,7 @@ function cell(text: string, opts: { bold?: boolean; right?: boolean; shade?: boo
     shading: opts.shade ? { type: ShadingType.CLEAR, color: 'auto', fill: 'E7E6E6' } : undefined,
     children: [
       new Paragraph({
-        children: [new TextRun({ text, bold: opts.bold })],
+        children: [new TextRun({ text, bold: opts.bold, font: 'Times New Roman' })],
         alignment: opts.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
       }),
     ],
@@ -276,6 +277,23 @@ function buildReportDocx(
     creator: 'Carwash Manager',
     title: `Отчёт ${agent.name} ${monthName} ${year}`,
     description: `Месячный отчёт по контрагенту ${agent.name} за ${monthName} ${year}`,
+    // Phase 59-doc-style: Times New Roman 12pt, justify — повторяет оригинальный шаблон.
+    styles: {
+      default: {
+        document: {
+          run: { font: 'Times New Roman', size: 24 },
+          paragraph: { spacing: { line: 276 } },
+        },
+        heading1: {
+          run: { font: 'Times New Roman', size: 32, bold: true },
+          paragraph: { spacing: { before: 240, after: 120 } },
+        },
+        heading2: {
+          run: { font: 'Times New Roman', size: 26, bold: true },
+          paragraph: { spacing: { before: 240, after: 120 } },
+        },
+      },
+    },
     sections: [{ properties: {}, children }],
   });
 }

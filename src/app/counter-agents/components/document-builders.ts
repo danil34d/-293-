@@ -17,6 +17,7 @@
 import {
   Document, Paragraph, TextRun, HeadingLevel, AlignmentType,
   Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, PageBreak,
+  LevelFormat, convertInchesToTwip,
 } from 'docx';
 import { format, addYears, startOfMonth, endOfMonth } from 'date-fns';
 import type { CounterAgent, WashEvent, OurCompany } from '@/types';
@@ -30,12 +31,46 @@ const formatMoney = (n: number) => n.toLocaleString('ru-RU') + ' ₽';
 
 // ─── Generic helpers ────────────────────────────────────────────────────────
 
+/**
+ * Стиль документа повторяет оригинальный шаблон ЭкоФуД:
+ *  - Times New Roman 12pt
+ *  - Justify (по ширине) по умолчанию для тела
+ *  - Заголовки — стандартные H1/H2 Word
+ *
+ * Этот объект передаётся в Document.styles.default.document → применяется ко всему.
+ */
+const DOC_DEFAULT_STYLES = {
+  default: {
+    document: {
+      run: {
+        font: 'Times New Roman',
+        size: 24, // 24 half-points = 12pt
+      },
+      paragraph: {
+        spacing: { line: 276 }, // 1.15 line spacing
+      },
+    },
+    heading1: {
+      run: { font: 'Times New Roman', size: 32, bold: true },
+      paragraph: { spacing: { before: 240, after: 120 } },
+    },
+    heading2: {
+      run: { font: 'Times New Roman', size: 26, bold: true },
+      paragraph: { spacing: { before: 240, after: 120 } },
+    },
+  },
+};
+
+/**
+ * По умолчанию параграф ВЫРАВНИВАЕТ ПО ШИРИНЕ (как в оригинале).
+ * Явное `align` overrides — например для центрирования заголовков.
+ */
 function p(text: string, opts: { bold?: boolean; size?: number; spacing?: { before?: number; after?: number }; heading?: any; align?: any; italic?: boolean } = {}): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: opts.bold, size: opts.size, italics: opts.italic })],
+    children: [new TextRun({ text, bold: opts.bold, size: opts.size, italics: opts.italic, font: 'Times New Roman' })],
     spacing: opts.spacing,
     heading: opts.heading,
-    alignment: opts.align,
+    alignment: opts.align ?? (opts.heading ? AlignmentType.LEFT : AlignmentType.BOTH),
   });
 }
 
@@ -44,7 +79,7 @@ function cell(text: string, opts: { bold?: boolean; right?: boolean; center?: bo
     shading: opts.shade ? { type: ShadingType.CLEAR, color: 'auto', fill: 'E7E6E6' } : undefined,
     children: [
       new Paragraph({
-        children: [new TextRun({ text, bold: opts.bold })],
+        children: [new TextRun({ text, bold: opts.bold, font: 'Times New Roman' })],
         alignment: opts.right ? AlignmentType.RIGHT : opts.center ? AlignmentType.CENTER : AlignmentType.LEFT,
       }),
     ],
@@ -296,6 +331,7 @@ export function buildContractDocx({ agent, ourCompany, contractNumber, contractD
 
   return new Document({
     creator: 'Carwash Manager',
+    styles: DOC_DEFAULT_STYLES,
     title: `Договор № ${number} ${customerName}`,
     sections: [{ properties: {}, children }],
   });
@@ -357,6 +393,7 @@ export function buildAppendix1Docx({ agent, ourCompany, contractNumber, contract
 
   return new Document({
     creator: 'Carwash Manager',
+    styles: DOC_DEFAULT_STYLES,
     title: `Приложение №1 ${customerName}`,
     sections: [{ properties: {}, children }],
   });
@@ -387,21 +424,12 @@ export function buildAppendix3Docx({ agent, ourCompany, contractNumber, contract
       `${(s.price ?? 0).toLocaleString('ru-RU')}`,
     ]);
     children.push(makeTable(['№', 'Наименование услуги', 'Стоимость, руб.'], rows, { centerCols: [0], rightCols: [2] }));
-
-    // Если есть split-услуги — отдельная сноска
-    const splitServices = services.filter((s: any) => s.split?.driverBonus > 0);
-    if (splitServices.length > 0) {
-      children.push(p(' '));
-      children.push(p('Примечания:', { bold: true, spacing: { before: 200 } }));
-      splitServices.forEach(s => {
-        const sp = (s as any).split;
-        children.push(p(`* «${s.serviceName}» — split-услуга: из ${s.price} руб. водителю выплачивается ${sp.driverBonus} руб. (бонус), остаток ${s.price - sp.driverBonus} руб. идёт на оплату мойке.`, { italic: true, size: 18 }));
-      });
-    }
+    // Phase 59-doc-style: внутренние split-детали НЕ показываем заказчику.
+    // Прайс заказчик видит как обычный список услуг, а внутренний расчёт водителю —
+    // это наша внутренняя кухня и в договоре не светится.
   }
 
   children.push(p(' '));
-  children.push(p('Прейскурант может быть изменён Исполнителем с предварительным уведомлением Заказчика за 30 календарных дней.', { spacing: { before: 200, after: 300 } }));
 
   const ourShortSig = ourCompany.shortName?.replace(/^ИП\s*/i, '').trim() + ' ___________' || '___________';
   const customerSig = customer.ownerName || '___________';
@@ -428,6 +456,7 @@ export function buildAppendix3Docx({ agent, ourCompany, contractNumber, contract
 
   return new Document({
     creator: 'Carwash Manager',
+    styles: DOC_DEFAULT_STYLES,
     title: `Приложение №3 Прейскурант ${customerName}`,
     sections: [{ properties: {}, children }],
   });
@@ -567,6 +596,7 @@ export function buildActDocx({ agent, ourCompany, washes, year, monthIdx, monthN
 
   return new Document({
     creator: 'Carwash Manager',
+    styles: DOC_DEFAULT_STYLES,
     title: `Акт ${number} ${customerName} ${monthName} ${year}`,
     sections: [{ properties: {}, children }],
   });
