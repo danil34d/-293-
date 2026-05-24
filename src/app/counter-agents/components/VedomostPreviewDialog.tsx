@@ -118,16 +118,29 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
 <meta charset="utf-8">
 <title>Ведомость ${escapeHtml(agent.name)} ${escapeHtml(monthName)} ${year}</title>
 <style>
-  @page { size: A4 landscape; margin: 1cm; }
+  /* A4 LANDSCAPE с минимальными полями — нужно для 7 колонок */
+  @page { size: A4 landscape; margin: 0.7cm; }
+  html, body { margin: 0; padding: 0; }
   body { font-family: "Times New Roman", serif; font-size: 12pt; color: #000; }
   h1, h2 { text-align: center; margin: 0.3em 0; }
   h1 { font-size: 14pt; }
   h2 { font-size: 12pt; font-weight: normal; }
-  table { width: 100%; border-collapse: collapse; margin: 1em 0; }
-  th, td { border: 1px solid #666; padding: 4px 6px; font-size: 11pt; }
+
+  table { width: 100%; border-collapse: collapse; margin: 0.8em 0; }
+  th, td { border: 1px solid #666; padding: 4px 6px; font-size: 11pt; vertical-align: top; }
   th { background: #E7E6E6; font-weight: bold; }
+
+  /* Phase 59-doc-vedomost-print: при разрыве на страницы — шапка таблицы
+     повторяется на каждой новой странице, строки не разрываются. */
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr { page-break-inside: avoid; break-inside: avoid; }
+
   .footer { display: flex; justify-content: space-between; margin-top: 2em; }
   .footer > div { width: 45%; }
+  /* Подвал держим вместе чтоб не сломался при разрыве */
+  .footer { page-break-inside: avoid; break-inside: avoid; }
+
   @media print {
     .no-print { display: none; }
   }

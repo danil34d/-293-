@@ -17,7 +17,7 @@
 import {
   Document, Paragraph, TextRun, HeadingLevel, AlignmentType,
   Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, PageBreak,
-  LevelFormat, convertInchesToTwip,
+  LevelFormat, convertInchesToTwip, PageOrientation,
 } from 'docx';
 import { format, addYears, startOfMonth, endOfMonth } from 'date-fns';
 import type { CounterAgent, WashEvent, OurCompany } from '@/types';
@@ -574,43 +574,41 @@ export function buildVedomostDocx({
   ];
 
   const dataRows: TableRow[] = [];
+  // Helper: Phase 59-doc-vedomost-print — cantSplit запрещает разрыв строки между страницами
+  function makeRow(cells: TableCell[]): TableRow {
+    return new TableRow({ children: cells, cantSplit: true });
+  }
   if (blank) {
-    // 20 пустых строк для ручного заполнения
-    for (let i = 0; i < 20; i++) {
-      dataRows.push(new TableRow({
-        children: [
-          cell(' '), cell(' '), cell(' '), cell(' '),
-          cell(' ', { right: true }), cell(' '), cell(' '),
-        ],
-      }));
+    // 15 пустых строк — комфортно влезает на A4 landscape с шапкой и подписями
+    for (let i = 0; i < 15; i++) {
+      dataRows.push(makeRow([
+        cell(' '), cell(' '), cell(' '), cell(' '),
+        cell(' ', { right: true }), cell(' '), cell(' '),
+      ]));
     }
   } else {
     sourceRows.forEach(r => {
-      dataRows.push(new TableRow({
-        children: [
-          cell(r.date, { center: true }),
-          cell(r.mark),
-          cell(r.plate),
-          cell(r.services),
-          cell((r.totalRub ?? 0).toLocaleString('ru-RU'), { right: true }),
-          cell(r.driver),
-          cell(' '),
-        ],
-      }));
+      dataRows.push(makeRow([
+        cell(r.date, { center: true }),
+        cell(r.mark),
+        cell(r.plate),
+        cell(r.services),
+        cell((r.totalRub ?? 0).toLocaleString('ru-RU'), { right: true }),
+        cell(r.driver),
+        cell(' '),
+      ]));
     });
     if (sourceRows.length > 0) {
       const total = sourceRows.reduce((s, r) => s + (r.totalRub ?? 0), 0);
-      dataRows.push(new TableRow({
-        children: [
-          cell('Итого:', { bold: true, shade: true }),
-          cell(' ', { shade: true }),
-          cell(' ', { shade: true }),
-          cell(` ${sourceRows.length} моек`, { shade: true, right: true }),
-          cell(total.toLocaleString('ru-RU'), { bold: true, shade: true, right: true }),
-          cell(' ', { shade: true }),
-          cell(' ', { shade: true }),
-        ],
-      }));
+      dataRows.push(makeRow([
+        cell('Итого:', { bold: true, shade: true }),
+        cell(' ', { shade: true }),
+        cell(' ', { shade: true }),
+        cell(` ${sourceRows.length} моек`, { shade: true, right: true }),
+        cell(total.toLocaleString('ru-RU'), { bold: true, shade: true, right: true }),
+        cell(' ', { shade: true }),
+        cell(' ', { shade: true }),
+      ]));
     }
   }
 
@@ -664,7 +662,26 @@ export function buildVedomostDocx({
     creator: 'Carwash Manager',
     styles: DOC_DEFAULT_STYLES,
     title: `Ведомость ${customerName} ${monthName} ${year}${volSuffix}`,
-    sections: [{ properties: {}, children }],
+    sections: [{
+      properties: {
+        // Phase 59-doc-vedomost-print: A4 LANDSCAPE для ведомости (7 колонок не влезают в портрет)
+        page: {
+          size: {
+            orientation: PageOrientation.LANDSCAPE,
+            // A4 в twips: 11906 × 16838. В landscape — swap.
+            width: 16838,
+            height: 11906,
+          },
+          margin: {
+            top: 720,    // 0.5 inch
+            right: 720,
+            bottom: 720,
+            left: 720,
+          },
+        },
+      },
+      children,
+    }],
   });
 }
 
