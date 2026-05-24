@@ -13,7 +13,6 @@ import {
   Banknote,
   CreditCard,
   ArrowLeftRight,
-  Building2,
 } from 'lucide-react';
 import type { Employee } from '@/types';
 
@@ -136,22 +135,23 @@ export function KioskClient({
         {/* Разделитель */}
         <div className="relative my-3 border-t border-white/15" />
 
-        {/* Касса смены — заголовок + крупная сумма */}
+        {/* Касса смены — заголовок + крупная сумма (только сверка нал/карта/перевод).
+            Phase 60f: безнал/агрегаторы/контрагенты — НЕ показываем сотрудникам:
+            это финансовая инфа владельца, для сверки в конце смены не нужна. */}
         <div className="relative mb-2 flex items-baseline justify-between">
           <div className="text-[11px] font-bold uppercase tracking-wider text-white/90">
-            Касса смены
+            Касса смены <span className="text-white/60 font-normal normal-case">· для сверки</span>
           </div>
           <div className="text-2xl font-extrabold tabular-nums">
-            {shiftTotal.toLocaleString('ru-RU')} ₽
+            {(cashBreakdown.cash + cashBreakdown.card + cashBreakdown.transfer).toLocaleString('ru-RU')} ₽
           </div>
         </div>
 
-        {/* 4 плитки разбивки по типам оплаты (как в handoff) */}
-        <div className="relative grid grid-cols-4 gap-1.5">
+        {/* 3 плитки разбивки только по физическим способам оплаты */}
+        <div className="relative grid grid-cols-3 gap-1.5">
           <PaymentTile icon={<Banknote className="h-3.5 w-3.5" />} label="Нал" value={cashBreakdown.cash} />
           <PaymentTile icon={<CreditCard className="h-3.5 w-3.5" />} label="Карта" value={cashBreakdown.card} />
           <PaymentTile icon={<ArrowLeftRight className="h-3.5 w-3.5" />} label="Перевод" value={cashBreakdown.transfer} />
-          <PaymentTile icon={<Building2 className="h-3.5 w-3.5" />} label="Безнал" value={cashBreakdown.cashless} />
         </div>
       </section>
 
