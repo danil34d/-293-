@@ -34,6 +34,7 @@ import {
 import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment, OurCompany } from '@/types';
 import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
 import { SplitDriverCard, DriverPickerModal } from './SplitDriverWidgets';
+import SignaturePad from './SignaturePad';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -217,6 +218,13 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   const [driverPickerOpen, setDriverPickerOpen] = useState(false);
   const [newDriverName, setNewDriverName] = useState('');
   const [newDriverPhone, setNewDriverPhone] = useState('');
+
+  // Phase 60a/b — ФИО водителя + цифровая роспись (sticky на конкретную мойку,
+  //   попадают в WashEvent.driverName / driverSignature; автоподтягиваются в Ведомость).
+  // driverNameInput пред-заполняется из selectedDriver (для split-услуг) или из последнего
+  //   водителя на этом номере (см. effect ниже). Можно править вручную.
+  const [driverNameInput, setDriverNameInput] = useState('');
+  const [driverSignatureDataUrl, setDriverSignatureDataUrl] = useState<string | null>(null);
 
   const lastConsumptionRef = useRef<Record<string, Record<string, number>>>({});
 
@@ -533,6 +541,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
     }
   }, [currentStep]);
 
+  // Phase 60a/b — синхронизация ФИО водителя из split-modal в общее поле.
+  //   Если кассир выбрал водителя через SplitDriverCard — автоматически прописываем в driverNameInput
+  //   (можно потом поправить вручную). Не перезаписываем, если уже что-то введено.
+  useEffect(() => {
+    if (selectedDriver?.name && !driverNameInput) {
+      setDriverNameInput(selectedDriver.name);
+    }
+  }, [selectedDriver?.name]);
+
   useEffect(() => {
     if (!cameraSessionContext) {
       return;
@@ -824,6 +841,18 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         setLastWashServices(services.map(s => ({ ...s, id: s.id || `last-wash-service-${s.serviceName}`, isFromLastWash: true })));
         if (lastWash.driverComments && lastWash.driverComments.length > 0) {
           setLastWashComment(lastWash.driverComments[lastWash.driverComments.length - 1]);
+        }
+        // Phase 60a/b — пред-заполнить ФИО водителя и роспись из последней мойки на этом номере.
+        // Сотрудник видит «уже было: <ФИО>», может оставить или поправить.
+        const prevDriverName = (lastWash as any).driverName
+          || (lastWash as any).driverKickback?.driverName
+          || '';
+        if (prevDriverName) {
+          setDriverNameInput(prevDriverName);
+        }
+        const prevSignature = (lastWash as any).driverSignature;
+        if (prevSignature) {
+          setDriverSignatureDataUrl(prevSignature);
         }
     }
 
@@ -1190,6 +1219,9 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         // Phase 51c: метаданные водителя для backend Phase 50d
         // (создаст DriverKickback после atomic POST)
         ...(driverKickbackPayload ? { driverKickback: driverKickbackPayload } : {}),
+        // Phase 60a/b — ФИО водителя + цифровая роспись (если заполнены)
+        ...(driverNameInput.trim() ? { driverName: driverNameInput.trim() } : {}),
+        ...(driverSignatureDataUrl ? { driverSignature: driverSignatureDataUrl } : {}),
     };
 
     try {
@@ -1244,6 +1276,9 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
     setDriverPickerOpen(false);
     setNewDriverName('');
     setNewDriverPhone('');
+    // Phase 60a/b — reset driver name + signature
+    setDriverNameInput('');
+    setDriverSignatureDataUrl(null);
     setWashServices([]);
     setCustomExtraServiceName('');
     setCustomExtraServicePrice('');
@@ -2034,6 +2069,34 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                   onPickDriver={() => setDriverPickerOpen(true)}
                   onClearDriver={() => setSelectedDriver(null)}
                 />
+
+                {/* Phase 60a/b — ФИО водителя + цифровая роспись.
+                    Заполняется один раз водителем на терминале, потом подтягивается в Ведомость.
+                    Для split-услуг авто-синхронизируется с SplitDriverCard. */}
+                <div className="space-y-3 pt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                  <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                    🖊️ Водитель — ФИО и роспись
+                    <span className="text-xs font-normal text-slate-500 italic">(для Ведомости учёта)</span>
+                  </p>
+                  <div className="space-y-1.5">
+                    <label className="zorin-form-label text-xs">ФИО водителя</label>
+                    <input
+                      type="text"
+                      placeholder="Иванов И.И."
+                      value={driverNameInput}
+                      onChange={(e) => setDriverNameInput(e.target.value)}
+                      className="zorin-input"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="zorin-form-label text-xs">Роспись водителя</label>
+                    <SignaturePad
+                      value={driverSignatureDataUrl}
+                      onChange={setDriverSignatureDataUrl}
+                      height={130}
+                    />
+                  </div>
+                </div>
 
                 <hr />
                 <p className="font-semibold">Оказанные услуги:</p>

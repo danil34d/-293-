@@ -64,6 +64,9 @@ function washEventFromPrisma(row: any): WashEvent {
     createdByEmployeeId: row.createdByEmployeeId ?? undefined,
     // Phase 57 / multi-company
     ourCompanyId: row.ourCompanyId ?? undefined,
+    // Phase 60a/b — driver name + digital signature captured on kiosk
+    driverName: row.driverName ?? undefined,
+    driverSignature: row.driverSignature ?? undefined,
   };
 }
 
@@ -666,6 +669,9 @@ export async function saveWashEvent(data: any): Promise<void> {
       // (Update path — это PUT, у нас createdByEmployeeId фиксируется только на create.)
       // Phase 57 / multi-company — admin может сменить ИП через UI (override)
       ourCompanyId: data.ourCompanyId ?? null,
+      // Phase 60: водитель + цифровая роспись (для автозаполнения Ведомости учёта)
+      driverName: data.driverName ?? null,
+      driverSignature: data.driverSignature ?? null,
     },
     create: {
       id: data.id,
@@ -703,6 +709,9 @@ export async function saveWashEvent(data: any): Promise<void> {
       createdByEmployeeId: data.createdByEmployeeId ?? null,
       // Phase 57 / multi-company — какое НАШЕ ИП оказало услугу
       ourCompanyId: data.ourCompanyId ?? null,
+      // Phase 60: водитель + цифровая роспись
+      driverName: data.driverName ?? null,
+      driverSignature: data.driverSignature ?? null,
     },
   });
 
@@ -2569,6 +2578,9 @@ export async function createWashEventWithSideEffects(
         ourCompanyId: washEvent.ourCompanyId ?? null,
         // Phase 10 / finding #40 — author fixed only on create
         createdByEmployeeId: washEvent.createdByEmployeeId ?? null,
+        // Phase 60: водитель + цифровая роспись (для Ведомости)
+        driverName: washEvent.driverName ?? null,
+        driverSignature: washEvent.driverSignature ?? null,
       },
     });
 

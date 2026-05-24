@@ -376,6 +376,16 @@ model WashEvent {
   /// у контрагента — старые мойки остаются на старом ИП).
   ourCompanyId String?
 
+  /// Phase 60a: ФИО водителя машины — заполняется кассиром на терминале при оформлении.
+  /// Используется для автозаполнения колонки «ФИО водителя» в Ведомости учёта.
+  /// Для split-услуг также синхронизируется с DriverKickback.driverName.
+  driverName String?
+
+  /// Phase 60b: цифровая роспись водителя — base64 PNG dataURL.
+  /// Захватывается signature pad'ом на терминале при подтверждении мойки.
+  /// При генерации Ведомости вставляется как картинка в колонку «Подпись».
+  driverSignature String?
+
   aggregator      Aggregator?         @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
   counterAgent    CounterAgent?       @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
   ourCompany      OurCompany?         @relation(fields: [ourCompanyId], references: [id], onDelete: SetNull)

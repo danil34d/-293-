@@ -17,7 +17,7 @@
 import {
   Document, Paragraph, TextRun, HeadingLevel, AlignmentType,
   Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType, PageBreak,
-  LevelFormat, convertInchesToTwip, PageOrientation,
+  LevelFormat, convertInchesToTwip, PageOrientation, ImageRun,
 } from 'docx';
 import { format, addYears, startOfMonth, endOfMonth } from 'date-fns';
 import type { CounterAgent, WashEvent, OurCompany } from '@/types';
@@ -85,6 +85,52 @@ function cell(text: string, opts: { bold?: boolean; right?: boolean; center?: bo
         // (style defaults иногда не пробрасываются в таблицы).
         children: [new TextRun({ text, bold: opts.bold, font: 'Times New Roman', size: 24 })],
         alignment: opts.right ? AlignmentType.RIGHT : opts.center ? AlignmentType.CENTER : AlignmentType.LEFT,
+      }),
+    ],
+  });
+}
+
+/**
+ * Phase 60b — decode base64 PNG dataURL → Uint8Array (browser-safe)
+ *   Принимает dataURL "data:image/png;base64,XXXX" или просто base64.
+ *   Возвращает null если строка пустая/невалидная (графически — пустой cell).
+ */
+function dataUrlToBytes(dataUrl: string | undefined | null): Uint8Array | null {
+  if (!dataUrl) return null;
+  try {
+    const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+    if (!base64) return null;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Phase 60b — cell с встроенной картинкой росписи.
+ *   Если signature невалидна → возвращает пустую ячейку (для пустой росписи).
+ */
+function signatureCell(signature: string | undefined): TableCell {
+  const bytes = dataUrlToBytes(signature);
+  if (!bytes) {
+    return cell(' ');
+  }
+  return new TableCell({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [
+          new ImageRun({
+            data: bytes,
+            transformation: { width: 110, height: 40 },
+            type: 'png',
+          } as any),
+        ],
       }),
     ],
   });
@@ -478,6 +524,8 @@ export interface VedomostRow {
   extra: string;           // доп. работы (например «3× Доп час», «+побелка стен»)
   totalRub: number;        // сумма за строку, руб
   driver: string;          // ФИО водителя (или пусто)
+  /** Phase 60b: цифровая роспись (base64 PNG dataURL). Если есть — встраивается как картинка в колонке «Подпись». */
+  signature?: string;
 }
 
 export interface VedomostOptions {
@@ -521,7 +569,11 @@ export function vedomostRowsFromWashes(agent: CounterAgent, washes: WashEvent[])
         });
         groups.forEach((cnt, name) => extraParts.push(cnt > 1 ? `${cnt}× ${name}` : name));
       }
-      const driverComment = (w.driverComments && w.driverComments[0]?.text) || '';
+      // Phase 60a: приоритет driverName → driverKickback.driverName → driverComments[0].text → ''
+      const driverName = (w as any).driverName
+        || (w as any).driverKickback?.driverName
+        || (w.driverComments && w.driverComments[0]?.text)
+        || '';
       return {
         date: format(new Date(w.timestamp), 'dd.MM.yyyy'),
         mark,
@@ -529,7 +581,8 @@ export function vedomostRowsFromWashes(agent: CounterAgent, washes: WashEvent[])
         services: mainService,
         extra: extraParts.join('; '),
         totalRub: w.totalAmount ?? 0,
-        driver: driverComment,
+        driver: driverName,
+        signature: (w as any).driverSignature || undefined,
       };
     });
 }
@@ -598,7 +651,8 @@ export function buildVedomostDocx({
         cell(r.extra),
         cell(r.totalRub > 0 ? r.totalRub.toLocaleString('ru-RU') : ' ', { right: true }),
         cell(r.driver),
-        cell(' '),
+        // Phase 60b — embed digital signature PNG if present, else пустая ячейка
+        signatureCell(r.signature),
       ]));
     });
     const totalCalc = sourceRows.reduce((s, r) => s + (r.totalRub ?? 0), 0);

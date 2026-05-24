@@ -115,7 +115,12 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
   const volSuffix = volume > 1 ? ` (том ${volume})` : '';
 
   function buildPrintHtml(): string {
-    const rowsHtml = rows.map(r => `
+    const rowsHtml = rows.map(r => {
+      // Phase 60b — рендерим картинку росписи если есть
+      const sigCell = r.signature
+        ? `<td style="text-align:center"><img src="${r.signature}" alt="" style="max-height:32px;max-width:120px" /></td>`
+        : '<td></td>';
+      return `
       <tr>
         <td style="text-align:center">${escapeHtml(r.date)}</td>
         <td>${escapeHtml(r.mark)}</td>
@@ -124,9 +129,10 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
         <td>${escapeHtml(r.extra || '')}</td>
         <td style="text-align:right">${r.totalRub > 0 ? (r.totalRub).toLocaleString('ru-RU') : ''}</td>
         <td>${escapeHtml(r.driver)}</td>
-        <td></td>
+        ${sigCell}
       </tr>
-    `).join('');
+    `;
+    }).join('');
 
     // Итого только если есть РЕАЛЬНЫЕ суммы (для пустого бланка не нужно)
     const totalRowHtml = total > 0 ? `
@@ -390,6 +396,25 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
                       placeholder="ФИО"
                       className="w-full px-1 py-1 border border-transparent hover:border-slate-300 rounded text-[12px] focus:outline-none focus:border-indigo-400 focus:bg-white"
                     />
+                    {/* Phase 60b — мини-превью росписи под ФИО (если есть) */}
+                    {r.signature && (
+                      <div className="mt-1 flex items-center gap-1">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={r.signature}
+                          alt="роспись"
+                          title="Цифровая роспись водителя — попадёт в Ведомость"
+                          style={{ height: 18, maxWidth: 100, objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: 3, background: '#fff' }}
+                        />
+                        <button
+                          onClick={() => updateRow(idx, { signature: undefined })}
+                          className="text-[9px] text-rose-500 hover:text-rose-700"
+                          title="Убрать роспись"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
                   </td>
                   <td className="p-1 text-center">
                     <button

@@ -458,6 +458,10 @@ export interface WashEvent {
    * preferredOurCompanyId у контрагента).
    */
   ourCompanyId?: string;
+  /** Phase 60a: ФИО водителя — авто-заполняется в Ведомости учёта. */
+  driverName?: string;
+  /** Phase 60b: цифровая роспись водителя (base64 PNG dataURL) — встраивается в Ведомость как картинка. */
+  driverSignature?: string;
 }
 
 // ─── Phase 22 / Invoice ─────────────────────────────────────────
