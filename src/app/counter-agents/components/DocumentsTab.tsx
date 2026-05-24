@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { FileText, Download, FolderOpen, AlertCircle, CheckCircle2, Loader2, Save, X, Plug } from 'lucide-react';
+import { FileText, Download, FolderOpen, AlertCircle, CheckCircle2, Loader2, Save, X, Plug, ArrowRight } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { Document, Packer } from 'docx';
 import { Button } from '@/components/ui/button';
@@ -180,6 +180,9 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
   const [lastResult, setLastResult] = React.useState<{ filename: string; mode: 'folder' | 'download'; path?: string } | null>(null);
   const [rootHandle, setRootHandle] = React.useState<FileSystemDirectoryHandle | null>(null);
   const [actDialogOpen, setActDialogOpen] = React.useState(false);
+  // Phase 59-doc-ux: модал-инструкция перед запуском system folder picker
+  const [pickerHintOpen, setPickerHintOpen] = React.useState(false);
+  const [pickerWarning, setPickerWarning] = React.useState<string | null>(null);
   const now = new Date();
   const [actYear, setActYear] = React.useState(now.getFullYear());
   const [actMonthIdx, setActMonthIdx] = React.useState(now.getMonth());
@@ -190,17 +193,48 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
 
   const ipName = ipFolderName(ourCompany);
 
-  async function pickRootFolder() {
+  /**
+   * Реальный вызов системного picker'а. Вызывается из модала, а не сразу —
+   * чтобы пользователь сначала прочитал инструкцию какую папку выбирать.
+   */
+  async function doActualPick() {
     if (!fsaSupported()) {
       alert('Сохранение в папку поддерживается только в Chrome / Edge. Используй обычное скачивание.');
       return;
     }
+    setPickerWarning(null);
     try {
-      const handle = await window.showDirectoryPicker!({ mode: 'readwrite', id: 'carwash-reports' });
+      const handle = await window.showDirectoryPicker!({
+        mode: 'readwrite',
+        id: 'carwash-reports',
+        startIn: 'desktop' as any, // Chrome подскажет старт в Desktop
+      });
+      // Валидация: имя выбранной папки. Ожидаем "контр агенты отчеты" (без точек).
+      const name = (handle as any).name as string;
+      const lower = name.toLowerCase();
+      const looksLikeRoot = lower.includes('отчет') || lower.includes('reports');
+      // Если выбрали уже подпапку контрагента ("ЭкоФуд" / "ИП Орлов" / "2026-05") — предупредим
+      const looksLikeSub = ['эко', 'ип ', 'абанин', 'орлов', /^\d{4}-\d{2}/].some(m =>
+        typeof m === 'string' ? lower.includes(m) : m.test(lower)
+      );
+
+      if (looksLikeSub && !looksLikeRoot) {
+        setPickerWarning(
+          `Похоже ты выбрал подпапку «${name}» вместо корневой. Документы будут вкладываться неправильно (двойная вложенность). ` +
+          `Лучше переподключи и выбери корень — папку «контр агенты отчеты».`
+        );
+        // Всё равно сохраним выбор — пусть пользователь решит, оставлять или переподключать
+      } else if (!looksLikeRoot) {
+        setPickerWarning(
+          `Выбрана папка «${name}». В её имени нет «отчёт» — убедись, что это правильный корень. ` +
+          `Структура: <выбранная папка>/${ipName}/${agent.name}/...`
+        );
+      }
       await saveRootHandle(handle);
       setRootHandle(handle);
+      setPickerHintOpen(false);
     } catch (e) {
-      // user cancelled
+      // user cancelled — diaolg остаётся открытым, пусть пробует снова
     }
   }
 
@@ -297,7 +331,14 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
               <X className="w-3 h-3 mr-1" /> Отключить
             </Button>
           ) : (
-            <Button type="button" variant="default" size="sm" className="h-8 bg-amber-600 hover:bg-amber-700" onClick={pickRootFolder} disabled={!fsaSupported()}>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              className="h-8 bg-amber-600 hover:bg-amber-700"
+              onClick={() => { setPickerWarning(null); setPickerHintOpen(true); }}
+              disabled={!fsaSupported()}
+            >
               <FolderOpen className="w-3 h-3 mr-1" /> Подключить папку
             </Button>
           )}
@@ -363,6 +404,81 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
             )}
           </div>
           <button onClick={() => setLastResult(null)} className="text-emerald-700 hover:text-emerald-900">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Phase 59-doc-ux: модал-подсказка какую папку выбрать */}
+      <Dialog open={pickerHintOpen} onOpenChange={setPickerHintOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderOpen className="w-5 h-5 text-indigo-500" />
+              Подключение папки отчётов
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-[13px]">
+            <p>
+              Выбери <b>корневую</b> папку — приложение само создаст внутри подпапки по контрагентам и месяцам.
+            </p>
+
+            <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3">
+              <div className="text-[11px] uppercase tracking-wider font-bold text-indigo-700 mb-1">
+                Папка для выбора:
+              </div>
+              <code className="block text-[13px] font-mono text-indigo-900 break-all">
+                C:\Users\S\Desktop\Данил\контр агенты отчеты
+              </code>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500">Что произойдёт после выбора</div>
+              <div className="text-[12px] text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-mono leading-relaxed">
+                <div>контр агенты отчеты/  ← <span className="text-indigo-600 font-bold">твой выбор</span></div>
+                <div>├── ИП Орлов/</div>
+                <div>│   └── ЭкоФуд/</div>
+                <div>│       ├── Договор и документы/</div>
+                <div>│       │   └── Договор № 01-05-26 ЭкоФуд.docx  ← <span className="text-emerald-600">создастся автоматом</span></div>
+                <div>│       └── 2026-05 Май/</div>
+                <div>│           └── Акт Май 2026 ЭкоФуд.docx</div>
+                <div>└── ИП Абанин/</div>
+                <div>    └── &lt;другие КА&gt;/...</div>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-[12px] text-amber-900">
+              <b className="block mb-1">⚠ Не выбирай:</b>
+              <ul className="list-disc list-inside space-y-0.5 text-amber-800">
+                <li>Не подпапку <code className="bg-white px-1 rounded">ЭкоФуд</code></li>
+                <li>Не подпапку <code className="bg-white px-1 rounded">ИП Орлов</code></li>
+                <li>Не подпапку <code className="bg-white px-1 rounded">2026-05 Май</code></li>
+              </ul>
+              <div className="mt-1">→ Иначе будет двойная вложенность. Выбирай только <b>корневую</b> «контр агенты отчеты».</div>
+            </div>
+
+            <div className="text-[11px] text-slate-500 leading-relaxed">
+              💡 В системном picker'е сначала откроется <b>Desktop</b>. Зайди в папку <b>Данил</b>, найди <b>контр агенты отчеты</b>, <b>выдели её одним кликом</b> (не двойным!) и нажми кнопку <b>«Выбор папки»</b> снизу.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPickerHintOpen(false)}>
+              <X className="w-4 h-4 mr-1" /> Отмена
+            </Button>
+            <Button type="button" onClick={doActualPick} className="bg-indigo-600 hover:bg-indigo-700">
+              <FolderOpen className="w-4 h-4 mr-1.5" /> Открыть выбор папки
+              <ArrowRight className="w-3 h-3 ml-1.5" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Warning if picked subfolder */}
+      {pickerWarning && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 flex items-start gap-2">
+          <AlertCircle className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+          <div className="text-[12px] text-amber-900 flex-1 min-w-0">{pickerWarning}</div>
+          <button onClick={() => setPickerWarning(null)} className="text-amber-700 hover:text-amber-900">
             <X className="w-4 h-4" />
           </button>
         </div>
