@@ -593,19 +593,21 @@ export function buildVedomostDocx({
         cell(r.mark),
         cell(r.plate),
         cell(r.services),
-        cell((r.totalRub ?? 0).toLocaleString('ru-RU'), { right: true }),
+        // Phase 59-doc-vedomost-blank: 0 → пусто (заполняется руками для бланка/расчёта по факту)
+        cell(r.totalRub > 0 ? r.totalRub.toLocaleString('ru-RU') : ' ', { right: true }),
         cell(r.driver),
         cell(' '),
       ]));
     });
-    if (sourceRows.length > 0) {
-      const total = sourceRows.reduce((s, r) => s + (r.totalRub ?? 0), 0);
+    const totalCalc = sourceRows.reduce((s, r) => s + (r.totalRub ?? 0), 0);
+    // Итого показываем только если есть реальные суммы (т.е. это не пустой бланк)
+    if (sourceRows.length > 0 && totalCalc > 0) {
       dataRows.push(makeRow([
         cell('Итого:', { bold: true, shade: true }),
         cell(' ', { shade: true }),
         cell(' ', { shade: true }),
         cell(` ${sourceRows.length} моек`, { shade: true, right: true }),
-        cell(total.toLocaleString('ru-RU'), { bold: true, shade: true, right: true }),
+        cell(totalCalc.toLocaleString('ru-RU'), { bold: true, shade: true, right: true }),
         cell(' ', { shade: true }),
         cell(' ', { shade: true }),
       ]));

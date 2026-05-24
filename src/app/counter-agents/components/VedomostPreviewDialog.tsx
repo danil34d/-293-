@@ -48,12 +48,41 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
   const [rows, setRows] = React.useState<VedomostRow[]>([]);
   const [saving, setSaving] = React.useState(false);
 
+  /** Phase 59-doc-vedomost-blank: дефолт для пустого бланка — главная услуга КА.
+   *  Приоритет: split-услуга (где driverBonus > 0) → первая в прайсе → пусто. */
+  const defaultBlankService = React.useMemo(() => {
+    const list = (agent.priceList || []) as any[];
+    const split = list.find(s => s.split?.driverBonus > 0);
+    return (split?.serviceName) || list[0]?.serviceName || '';
+  }, [agent.priceList]);
+
+  /** Phase 59-doc-vedomost-blank: марка/категория по умолчанию — из первой машины. */
+  const defaultBlankMark = React.useMemo(() => {
+    const first = (agent.cars || [])[0] as any;
+    return (first?.mark) || (first?.category) || '';
+  }, [agent.cars]);
+
+  /** ГРН по умолчанию — если у КА одна машина, ставим её, иначе пусто. */
+  const defaultBlankPlate = React.useMemo(() => {
+    const cars = agent.cars || [];
+    return cars.length === 1 ? cars[0].licensePlate : '';
+  }, [agent.cars]);
+
   // При смене месяца / blank — пересобираем строки из моек
   React.useEffect(() => {
     if (!open) return;
     if (blank) {
+      // 15 строк, услуга пред-заполнена «главной», стоимость пуста (0 → render как ''),
+      // марка / ГРН авто-подставляются если у КА только одна машина.
       setRows(
-        Array.from({ length: 20 }, () => ({ date: '', mark: '', plate: '', services: '', totalRub: 0, driver: '' }))
+        Array.from({ length: 15 }, () => ({
+          date: '',
+          mark: defaultBlankMark,
+          plate: defaultBlankPlate,
+          services: defaultBlankService,
+          totalRub: 0,
+          driver: '',
+        }))
       );
       return;
     }
@@ -64,7 +93,7 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
       return d.getFullYear() === year && d.getMonth() === monthIdx;
     });
     setRows(vedomostRowsFromWashes(agent, monthWashes));
-  }, [open, year, monthIdx, blank, washEvents, agent]);
+  }, [open, year, monthIdx, blank, washEvents, agent, defaultBlankService, defaultBlankMark, defaultBlankPlate]);
 
   function updateRow(idx: number, patch: Partial<VedomostRow>) {
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -91,7 +120,7 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
         <td>${escapeHtml(r.mark)}</td>
         <td>${escapeHtml(r.plate)}</td>
         <td>${escapeHtml(r.services)}</td>
-        <td style="text-align:right">${(r.totalRub || 0).toLocaleString('ru-RU')}</td>
+        <td style="text-align:right">${r.totalRub > 0 ? (r.totalRub).toLocaleString('ru-RU') : ''}</td>
         <td>${escapeHtml(r.driver)}</td>
         <td></td>
       </tr>
@@ -330,10 +359,12 @@ export function VedomostPreviewDialog({ open, onOpenChange, agent, ourCompany, w
                     />
                   </td>
                   <td className="p-1">
+                    {/* Phase 59-doc-vedomost-blank: 0 показываем как пусто (заполняется руками потом) */}
                     <input
                       type="number"
-                      value={r.totalRub}
-                      onChange={e => updateRow(idx, { totalRub: Number(e.target.value) || 0 })}
+                      value={r.totalRub === 0 ? '' : r.totalRub}
+                      placeholder={blank ? '—' : '0'}
+                      onChange={e => updateRow(idx, { totalRub: e.target.value === '' ? 0 : (Number(e.target.value) || 0) })}
                       className="w-full px-1 py-1 border border-transparent hover:border-slate-300 rounded text-[12px] text-right tabular-nums focus:outline-none focus:border-indigo-400 focus:bg-white"
                     />
                   </td>
