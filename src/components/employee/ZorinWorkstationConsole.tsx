@@ -35,6 +35,7 @@ import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPri
 import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
 import { SplitDriverCard, DriverPickerModal } from './SplitDriverWidgets';
 import SignaturePad from './SignaturePad';
+import DriverComboBox from './DriverComboBox';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -1219,11 +1220,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         // Phase 51c: метаданные водителя для backend Phase 50d
         // (создаст DriverKickback после atomic POST)
         ...(driverKickbackPayload ? { driverKickback: driverKickbackPayload } : {}),
-        // Phase 60a/b — ФИО водителя + цифровая роспись (только для contract-моек).
-        // Поле UI скрыто для разовых клиентов, поэтому даже если в state что-то осталось — не отправляем.
-        ...(selectedPaymentMethod === 'counterAgentContract' && driverNameInput.trim()
+        // Phase 60a/b — ФИО водителя + цифровая роспись (только для split-услуг + contract).
+        // Поле UI скрыто для разовых/не-split, поэтому даже если state остался — не отправляем.
+        ...(selectedPaymentMethod === 'counterAgentContract' && hasSplitServiceLocal && driverNameInput.trim()
           ? { driverName: driverNameInput.trim() } : {}),
-        ...(selectedPaymentMethod === 'counterAgentContract' && driverSignatureDataUrl
+        ...(selectedPaymentMethod === 'counterAgentContract' && hasSplitServiceLocal && driverSignatureDataUrl
           ? { driverSignature: driverSignatureDataUrl } : {}),
     };
 
@@ -1240,10 +1241,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         }
 
         // Phase 60c — fire-and-forget: сохранить роспись на CounterAgent.drivers[*].signature
-        //   если есть и водитель оформлен по договору. Не блокируем UI — даже если упадёт,
+        //   если есть и водитель оформлен по split-договору. Не блокируем UI — даже если упадёт,
         //   мойка уже сохранена и роспись лежит в WashEvent.driverSignature.
         if (
           selectedPaymentMethod === 'counterAgentContract' &&
+          hasSplitServiceLocal &&
           foundCounterAgent?.id &&
           driverNameInput.trim() &&
           driverSignatureDataUrl
@@ -2095,69 +2097,41 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 />
 
                 {/* Phase 60a/b — ФИО водителя + цифровая роспись.
-                    Показывается ТОЛЬКО для моек по договору с контр-агентом (для Ведомости).
-                    Для разовых клиентов (нал/карта/перевод) — скрыто, чтобы не тормозить. */}
-                {selectedPaymentMethod === 'counterAgentContract' && (
+                    Показывается ТОЛЬКО когда среди услуг есть split (мойка скотовоза и т.п.) —
+                    именно там нужен водитель/роспись для Ведомости. Обычные contract-мойки
+                    без split (например, легковая по договору) — не требуют. */}
+                {selectedPaymentMethod === 'counterAgentContract' &&
+                  washServices.some((s) => (s as any).split?.driverBonus > 0) && (
                   <div className="space-y-3 pt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                     <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       🖊️ Водитель — ФИО и роспись
                       <span className="text-xs font-normal text-slate-500 italic">(для Ведомости учёта)</span>
                     </p>
-                    {/* Phase 60c — селектор водителей из CounterAgent.drivers
-                        (если у контр-агента уже есть зарегистрированные водители).
-                        Клик: подставляет ФИО + телефон-подсказку + авто-подгружает образец росписи (если есть). */}
+                    {/* Phase 60d — умный селектор водителей: pills для ≤6, combobox с поиском для больших списков.
+                        Авто-выбор по plate если водитель закреплён за этим номером. */}
                     {(() => {
                       const drivers = (foundCounterAgent as any)?.drivers as Array<{
-                        id?: string; name: string; phone?: string; position?: string; signature?: string;
+                        id?: string; name: string; phone?: string; position?: string; plates?: string[]; signature?: string;
                       }> | undefined;
                       if (!drivers || drivers.length === 0) return null;
                       return (
                         <div className="space-y-1.5">
-                          <label className="zorin-form-label text-xs">Водители контрагента</label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {drivers.map((d, i) => {
-                              const active = driverNameInput.trim() === d.name.trim();
-                              const hasSignature = !!d.signature;
-                              return (
-                                <button
-                                  key={d.id ?? `${d.name}-${i}`}
-                                  type="button"
-                                  onClick={() => {
-                                    setDriverNameInput(d.name);
-                                    // если у водителя сохранена роспись — подтягиваем
-                                    if (d.signature) {
-                                      setDriverSignatureDataUrl(d.signature);
-                                    }
-                                  }}
-                                  className={`px-3 py-1.5 rounded text-xs font-semibold transition active:scale-95 flex items-center gap-1 ${
-                                    active
-                                      ? 'bg-indigo-100 ring-2 ring-indigo-400 text-indigo-800 shadow-sm'
-                                      : 'bg-white ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50'
-                                  }`}
-                                  title={[d.phone, d.position, hasSignature ? '✓ есть образец росписи' : 'роспись не сохранена'].filter(Boolean).join(' · ')}
-                                >
-                                  {d.name}
-                                  {hasSignature && <span className="text-[10px] text-emerald-600" title="есть сохранённая роспись">✓</span>}
-                                </button>
-                              );
-                            })}
-                            {driverNameInput && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDriverNameInput('');
-                                  setDriverSignatureDataUrl(null);
-                                }}
-                                className="px-2 py-1.5 rounded text-xs text-slate-500 hover:bg-slate-100"
-                                title="Сбросить выбор"
-                              >
-                                ×
-                              </button>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-slate-500 italic">
-                            ✓ — образец росписи сохранён · клик подставляет ФИО и роспись автоматически
-                          </p>
+                          <label className="zorin-form-label text-xs">Водители контрагента ({drivers.length})</label>
+                          <DriverComboBox
+                            drivers={drivers}
+                            selectedName={driverNameInput}
+                            vehiclePlate={normalizedVehicleNumber}
+                            onPick={(d) => {
+                              setDriverNameInput(d.name);
+                              if (d.signature) {
+                                setDriverSignatureDataUrl(d.signature);
+                              }
+                            }}
+                            onClear={() => {
+                              setDriverNameInput('');
+                              setDriverSignatureDataUrl(null);
+                            }}
+                          />
                         </div>
                       );
                     })()}
