@@ -1,21 +1,24 @@
 'use client';
 
 import * as React from 'react';
-import { FolderOpen, Download, X } from 'lucide-react';
+import { FolderOpen, Download, X, FileText } from 'lucide-react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
-import { ru } from 'date-fns/locale';
+import {
+  Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
+  Table, TableRow, TableCell, WidthType, BorderStyle, ShadingType,
+} from 'docx';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import type { CounterAgent, WashEvent, ClientTransaction, OurCompany, Employee, SalaryScheme } from '@/types';
+import type { CounterAgent, WashEvent, ClientTransaction, OurCompany } from '@/types';
 
 /**
- * Phase 59-report-month: кнопка «Отчёт за месяц» в header контрагента.
+ * Phase 59-report-month + 59-report-docx (2026-05-24):
+ * Кнопка «Отчёт за месяц» в header контрагента.
  *
- * Открывает модал → выбор месяца → клиентская генерация Markdown-отчёта
+ * Открывает модал → выбор месяца → клиентская генерация .docx (Word) отчёта
  * → автоматический download. Не требует backend API — все данные у клиента.
  *
- * Структура отчёта повторяет образец:
- *   `C:\Users\S\Desktop\Данил\контр агенты отчеты\ИП Орлов\ЭкоФуд\2026-05 Май\Отчёт за май 2026.md`
+ * Структура отчёта повторяет образец и совместима с Microsoft Word / LibreOffice.
  */
 
 interface Props {
@@ -23,7 +26,6 @@ interface Props {
   washEvents: WashEvent[];
   transactions: ClientTransaction[];
   ourCompany?: OurCompany | null;
-  /** DriverKickback pending — необязательно, для секции кикбеков. Если не передан — секция упрощается. */
   driverKickbacks?: Array<{ driverName: string; amount: number; status: string; washEventId: string }> | null;
 }
 
@@ -34,19 +36,77 @@ function isInMonth(timestamp: string | Date, year: number, monthIdx: number): bo
   return d.getFullYear() === year && d.getMonth() === monthIdx;
 }
 
-function downloadTextFile(filename: string, content: string) {
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+const MONTHS = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+];
+const MONTHS_GENITIVE = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+];
+
+function pluralWash(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'мойка';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'мойки';
+  return 'моек';
 }
 
-function buildReport(
+// ─── DOCX helpers ────────────────────────────────────────────────────────────
+
+function p(text: string, opts: { bold?: boolean; size?: number; spacing?: { before?: number; after?: number }; heading?: HeadingLevel } = {}): Paragraph {
+  return new Paragraph({
+    children: [new TextRun({ text, bold: opts.bold, size: opts.size })],
+    spacing: opts.spacing,
+    heading: opts.heading,
+  });
+}
+
+function cell(text: string, opts: { bold?: boolean; right?: boolean; shade?: boolean; width?: number } = {}): TableCell {
+  return new TableCell({
+    width: opts.width ? { size: opts.width, type: WidthType.PERCENTAGE } : undefined,
+    shading: opts.shade ? { type: ShadingType.CLEAR, color: 'auto', fill: 'E7E6E6' } : undefined,
+    children: [
+      new Paragraph({
+        children: [new TextRun({ text, bold: opts.bold })],
+        alignment: opts.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
+      }),
+    ],
+  });
+}
+
+const TABLE_BORDERS = {
+  top: { style: BorderStyle.SINGLE, size: 4, color: '999999' },
+  bottom: { style: BorderStyle.SINGLE, size: 4, color: '999999' },
+  left: { style: BorderStyle.SINGLE, size: 4, color: '999999' },
+  right: { style: BorderStyle.SINGLE, size: 4, color: '999999' },
+  insideHorizontal: { style: BorderStyle.SINGLE, size: 2, color: 'CCCCCC' },
+  insideVertical: { style: BorderStyle.SINGLE, size: 2, color: 'CCCCCC' },
+};
+
+function makeTable(headers: string[], rows: string[][], opts: { rightCols?: number[] } = {}): Table {
+  const rightCols = new Set(opts.rightCols ?? []);
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: TABLE_BORDERS,
+    rows: [
+      new TableRow({
+        tableHeader: true,
+        children: headers.map((h, i) => cell(h, { bold: true, shade: true, right: rightCols.has(i) })),
+      }),
+      ...rows.map(r =>
+        new TableRow({
+          children: r.map((v, i) => cell(v, { right: rightCols.has(i) })),
+        })
+      ),
+    ],
+  });
+}
+
+// ─── Build the actual .docx ─────────────────────────────────────────────────
+
+function buildReportDocx(
   agent: CounterAgent,
   ourCompany: OurCompany | null | undefined,
   year: number,
@@ -55,12 +115,13 @@ function buildReport(
   washes: WashEvent[],
   transactions: ClientTransaction[],
   kickbacks: Props['driverKickbacks'],
-): string {
+): Document {
   const periodStart = startOfMonth(new Date(year, monthIdx));
   const periodEnd = endOfMonth(new Date(year, monthIdx));
   const total = washes.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
   const payments = transactions.filter(t => isInMonth(t.date, year, monthIdx) && t.type === 'payment')
     .reduce((s, t) => s + (t.amount ?? 0), 0);
+  const monthEndDebt = total - payments;
 
   // Aggregate services
   const serviceCounts = new Map<string, { count: number; price: number; total: number; isSplit: boolean }>();
@@ -80,152 +141,166 @@ function buildReport(
     });
   });
 
-  const kickbacksFiltered = (kickbacks || []).filter(k => {
-    return washes.some(w => w.id === k.washEventId);
+  const kickbacksFiltered = (kickbacks || []).filter(k =>
+    washes.some(w => w.id === k.washEventId)
+  );
+  const kickbacksByDriver = new Map<string, { sum: number; statuses: Set<string> }>();
+  kickbacksFiltered.forEach(k => {
+    const ex = kickbacksByDriver.get(k.driverName);
+    if (ex) {
+      ex.sum += k.amount;
+      ex.statuses.add(k.status);
+    } else {
+      kickbacksByDriver.set(k.driverName, { sum: k.amount, statuses: new Set([k.status]) });
+    }
   });
   const kickbacksTotal = kickbacksFiltered.reduce((s, k) => s + k.amount, 0);
-  const kickbacksByDriver = new Map<string, number>();
-  kickbacksFiltered.forEach(k => {
-    kickbacksByDriver.set(k.driverName, (kickbacksByDriver.get(k.driverName) ?? 0) + k.amount);
-  });
 
-  const lines: string[] = [];
-  lines.push(`# Отчёт ${agent.name} — ${monthName} ${year}`);
-  lines.push('');
-  lines.push(`**Период:** ${format(periodStart, 'dd.MM.yyyy')} — ${format(periodEnd, 'dd.MM.yyyy')}`);
-  lines.push(`**Контрагент:** ${agent.name}`);
+  const children: any[] = [];
+
+  // ─── Header ───
+  children.push(p(`Отчёт ${agent.name} — ${monthName} ${year}`, { heading: HeadingLevel.HEADING_1, spacing: { after: 200 } }));
+  children.push(p(`Период: ${format(periodStart, 'dd.MM.yyyy')} — ${format(periodEnd, 'dd.MM.yyyy')}`, { bold: true }));
+  children.push(p(`Контрагент: ${agent.name}`));
   if (ourCompany) {
-    lines.push(`**ИП-исполнитель:** ${ourCompany.fullName || ourCompany.shortName} (ИНН ${ourCompany.inn ?? '—'}${ourCompany.ogrn ? `, ОГРН ${ourCompany.ogrn}` : ''})`);
+    const reqLine = `ИП-исполнитель: ${ourCompany.fullName || ourCompany.shortName}` +
+      (ourCompany.inn ? ` (ИНН ${ourCompany.inn}` : '') +
+      (ourCompany.ogrn ? `, ОГРН ${ourCompany.ogrn})` : ourCompany.inn ? ')' : '');
+    children.push(p(reqLine));
   }
   if (agent.cars && agent.cars.length > 0) {
-    lines.push(`**Машина(ы):** ${agent.cars.map(c => c.licensePlate).join(', ')}`);
+    children.push(p(`Машина(ы): ${agent.cars.map(c => c.licensePlate).join(', ')}`));
   }
-  lines.push(`**Сгенерирован:** ${format(new Date(), 'dd.MM.yyyy HH:mm')}`);
-  lines.push('');
-  lines.push('---');
-  lines.push('');
+  children.push(p(`Сгенерирован: ${format(new Date(), 'dd.MM.yyyy HH:mm')}`, { spacing: { after: 300 } }));
 
   // ─── 1. Журнал моек ───
-  lines.push('## 1. Журнал моек');
-  lines.push('');
+  children.push(p('1. Журнал моек', { heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 100 } }));
   if (washes.length === 0) {
-    lines.push('_Моек за период не было._');
+    children.push(p('Моек за период не было.', { spacing: { after: 200 } }));
   } else {
-    lines.push('| # | Дата | Услуги | Сумма ₽ |');
-    lines.push('|---|---|---|---:|');
-    washes
-      .slice()
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-      .forEach((w, idx) => {
-        const date = format(new Date(w.timestamp), 'dd.MM.yyyy');
-        const svcList: string[] = [];
-        if (w.services?.main?.serviceName) {
-          const isSplit = !!(w.services.main as any).split?.driverBonus;
-          svcList.push(`${w.services.main.serviceName}${isSplit ? ' (split)' : ''}`);
-        }
-        if (Array.isArray(w.services?.additional)) {
-          // Группируем одинаковые «Доп час»
-          const groups = new Map<string, number>();
-          w.services.additional.forEach(s => {
-            if (s.serviceName) groups.set(s.serviceName, (groups.get(s.serviceName) ?? 0) + 1);
-          });
-          groups.forEach((count, name) => {
-            svcList.push(count > 1 ? `${count}× ${name}` : name);
-          });
-        }
-        lines.push(`| ${idx + 1} | ${date} | ${svcList.join(' + ')} | ${formatMoney(w.totalAmount ?? 0).replace(' ₽', '')} |`);
-      });
-    lines.push(`|   | **Итого** | | **${formatMoney(total).replace(' ₽', '')}** |`);
+    const sorted = washes.slice().sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    const rows: string[][] = sorted.map((w, idx) => {
+      const date = format(new Date(w.timestamp), 'dd.MM.yyyy');
+      const svcList: string[] = [];
+      if (w.services?.main?.serviceName) {
+        const isSplit = !!(w.services.main as any).split?.driverBonus;
+        svcList.push(`${w.services.main.serviceName}${isSplit ? ' (split)' : ''}`);
+      }
+      if (Array.isArray(w.services?.additional)) {
+        const groups = new Map<string, number>();
+        w.services.additional.forEach(s => {
+          if (s.serviceName) groups.set(s.serviceName, (groups.get(s.serviceName) ?? 0) + 1);
+        });
+        groups.forEach((cnt, name) => svcList.push(cnt > 1 ? `${cnt}× ${name}` : name));
+      }
+      return [
+        String(idx + 1),
+        date,
+        svcList.join(' + '),
+        formatMoney(w.totalAmount ?? 0),
+      ];
+    });
+    rows.push(['', 'Итого', '', formatMoney(total)]);
+    children.push(makeTable(['#', 'Дата', 'Услуги', 'Сумма'], rows, { rightCols: [3] }));
+    children.push(p('', { spacing: { after: 200 } }));
   }
-  lines.push('');
 
   // ─── 2. Расшифровка услуг ───
   if (serviceCounts.size > 0) {
-    lines.push('## 2. Расшифровка услуг');
-    lines.push('');
-    lines.push('| Услуга | Раз | Цена | Сумма |');
-    lines.push('|---|---:|---:|---:|');
-    Array.from(serviceCounts.entries())
+    children.push(p('2. Расшифровка услуг', { heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 100 } }));
+    const rows = Array.from(serviceCounts.entries())
       .sort((a, b) => b[1].total - a[1].total)
-      .forEach(([name, info]) => {
-        lines.push(`| ${name}${info.isSplit ? ' (split)' : ''} | ${info.count} | ${formatMoney(info.price)} | ${formatMoney(info.total)} |`);
-      });
-    lines.push(`| **Итого** | | | **${formatMoney(total)}** |`);
-    lines.push('');
+      .map(([name, info]) => [
+        `${name}${info.isSplit ? ' (split)' : ''}`,
+        String(info.count),
+        formatMoney(info.price),
+        formatMoney(info.total),
+      ]);
+    rows.push(['Итого', '', '', formatMoney(total)]);
+    children.push(makeTable(['Услуга', 'Раз', 'Цена', 'Сумма'], rows, { rightCols: [1, 2, 3] }));
+    children.push(p('', { spacing: { after: 200 } }));
   }
 
   // ─── 3. Кикбеки водителям ───
   if (kickbacksFiltered.length > 0) {
-    lines.push('## 3. Кикбеки водителям');
-    lines.push('');
-    lines.push('| Водитель | Сумма | Статус |');
-    lines.push('|---|---:|---|');
-    kickbacksByDriver.forEach((sum, driver) => {
-      lines.push(`| ${driver} | ${formatMoney(sum)} | ${kickbacksFiltered.find(k => k.driverName === driver)?.status === 'pending' ? '⏳ ждёт оплаты' : 'выплачен'} |`);
+    children.push(p('3. Кикбеки водителям', { heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 100 } }));
+    const rows: string[][] = [];
+    kickbacksByDriver.forEach((info, driver) => {
+      const statusLabel = info.statuses.has('pending') ? 'ждёт оплаты' : info.statuses.has('paid') ? 'выплачен' : Array.from(info.statuses).join(', ');
+      rows.push([driver, formatMoney(info.sum), statusLabel]);
     });
-    lines.push(`| **Итого** | **${formatMoney(kickbacksTotal)}** | |`);
-    lines.push('');
+    rows.push(['Итого', formatMoney(kickbacksTotal), '']);
+    children.push(makeTable(['Водитель', 'Сумма', 'Статус'], rows, { rightCols: [1] }));
+    children.push(p('', { spacing: { after: 200 } }));
   }
 
   // ─── 4. Финансы ───
-  lines.push('## 4. Финансы');
-  lines.push('');
-  lines.push('| | ₽ |');
-  lines.push('|---|---:|');
-  lines.push(`| **Выручка (выставлено к оплате):** | **${formatMoney(total).replace(' ₽', '')}** |`);
-  lines.push(`| Платежи от контрагента за месяц | ${formatMoney(payments).replace(' ₽', '')} |`);
-  const monthEndDebt = total - payments;
-  lines.push(`| **К доплате за месяц:** | **${formatMoney(monthEndDebt).replace(' ₽', '')}** |`);
-  lines.push(`| **Текущий баланс контрагента:** | **${formatMoney(agent.balance ?? 0).replace(' ₽', '')}** |`);
-  lines.push('');
+  children.push(p('4. Финансы', { heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 100 } }));
+  children.push(makeTable(
+    ['Показатель', 'Сумма'],
+    [
+      ['Выручка (выставлено к оплате)', formatMoney(total)],
+      ['Платежи от контрагента за месяц', formatMoney(payments)],
+      ['К доплате за месяц', formatMoney(monthEndDebt)],
+      ['Текущий баланс контрагента', formatMoney(agent.balance ?? 0)],
+    ],
+    { rightCols: [1] }
+  ));
+  children.push(p('', { spacing: { after: 200 } }));
 
   // ─── 5. Реквизиты ───
   if (ourCompany) {
-    lines.push('## 5. Реквизиты для оплаты');
-    lines.push('');
-    lines.push(`**Получатель:** ${ourCompany.fullName || ourCompany.shortName}`);
-    if (ourCompany.inn) lines.push(`**ИНН:** ${ourCompany.inn}`);
-    if (ourCompany.ogrn) lines.push(`**ОГРН:** ${ourCompany.ogrn}`);
-    if (ourCompany.legalAddress) lines.push(`**Адрес:** ${ourCompany.legalAddress}`);
+    children.push(p('5. Реквизиты для оплаты', { heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 100 } }));
+    children.push(p(`Получатель: ${ourCompany.fullName || ourCompany.shortName}`, { bold: true }));
+    if (ourCompany.inn) children.push(p(`ИНН: ${ourCompany.inn}`));
+    if (ourCompany.ogrn) children.push(p(`ОГРН: ${ourCompany.ogrn}`));
+    if (ourCompany.legalAddress) children.push(p(`Адрес: ${ourCompany.legalAddress}`));
     if (ourCompany.bankName) {
-      lines.push('');
-      lines.push(`**Банк:** ${ourCompany.bankName}`);
-      if (ourCompany.settlementAccount) lines.push(`**Р/с:** ${ourCompany.settlementAccount}`);
-      if (ourCompany.correspondentAccount) lines.push(`**К/с:** ${ourCompany.correspondentAccount}`);
-      if (ourCompany.bik) lines.push(`**БИК:** ${ourCompany.bik}`);
+      children.push(p(' '));
+      children.push(p(`Банк: ${ourCompany.bankName}`, { bold: true }));
+      if (ourCompany.settlementAccount) children.push(p(`Р/с: ${ourCompany.settlementAccount}`));
+      if (ourCompany.correspondentAccount) children.push(p(`К/с: ${ourCompany.correspondentAccount}`));
+      if (ourCompany.bik) children.push(p(`БИК: ${ourCompany.bik}`));
     }
-    lines.push('');
-    lines.push(`**Назначение платежа:** Оплата за услуги мойки автотранспорта по договору за ${monthName.toLowerCase()} ${year} г. Сумма ${formatMoney(monthEndDebt).replace(' ₽', '')} рублей. Без НДС.`);
-    lines.push('');
+    children.push(p(' '));
+    const monthGen = MONTHS_GENITIVE[monthIdx];
+    children.push(p(`Назначение платежа: Оплата за услуги мойки автотранспорта по договору за ${monthGen} ${year} г. Сумма ${formatMoney(monthEndDebt)}. Без НДС.`, { spacing: { after: 300 } }));
   }
 
-  lines.push('---');
-  lines.push(`_Отчёт сгенерирован автоматически из системы автомойки. Источник: webapp ${format(new Date(), 'dd.MM.yyyy HH:mm')}._`);
+  children.push(p('Отчёт сгенерирован автоматически из системы автомойки.', { size: 18 }));
+  children.push(p(`Источник: webapp ${format(new Date(), 'dd.MM.yyyy HH:mm')}`, { size: 18 }));
 
-  return lines.join('\n');
+  return new Document({
+    creator: 'Carwash Manager',
+    title: `Отчёт ${agent.name} ${monthName} ${year}`,
+    description: `Месячный отчёт по контрагенту ${agent.name} за ${monthName} ${year}`,
+    sections: [{ properties: {}, children }],
+  });
 }
 
-const MONTHS = [
-  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
-];
-
-/** Правильное склонение «мойка»: 1 мойка, 2-4 мойки, 5+ моек. */
-function pluralWash(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'мойка';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'мойки';
-  return 'моек';
+async function downloadDocx(filename: string, doc: Document) {
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function MonthlyReportButton({ agent, washEvents, transactions, ourCompany, driverKickbacks }: Props) {
   const [open, setOpen] = React.useState(false);
+  const [generating, setGenerating] = React.useState(false);
   const now = new Date();
   const [year, setYear] = React.useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = React.useState(now.getMonth());
 
-  // Возможные года = от первой мойки до текущего
   const yearOptions = React.useMemo(() => {
     const years = new Set<number>();
     years.add(now.getFullYear());
@@ -236,7 +311,6 @@ export function MonthlyReportButton({ agent, washEvents, transactions, ourCompan
     return Array.from(years).sort((a, b) => b - a);
   }, [washEvents, now]);
 
-  // Подсчёт моек за выбранный месяц для preview
   const monthWashes = React.useMemo(() => {
     return washEvents.filter(w => {
       const linked = (w as any).counterAgentId ?? (w as any).sourceId;
@@ -247,13 +321,23 @@ export function MonthlyReportButton({ agent, washEvents, transactions, ourCompan
   const monthTotal = monthWashes.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
   const monthName = MONTHS[monthIdx];
 
-  function handleDownload() {
-    const reportContent = buildReport(agent, ourCompany, year, monthIdx, monthName, monthWashes, transactions, driverKickbacks ?? null);
-    const safeAgentName = agent.name.replace(/[^\wа-яА-ЯёЁ\- ]/g, '_').trim();
-    const filename = `Отчёт ${safeAgentName} ${monthName} ${year}.md`;
-    downloadTextFile(filename, reportContent);
-    setOpen(false);
+  async function handleDownload() {
+    setGenerating(true);
+    try {
+      const doc = buildReportDocx(agent, ourCompany, year, monthIdx, monthName, monthWashes, transactions, driverKickbacks ?? null);
+      const safeAgentName = agent.name.replace(/[^\wа-яА-ЯёЁ\- ]/g, '_').trim();
+      const filename = `Отчёт ${safeAgentName} ${monthName} ${year}.docx`;
+      await downloadDocx(filename, doc);
+      setOpen(false);
+    } catch (err) {
+      console.error('[MonthlyReport] generation failed:', err);
+      alert('Не удалось сгенерировать отчёт. Подробности в console.');
+    } finally {
+      setGenerating(false);
+    }
   }
+
+  const ipFolderName = ourCompany?.shortName?.replace(/[.,]+$/, '').trim() || 'ИП';
 
   return (
     <>
@@ -271,8 +355,8 @@ export function MonthlyReportButton({ agent, washEvents, transactions, ourCompan
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <FolderOpen className="w-5 h-5 text-indigo-500" />
-              Отчёт за месяц — {agent.name}
+              <FileText className="w-5 h-5 text-indigo-500" />
+              Отчёт .docx — {agent.name}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
@@ -314,16 +398,16 @@ export function MonthlyReportButton({ agent, washEvents, transactions, ourCompan
             </div>
 
             <div className="text-[11px] text-slate-500 leading-relaxed">
-              Файл скачается как <code className="bg-slate-100 px-1 rounded">Отчёт {agent.name} {monthName} {year}.md</code>.
-              Положи его в папку <code className="bg-slate-100 px-1 rounded">C:\Users\S\Desktop\Данил\контр агенты отчеты\{ourCompany?.shortName?.replace(/К\.Р\.$/, '').trim() || 'ИП'}\{agent.name}\{year}-{String(monthIdx + 1).padStart(2, '0')} {monthName}\</code>.
+              Скачается <code className="bg-slate-100 px-1 rounded">Отчёт {agent.name} {monthName} {year}.docx</code> (Microsoft Word).
+              <br/>Целевая папка: <code className="bg-slate-100 px-1 rounded">C:\Users\S\Desktop\Данил\контр агенты отчеты\{ipFolderName}\{agent.name}\{year}-{String(monthIdx + 1).padStart(2, '0')} {monthName}\</code>
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={generating}>
               <X className="w-4 h-4 mr-1" /> Отмена
             </Button>
-            <Button type="button" onClick={handleDownload} className="bg-indigo-600 hover:bg-indigo-700">
-              <Download className="w-4 h-4 mr-1.5" /> Скачать .md
+            <Button type="button" onClick={handleDownload} className="bg-indigo-600 hover:bg-indigo-700" disabled={generating}>
+              <Download className="w-4 h-4 mr-1.5" /> {generating ? 'Генерация...' : 'Скачать .docx'}
             </Button>
           </DialogFooter>
         </DialogContent>
