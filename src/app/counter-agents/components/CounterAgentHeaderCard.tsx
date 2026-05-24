@@ -36,6 +36,8 @@ interface Props {
   pendingKickbacks?: number | null;
   /** Phase 59-report-month: транзакции для кнопки «Отчёт за месяц». */
   transactions?: ClientTransaction[];
+  /** Phase 59-report-kickbacks: список DriverKickback для секции в отчёте. */
+  driverKickbacks?: Array<{ driverName: string; amount: number; status: string; washEventId: string }>;
   onNavigateTab?: (tab: 'finance' | 'documents' | 'invoices') => void;
 }
 
@@ -55,6 +57,7 @@ export function CounterAgentHeaderCard({
   ourCompany,
   pendingKickbacks,
   transactions = [],
+  driverKickbacks,
 }: Props) {
   const router = useRouter();
   const [paymentOpen, setPaymentOpen] = React.useState(false);
@@ -221,6 +224,7 @@ export function CounterAgentHeaderCard({
           washEvents={washEvents}
           transactions={transactions}
           ourCompany={ourCompany}
+          driverKickbacks={driverKickbacks}
         />
       </div>
 

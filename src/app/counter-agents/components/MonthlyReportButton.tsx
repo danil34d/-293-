@@ -210,6 +210,15 @@ const MONTHS = [
   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
 ];
 
+/** Правильное склонение «мойка»: 1 мойка, 2-4 мойки, 5+ моек. */
+function pluralWash(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'мойка';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'мойки';
+  return 'моек';
+}
+
 export function MonthlyReportButton({ agent, washEvents, transactions, ourCompany, driverKickbacks }: Props) {
   const [open, setOpen] = React.useState(false);
   const now = new Date();
@@ -297,7 +306,7 @@ export function MonthlyReportButton({ agent, washEvents, transactions, ourCompan
             <div className={`rounded-lg p-3 border ${monthWashes.length > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
               <div className="text-[12px] text-slate-600">Найдено за {monthName} {year}:</div>
               <div className="text-lg font-bold tabular-nums mt-1">
-                {monthWashes.length} мойк{monthWashes.length === 1 ? 'а' : monthWashes.length >= 2 && monthWashes.length <= 4 ? 'и' : ''} · {formatMoney(monthTotal)}
+                {monthWashes.length} {pluralWash(monthWashes.length)} · {formatMoney(monthTotal)}
               </div>
               {monthWashes.length === 0 && (
                 <div className="text-[11px] text-slate-500 mt-1">Отчёт всё равно сгенерируется — будет с пустым журналом и реквизитами.</div>

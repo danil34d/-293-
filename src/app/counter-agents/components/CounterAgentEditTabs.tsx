@@ -34,14 +34,19 @@ type TabKey = 'profile' | 'washes' | 'drivers' | 'finance' | 'documents';
 export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEvents, ourCompanies = [], transactions = [] }: Props) {
   const [activeTab, setActiveTab] = React.useState<TabKey>('profile');
   const [pendingCount, setPendingCount] = React.useState<number | null>(null);
+  // Phase 59-report-kickbacks: храним полный массив для отчёта (не только count для badge).
+  // Берём ВСЕ статусы — отчёт за прошлый месяц может содержать уже paid kickbacks.
+  const [allKickbacks, setAllKickbacks] = React.useState<Array<{ driverName: string; amount: number; status: string; washEventId: string }>>([]);
 
   // Lazy-fetch counter для badge только при mount (1 запрос, не блокирующий)
   React.useEffect(() => {
     let cancelled = false;
-    fetch(`/api/driver-kickbacks?counterAgentId=${encodeURIComponent(agentId)}&status=pending`)
+    fetch(`/api/driver-kickbacks?counterAgentId=${encodeURIComponent(agentId)}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => {
-        if (!cancelled && Array.isArray(data)) setPendingCount(data.length);
+        if (cancelled || !Array.isArray(data)) return;
+        setAllKickbacks(data);
+        setPendingCount(data.filter((k: any) => k.status === 'pending').length);
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -67,6 +72,7 @@ export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEven
         ourCompany={resolvedOurCompany}
         pendingKickbacks={pendingCount}
         transactions={transactions}
+        driverKickbacks={allKickbacks}
       />
 
       {/* Tabs header */}
