@@ -6,6 +6,7 @@ import type { WashEvent, Employee, CounterAgent, Aggregator, RetailPriceConfig }
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, Info } from 'lucide-react';
 import { WashEventForm } from '../../components/WashEventForm';
+import { WashEventEditHistoryAccordion } from '../../components/WashEventEditHistoryAccordion';
 import { getEmployeesData, getCounterAgentsData, getAggregatorsData, getRetailPriceConfig, getWashEventById } from '@/lib/data';
 
 async function fetchData(eventId: string) {
@@ -85,6 +86,13 @@ export default async function EditWashEventPage({ params }: { params: { id: stri
         counterAgents={counterAgents}
         aggregators={aggregators}
         retailPriceConfig={retailPriceConfig}
+      />
+
+      {/* Phase 60h / ТД-31 — История правок с diff'ом полей (особенно chemical consumption per сотруднику) */}
+      <WashEventEditHistoryAccordion
+        editHistory={washEvent.editHistory}
+        currentState={washEvent}
+        employees={employees}
       />
     </div>
   );

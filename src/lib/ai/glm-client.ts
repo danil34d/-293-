@@ -1,5 +1,6 @@
 import type { GLMMessage, GLMResponse, GLMChatParams, GLMToolDefinition } from '@/types/ai-assistant';
 import { getSetting, setSetting } from '@/lib/db/ai-database';
+import { decryptSecret } from '@/lib/crypto/secret-encryption';
 import { executeToolCalling } from './glm-client-tools';
 
 /**
@@ -111,9 +112,16 @@ export class GLMClient {
 
 /**
  * Get AI client instance
+ *
+ * Phase 61: ключ из БД может быть зашифрован (enc:v1:...) — расшифровываем перед использованием.
+ * Backward compat: если значение plain (старый формат) — decryptSecret вернёт as-is.
+ * Если значение зашифровано, но master key не задан → decryptSecret бросит явный Error
+ * (это критическая ошибка конфигурации, лучше упасть чем тихо использовать base64-мусор как ключ).
  */
 export function getGLMClient(): GLMClient {
-  const apiKey = process.env.GLM_API_KEY || getSetting('glm_api_key');
+  const apiKeyRaw = process.env.GLM_API_KEY || getSetting('glm_api_key');
+  // ENV ключ всегда plain (decryptSecret no-op для plain); DB ключ может быть зашифрован.
+  const apiKey = decryptSecret(apiKeyRaw);
 
   if (!apiKey) {
     throw new Error('API ключ не настроен. Введите ключ ProxyAPI в настройках AI-ассистента.');
