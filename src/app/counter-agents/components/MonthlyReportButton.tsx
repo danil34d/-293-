@@ -384,7 +384,15 @@ export function MonthlyReportButton({ agent, washEvents, transactions, ourCompan
   const monthTotal = monthWashes.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
   const monthName = MONTHS[monthIdx];
 
-  const ipFolderName = ourCompany?.shortName?.replace(/[.,]+$/, '').trim() || 'ИП';
+  // Phase 59-doc-fix: эвристика синхронна с DocumentsTab.ipFolderName().
+  // «ИП Орлов К.Р.» → «ИП Орлов», «ИП Абанин» → «ИП Абанин».
+  const ipFolderName = (() => {
+    const sn = ourCompany?.shortName?.trim();
+    if (!sn) return 'ИП';
+    const noDots = sn.replace(/[.,]/g, '').replace(/\s+/g, ' ').trim();
+    const m = noDots.match(/^(ИП|ООО|АО|ЗАО|ОАО|ПАО|НКО)\s+([А-ЯЁA-Z][а-яёA-Za-z]+)/);
+    return m ? `${m[1]} ${m[2]}` : noDots;
+  })();
   const monthSubfolder = `${year}-${String(monthIdx + 1).padStart(2, '0')} ${monthName}`;
   const safeAgentName = agent.name.replace(/[^\wа-яА-ЯёЁ\- ]/g, '_').trim();
 

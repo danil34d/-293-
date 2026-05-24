@@ -110,9 +110,26 @@ async function writeFileTo(dir: FileSystemDirectoryHandle, filename: string, blo
   await writable.close();
 }
 
-/** Имя папки для ИП — без точек в конце (Windows их обрезает). */
+/**
+ * Имя папки для ИП.
+ * Цель: совпасть с конвенцией в [[КОНВЕНЦИЯ-ОТЧЁТЫ-КОНТРАГЕНТЫ]] — короткое имя
+ * вида «ИП Орлов» / «ИП Абанин» (БЕЗ точек, БЕЗ инициалов).
+ *
+ * Эвристика:
+ *  1. Убираем все точки и запятые (а не только trailing).
+ *  2. Если строка матчит «<форма> <Фамилия>...» (ИП/ООО/АО/ЗАО + большая буква) —
+ *     берём только первые два слова. Это превращает «ИП Орлов К.Р.» → «ИП Орлов».
+ *  3. Иначе оставляем как есть (без точек).
+ *
+ * Эта же функция используется в MonthlyReportButton — должны совпадать!
+ */
 function ipFolderName(oc: OurCompany | null | undefined): string {
-  return (oc?.shortName?.replace(/[.,]+$/, '').trim()) || 'ИП по умолчанию';
+  const sn = oc?.shortName?.trim();
+  if (!sn) return 'ИП по умолчанию';
+  const noDots = sn.replace(/[.,]/g, '').replace(/\s+/g, ' ').trim();
+  const m = noDots.match(/^(ИП|ООО|АО|ЗАО|ОАО|ПАО|НКО|ИНН)\s+([А-ЯЁA-Z][а-яёA-Za-z]+)/);
+  if (m) return `${m[1]} ${m[2]}`;
+  return noDots;
 }
 
 function makeFilename(kind: string, agentName: string, extra?: string): string {
