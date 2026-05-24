@@ -981,6 +981,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
     });
   };
 
+  // Phase 58b: всегда добавляет копию (для счётчика «Доп час ×N»).
+  // НЕ снимает существующее как handleServiceSelect — только инкремент.
+  const handleServiceAddMore = (service: PriceListItem) => {
+    setWashServices(prev => {
+      const newId = `service-${service.serviceName}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      return [...prev, { ...service, id: newId }];
+    });
+  };
+
   const handleAddCustomExtraService = () => {
     if (!customExtraServiceName.trim() || !customExtraServicePrice.trim()) {
       toast({ title: "Ошибка", description: "Введите название и цену для дополнительной услуги.", variant: "destructive" });
@@ -1314,6 +1323,63 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           return a.serviceName.localeCompare(b.serviceName);
       });
   }, [servicesToShow, lastWashServices]);
+
+  // Phase 58a: топ-3 услуг по реальной частоте использования за последние 60 дней,
+  // фильтр по текущему источнику (counterAgent / aggregator / retail). Передаётся
+  // в KioskServiceSelectionStep вместо `services.slice(0, 3)` как раньше.
+  const topServicesForSource = useMemo<PriceListItem[]>(() => {
+    const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000;
+    const since = Date.now() - SIXTY_DAYS_MS;
+    const isCounterAgent = selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent;
+    const isAggregator = selectedPaymentMethod === 'aggregator' && (selectedAggregator || foundAggregators?.[0]);
+    const isRetail = ['cash', 'card', 'transfer'].includes(selectedPaymentMethod || '');
+    const aggId = isAggregator ? ((selectedAggregator?.id) ?? (foundAggregators?.[0]?.id)) : undefined;
+    const caId = isCounterAgent ? foundCounterAgent?.id : undefined;
+
+    // Filter washEvents by source + period
+    const relevant = allWashEvents.filter(we => {
+      const ts = new Date(we.timestamp).getTime();
+      if (!Number.isFinite(ts) || ts < since) return false;
+      if (isCounterAgent) {
+        // legacy: paymentMethod might be 'transfer' for contractor — check counterAgentId via sourceId
+        return we.paymentMethod === 'counterAgentContract' && (we as any).sourceId === caId;
+      }
+      if (isAggregator) {
+        return we.paymentMethod === 'aggregator' && (we as any).sourceId === aggId;
+      }
+      if (isRetail) {
+        return ['cash', 'card', 'transfer'].includes(we.paymentMethod);
+      }
+      return false;
+    });
+
+    // Count frequency per serviceName (main + additional)
+    const freq = new Map<string, { count: number; price: number; src?: PriceListItem }>();
+    relevant.forEach(we => {
+      const list: any[] = [];
+      if (we.services?.main?.serviceName) list.push(we.services.main);
+      if (Array.isArray(we.services?.additional)) list.push(...we.services.additional);
+      list.forEach(svc => {
+        const name = svc?.serviceName;
+        if (!name) return;
+        const existing = freq.get(name);
+        if (existing) existing.count += 1;
+        else freq.set(name, { count: 1, price: svc.price ?? 0 });
+      });
+    });
+
+    // Привяжем к актуальной цене из текущего прайса (если услуга всё ещё есть)
+    const fromPrice = new Map(servicesToShow.map(s => [s.serviceName, s] as const));
+    const result: PriceListItem[] = [];
+    Array.from(freq.entries())
+      .sort((a, b) => b[1].count - a[1].count)
+      .forEach(([name, info]) => {
+        const fromCurrent = fromPrice.get(name);
+        if (fromCurrent) result.push(fromCurrent);
+        // если услуги больше нет в прайсе — пропускаем (нечего предлагать)
+      });
+    return result;
+  }, [allWashEvents, selectedPaymentMethod, foundCounterAgent, selectedAggregator, foundAggregators, servicesToShow]);
 
   const filteredServices = useMemo(() => {
     const query = serviceSearchQuery.trim().toLowerCase();
@@ -1869,6 +1935,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
               onSearchChange={setServiceSearchQuery}
               onServiceToggle={handleServiceSelect}
               onServiceRemove={handleRemoveService}
+              onServiceAddMore={handleServiceAddMore}
+              topServices={topServicesForSource}
               predefinedExtraServices={predefinedExtraServices}
               lastWashServices={lastWashServices ?? undefined}
               onRepeatLast={

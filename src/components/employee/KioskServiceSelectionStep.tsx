@@ -80,6 +80,16 @@ interface KioskServiceSelectionStepProps {
   /** Тап на услугу — toggle selection (родитель решает add или remove) */
   onServiceToggle: (service: ServiceOption) => void;
   onServiceRemove: (id: string) => void;
+  /**
+   * Phase 58a: настоящие топ-услуги по частоте использования (за послед. период,
+   * per-source). Если не передан — fallback на первые 3 из services.
+   */
+  topServices?: ServiceOption[];
+  /**
+   * Phase 58b: добавить ещё одну копию услуги (Доп час ×2, ×3). Если undefined —
+   * counter не показывается (UI остаётся прежним toggle-only).
+   */
+  onServiceAddMore?: (service: ServiceOption) => void;
 
   // === Дополнительные предопределённые услуги (chips) ===
   predefinedExtraServices?: ServiceOption[];
@@ -126,6 +136,8 @@ export function KioskServiceSelectionStep({
   totalAmount,
   showPrices,
   onProceed,
+  topServices,
+  onServiceAddMore,
 }: KioskServiceSelectionStepProps) {
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -137,9 +149,40 @@ export function KioskServiceSelectionStep({
     );
   }, [services, searchQuery]);
 
-  // Топ-3 quick-pick: первые 3 услуги (на будущее можно сделать по analytics)
-  const top3 = services.slice(0, 3);
+  // Phase 58a: топ-3 — реальная статистика из родителя (по washEvents), если передана.
+  // Фильтруем чтобы остались только услуги доступные текущему контрагенту (services),
+  // т.к. родитель может прислать услуги из других контрактов (если такое случится).
+  const availableNames = useMemo(() => new Set(services.map(s => s.serviceName)), [services]);
+  const top3 = useMemo(() => {
+    if (topServices && topServices.length > 0) {
+      const filtered = topServices.filter(s => availableNames.has(s.serviceName));
+      if (filtered.length >= 3) return filtered.slice(0, 3);
+      // Дополним недостающее первыми услугами из прайса (без дубликатов)
+      const seen = new Set(filtered.map(s => s.serviceName));
+      const fillers = services.filter(s => !seen.has(s.serviceName)).slice(0, 3 - filtered.length);
+      return [...filtered, ...fillers];
+    }
+    return services.slice(0, 3);
+  }, [topServices, services, availableNames]);
   const hasTop3 = !searchQuery && top3.length === 3;
+
+  // Phase 58b: группируем selected по serviceName для отображения ×N с counter.
+  // Каждая группа — { serviceName, count, totalPrice, ids[] }. UI показывает count
+  // + кнопки − (убирает 1 через onServiceRemove) и + (добавляет через onServiceAddMore).
+  const selectedGroups = useMemo(() => {
+    const groups = new Map<string, { serviceName: string; count: number; totalPrice: number; ids: string[]; isCustom?: boolean }>();
+    selectedServices.forEach(s => {
+      const existing = groups.get(s.serviceName);
+      if (existing) {
+        existing.count += 1;
+        existing.totalPrice += s.price;
+        existing.ids.push(s.id);
+      } else {
+        groups.set(s.serviceName, { serviceName: s.serviceName, count: 1, totalPrice: s.price, ids: [s.id] });
+      }
+    });
+    return Array.from(groups.values());
+  }, [selectedServices]);
 
   const isSelected = (name: string) =>
     selectedServices.some((s) => s.serviceName === name);
@@ -417,41 +460,82 @@ export function KioskServiceSelectionStep({
         </div>
       )}
 
-      {/* ─── 7. ВЫБРАННЫЕ УСЛУГИ (если есть) ──────────────── */}
-      {selectedServices.length > 0 && (
+      {/* ─── 7. ВЫБРАННЫЕ УСЛУГИ (группировка по serviceName с counter) ──── */}
+      {selectedGroups.length > 0 && (
         <div>
           <div className="mb-1.5 px-1 text-[10px] uppercase tracking-wider text-blue-700 font-bold">
             Выбрано
           </div>
           <div className="space-y-1.5">
-            {selectedServices.map((service, idx) => (
-              <div
-                key={service.id}
-                className="rounded-xl bg-blue-50 ring-1 ring-blue-200 px-3 py-2 flex items-center gap-2"
-              >
-                <CheckCircle2 className="h-4 w-4 text-blue-600 flex-shrink-0" strokeWidth={3} />
-                <span className="text-sm font-semibold text-gray-900 flex-1 min-w-0">
-                  {service.serviceName}
-                  {idx === 0 && (
-                    <span className="ml-2 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 uppercase tracking-wider">
-                      главное
+            {selectedGroups.map((group, idx) => {
+              // Найдём оригинальную услугу для onServiceAddMore (по name из services или из selectedServices)
+              const originalService = services.find(s => s.serviceName === group.serviceName)
+                || selectedServices.find(s => s.serviceName === group.serviceName);
+              const canAddMore = !!(onServiceAddMore && originalService);
+              return (
+                <div
+                  key={group.serviceName}
+                  className="rounded-xl bg-blue-50 ring-1 ring-blue-200 px-3 py-2 flex items-center gap-2"
+                >
+                  <CheckCircle2 className="h-4 w-4 text-blue-600 flex-shrink-0" strokeWidth={3} />
+                  <span className="text-sm font-semibold text-gray-900 flex-1 min-w-0">
+                    {group.serviceName}
+                    {idx === 0 && (
+                      <span className="ml-2 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 uppercase tracking-wider">
+                        главное
+                      </span>
+                    )}
+                    {group.count > 1 && (
+                      <span className="ml-2 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white tabular-nums">
+                        ×{group.count}
+                      </span>
+                    )}
+                  </span>
+
+                  {/* Counter − / + (Phase 58b) */}
+                  {canAddMore && (
+                    <div className="flex items-center gap-0.5 mr-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Убираем ОДНУ копию (последнюю по ids)
+                          const lastId = group.ids[group.ids.length - 1];
+                          if (lastId) onServiceRemove(lastId);
+                        }}
+                        className="rounded-md w-7 h-7 flex items-center justify-center bg-white ring-1 ring-blue-200 text-blue-700 active:scale-90 hover:bg-blue-50"
+                        aria-label="Убрать одну"
+                      >
+                        <span className="text-base font-bold leading-none">−</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => originalService && onServiceAddMore!(originalService)}
+                        className="rounded-md w-7 h-7 flex items-center justify-center bg-white ring-1 ring-blue-200 text-blue-700 active:scale-90 hover:bg-blue-50"
+                        aria-label="Добавить ещё"
+                      >
+                        <span className="text-base font-bold leading-none">+</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {showPrices && (
+                    <span className="text-sm font-extrabold tabular-nums text-blue-700 min-w-[60px] text-right">
+                      {Math.round(group.totalPrice)} ₽
                     </span>
                   )}
-                </span>
-                {showPrices && (
-                  <span className="text-sm font-extrabold tabular-nums text-blue-700">
-                    {Math.round(service.price)} ₽
-                  </span>
-                )}
-                <button
-                  onClick={() => onServiceRemove(service.id)}
-                  className="rounded-lg p-1.5 hover:bg-red-50 active:scale-90"
-                  aria-label="Убрать услугу"
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                </button>
-              </div>
-            ))}
+                  <button
+                    onClick={() => {
+                      // Удаляем ВСЕ копии этой услуги
+                      group.ids.forEach(id => onServiceRemove(id));
+                    }}
+                    className="rounded-lg p-1.5 hover:bg-red-50 active:scale-90"
+                    aria-label="Убрать услугу полностью"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
