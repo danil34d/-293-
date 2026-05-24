@@ -3,11 +3,12 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { Users, UserCircle2, Sparkles, Wallet, FileText, FolderOpen } from 'lucide-react';
-import type { CounterAgent, WashEvent, OurCompany } from '@/types';
+import type { CounterAgent, WashEvent, OurCompany, ClientTransaction } from '@/types';
 import { CounterAgentForm } from './CounterAgentForm';
 import { DriversTab } from './DriversTab';
 import { CounterAgentHeaderCard } from './CounterAgentHeaderCard';
 import { CounterAgentWashesTab } from './CounterAgentWashesTab';
+import { ClientFinanceDashboard } from '@/components/common/ClientFinanceDashboard';
 
 /**
  * Phase 51a / V2-#4 split-pricing: Tabs обёртка для /counter-agents/[id]/edit.
@@ -24,11 +25,13 @@ interface Props {
   washEvents: WashEvent[];
   /** Phase 57c: для CounterAgentForm Select preferredOurCompanyId. */
   ourCompanies?: OurCompany[];
+  /** Phase 59-fin: транзакции этого контрагента для embedded ClientFinanceDashboard. */
+  transactions?: ClientTransaction[];
 }
 
 type TabKey = 'profile' | 'washes' | 'drivers' | 'finance' | 'documents';
 
-export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEvents, ourCompanies = [] }: Props) {
+export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEvents, ourCompanies = [], transactions = [] }: Props) {
   const [activeTab, setActiveTab] = React.useState<TabKey>('profile');
   const [pendingCount, setPendingCount] = React.useState<number | null>(null);
 
@@ -102,7 +105,15 @@ export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEven
         <DriversTab agentId={agentId} agentName={agent.name} />
       )}
       {activeTab === 'finance' && (
-        <FinanceTabStub agentId={agentId} />
+        <FinanceTabEmbedded
+          agent={agent}
+          agentId={agentId}
+          washEvents={washEvents.filter(w => {
+            const linked = (w as any).counterAgentId ?? (w as any).sourceId;
+            return linked === agentId;
+          })}
+          transactions={transactions}
+        />
       )}
       {activeTab === 'documents' && (
         <DocumentsTabStub agentName={agent.name} />
@@ -137,23 +148,33 @@ function TabButton({
   );
 }
 
-function FinanceTabStub({ agentId }: { agentId: string }) {
+function FinanceTabEmbedded({
+  agent, agentId, washEvents, transactions,
+}: {
+  agent: CounterAgent;
+  agentId: string;
+  washEvents: WashEvent[];
+  transactions: ClientTransaction[];
+}) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-8 text-center space-y-3">
-      <Wallet className="w-12 h-12 text-slate-400 mx-auto" />
-      <div>
-        <h3 className="text-base font-bold text-slate-900">Финансы контрагента</h3>
-        <p className="text-sm text-slate-600 mt-1">Полная финансовая история — на отдельной странице.</p>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[12px] text-slate-500">
+          Полная финансовая история по контрагенту: мойки → долг, платежи → погашение.
+        </p>
+        <Link
+          href={`/counter-agents/${agentId}/finance`}
+          className="text-[12px] text-indigo-600 hover:underline whitespace-nowrap"
+        >
+          Открыть на отдельной странице →
+        </Link>
       </div>
-      <Link
-        href={`/counter-agents/${agentId}/finance`}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
-      >
-        Открыть финансы →
-      </Link>
-      <p className="text-[11px] text-slate-400 pt-2">
-        В будущем (Phase 59-fin) — встроим прямо сюда: баланс-history, платежи, счета.
-      </p>
+      <ClientFinanceDashboard
+        client={agent}
+        washEvents={washEvents}
+        initialTransactions={transactions}
+        clientType="counter-agent"
+      />
     </div>
   );
 }

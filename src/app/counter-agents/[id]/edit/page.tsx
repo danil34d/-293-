@@ -3,10 +3,10 @@ export const dynamic = 'force-dynamic';
 
 import PageHeader from '@/components/layout/PageHeader';
 import { CounterAgentEditTabs } from '../../components/CounterAgentEditTabs';
-import type { CounterAgent, WashEvent, OurCompany } from '@/types';
+import type { CounterAgent, WashEvent, OurCompany, ClientTransaction } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getCounterAgentById, getCounterAgentsData, getWashEventsData, getOurCompaniesData } from '@/lib/data';
+import { getCounterAgentById, getCounterAgentsData, getWashEventsData, getOurCompaniesData, getClientTransactions } from '@/lib/data';
 
 export default async function EditCounterAgentPage({ params }: { params: { id: string } }) {
   const agentIdFromParams = params.id;
@@ -14,14 +14,17 @@ export default async function EditCounterAgentPage({ params }: { params: { id: s
   let allAgents: CounterAgent[] = [];
   let washEvents: WashEvent[] = [];
   let ourCompanies: OurCompany[] = [];
+  // Phase 59-fin: подтягиваем транзакции для embedded ClientFinanceDashboard в табе «Финансы».
+  let transactions: ClientTransaction[] = [];
   let fetchError: string | null = null;
 
   try {
-    [agent, allAgents, washEvents, ourCompanies] = await Promise.all([
+    [agent, allAgents, washEvents, ourCompanies, transactions] = await Promise.all([
       getCounterAgentById(agentIdFromParams),
       getCounterAgentsData(),
       getWashEventsData(),
       getOurCompaniesData().catch(() => []),
+      getClientTransactions(agentIdFromParams).catch(() => []),
     ]);
     if (!agent) {
       fetchError = `Контрагент с ID "${agentIdFromParams}" не найден.`;
@@ -70,6 +73,7 @@ export default async function EditCounterAgentPage({ params }: { params: { id: s
         referenceAgents={allAgents}
         washEvents={washEvents}
         ourCompanies={ourCompanies}
+        transactions={transactions}
       />
     </div>
   );
