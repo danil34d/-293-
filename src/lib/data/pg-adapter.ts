@@ -1,6 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/db/prisma';
+import { fkConnect, createStockMovement, parseEnum } from './prisma-helpers';
 import type {
   WashEvent, Aggregator, CounterAgent, Employee, SalaryScheme,
   EmployeeTransaction, RetailPriceConfig, Expense, ClientTransaction,
@@ -27,6 +28,11 @@ function parseJsonField<T>(val: any, fallback: T): T {
 
 // ─── WashEvent mappers ───────────────────────────────────────
 
+const PAYMENT_TYPES = ['cash', 'card', 'transfer'] as const;
+const EMPLOYEE_ROLES = ['admin', 'employee', 'kiosk'] as const;
+const CANISTER_STATUSES = ['active', 'empty', 'returned'] as const;
+const CANISTER_MODES = ['purchase', 'bonus', 'gift', 'salary-deduction'] as const;
+
 function washEventFromPrisma(row: any): WashEvent {
   return {
     id: row.id,
@@ -34,7 +40,7 @@ function washEventFromPrisma(row: any): WashEvent {
     vehicleNumber: row.vehicleNumber,
     boxNumber: row.boxNumber ?? undefined,
     employeeIds: row.employees?.map((e: any) => e.employeeId) ?? [],
-    paymentMethod: row.paymentMethod as any,
+    paymentMethod: parseEnum(row.paymentMethod, PAYMENT_TYPES, 'cash'),
     sourceId: row.aggregatorId ?? row.counterAgentId ?? undefined,
     sourceName: row.sourceName ?? undefined,
     priceListName: row.priceListName ?? undefined,
@@ -79,7 +85,7 @@ function employeeFromPrisma(row: any): Employee {
     phone: row.phone,
     paymentDetails: row.paymentDetails,
     hasCar: row.hasCar,
-    role: row.role as any,
+    role: parseEnum(row.role, EMPLOYEE_ROLES, 'employee'),
     telegramChatId: row.telegramChatId ?? undefined,
     username: row.username ?? undefined,
     password: row.password ?? undefined,
@@ -233,10 +239,10 @@ function canisterFromPrisma(row: any): EmployeeChemicalCanister {
     initialAmountGrams: row.initialAmountGrams,
     remainingAmountGrams: row.remainingAmountGrams,
     priceRub: row.priceRub,
-    status: row.status as any,
+    status: parseEnum(row.status, CANISTER_STATUSES, 'active'),
     transactionId: row.transactionId ?? undefined,
     // Phase 52 / V2-NEW-1 канистры
-    mode: row.mode as any,
+    mode: parseEnum(row.mode, CANISTER_MODES, 'purchase'),
     issuedBy: row.issuedBy ?? undefined,
     notes: row.notes ?? '',
     washPoint: row.washPoint ?? undefined,
@@ -679,8 +685,9 @@ export async function saveWashEvent(data: any): Promise<void> {
       vehicleNumber: data.vehicleNumber,
       boxNumber: data.boxNumber ?? null,
       paymentMethod: data.paymentMethod,
-      aggregatorId,
-      counterAgentId,
+      // Phase 60 helper: relation connect для Checked-create
+      aggregator: fkConnect(aggregatorId),
+      counterAgent: fkConnect(counterAgentId),
       sourceName: data.sourceName ?? null,
       priceListName: data.priceListName ?? null,
       totalAmount: data.totalAmount,
@@ -708,7 +715,7 @@ export async function saveWashEvent(data: any): Promise<void> {
       // Phase 10 / finding #40 — фиксируется только на create (PUT не трогает)
       createdByEmployeeId: data.createdByEmployeeId ?? null,
       // Phase 57 / multi-company — какое НАШЕ ИП оказало услугу
-      ourCompanyId: data.ourCompanyId ?? null,
+      ourCompany: fkConnect(data.ourCompanyId),
       // Phase 60: водитель + цифровая роспись
       driverName: data.driverName ?? null,
       driverSignature: data.driverSignature ?? null,
@@ -766,7 +773,8 @@ export async function saveEmployee(data: any): Promise<void> {
       telegramChatId: data.telegramChatId ?? null,
       username: data.username || null,
       password: data.password || null,
-      salarySchemeId: data.salarySchemeId ?? null,
+      // Phase 60 helper: relation connect для Checked-create
+      salaryScheme: fkConnect(data.salarySchemeId),
       canSwapShifts: data.canSwapShifts ?? true,
       preferredShiftType: data.preferredShiftType ?? null,
       weekdayPreferredShiftType: data.weekdayPreferredShiftType ?? null,
@@ -858,21 +866,19 @@ export async function reverseExpenseStockMovements(
       const newStock = (material?.currentStock ?? 0) + reverseAmount;
 
       const reverseId = `sm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_rev`;
-      await tx.stockMovement.create({
-        data: {
-          id: reverseId,
-          // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
-          material: { connect: { id: m.materialId } },
-          type: 'adjustment',
-          amount: reverseAmount,
-          balanceAfter: newStock,
-          date: now,
-          description: `Авто-реверс при удалении Expense ${expenseId} (оригинал SM ${m.id}, ${m.type})`,
-          relatedEntityType: 'expense_reversal',
-          relatedEntityId: expenseId,
-          ...(employeeId ? { employee: { connect: { id: employeeId } } } : {}),
-          createdBy: employeeId ?? null,
-        },
+      // Phase 60 + helper рефактор — единая фабрика createStockMovement
+      await createStockMovement(tx, {
+        id: reverseId,
+        materialId: m.materialId,
+        type: 'adjustment',
+        amount: reverseAmount,
+        balanceAfter: newStock,
+        date: now,
+        description: `Авто-реверс при удалении Expense ${expenseId} (оригинал SM ${m.id}, ${m.type})`,
+        relatedEntityType: 'expense_reversal',
+        relatedEntityId: expenseId,
+        employeeId: employeeId ?? null,
+        createdBy: employeeId ?? null,
       });
       await tx.inventoryMaterial.update({
         where: { id: m.materialId },
@@ -1276,7 +1282,7 @@ export async function createInvoice(data: {
   const created = await prisma.invoice.create({
     data: {
       number,
-      counterAgentId: data.counterAgentId,
+      counterAgent: fkConnect(data.counterAgentId)!,
       periodStart: data.periodStart,
       periodEnd: data.periodEnd,
       status: 'draft',
@@ -1288,8 +1294,8 @@ export async function createInvoice(data: {
       items: data.items as any,
       createdByEmployeeId: data.createdByEmployeeId ?? null,
       notes: data.notes ?? '',
-      // Phase 57b.1: multi-company FK persistence
-      ourCompanyId: resolvedOurCompanyId,
+      // Phase 57b.1: multi-company FK persistence (через relation connect для Checked-create)
+      ourCompany: fkConnect(resolvedOurCompanyId),
     },
     include: { counterAgent: { select: { name: true } } },
   });
@@ -1539,18 +1545,16 @@ export async function backfillChemicalPurchasesFromExpenses(apply: boolean): Pro
 
       // Создаём movements хронологически (важно для balanceAfter если будет recompute)
       for (const c of toCreate) {
-        await prisma.stockMovement.create({
-          data: {
-            id: `mov_backfill_${c.expenseId}`,
-            materialId: 'mat_chemical_main',
-            type: 'purchase',
-            amount: c.grams,
-            balanceAfter: 0, // будет пересчитано при recomputeInventoryStock(apply:true)
-            date: new Date(c.date),
-            description: `[backfill #35] ${c.description || c.category}`,
-            relatedEntityType: 'expense',
-            relatedEntityId: c.expenseId,
-          },
+        await createStockMovement(prisma, {
+          id: `mov_backfill_${c.expenseId}`,
+          materialId: 'mat_chemical_main',
+          type: 'purchase',
+          amount: c.grams,
+          balanceAfter: 0, // будет пересчитано при recomputeInventoryStock(apply:true)
+          date: new Date(c.date),
+          description: `[backfill #35] ${c.description || c.category}`,
+          relatedEntityType: 'expense',
+          relatedEntityId: c.expenseId,
         });
       }
     }
@@ -1721,8 +1725,8 @@ export async function saveAggregator(data: any): Promise<void> {
       activePriceListName: data.activePriceListName ?? null,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
-      // Phase 57b.1: multi-company FK persistence
-      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
+      // Phase 57b.1: multi-company FK persistence (relation connect для Checked-create)
+      preferredOurCompany: fkConnect(data.preferredOurCompanyId),
     },
   });
 }
@@ -1776,8 +1780,8 @@ export async function saveCounterAgent(data: any): Promise<void> {
       allowCustomServices: data.allowCustomServices ?? false,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
-      // Phase 57b.1: multi-company FK persistence
-      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
+      // Phase 57b.1: multi-company FK persistence (relation connect для Checked-create)
+      preferredOurCompany: fkConnect(data.preferredOurCompanyId),
     },
   });
 }
@@ -1829,8 +1833,8 @@ export async function saveExpense(data: any): Promise<void> {
       quantity: data.quantity ?? null,
       unit: data.unit ?? null,
       pricePerUnit: data.pricePerUnit ?? null,
-      // Phase 57b.1: multi-company FK persistence
-      ourCompanyId: data.ourCompanyId ?? null,
+      // Phase 57b.1: multi-company FK persistence (relation connect для Checked-create)
+      ourCompany: fkConnect(data.ourCompanyId),
     },
   });
 }
@@ -2042,6 +2046,8 @@ export async function saveEmployeeTransaction(data: any): Promise<void> {
   await prisma.employeeTransaction.upsert({
     where: { id: data.id },
     update: {
+      // employeeId — для update оставляем scalar (Unchecked variant), т.к. relation
+      // не меняется (одна транзакция всегда у одного сотрудника). Меняем только meta.
       employeeId: data.employeeId,
       date: new Date(data.date),
       type: data.type,
@@ -2050,7 +2056,7 @@ export async function saveEmployeeTransaction(data: any): Promise<void> {
     },
     create: {
       id: data.id,
-      employeeId: data.employeeId,
+      employee: fkConnect(data.employeeId)!,
       date: new Date(data.date),
       type: data.type,
       amount: data.amount,
@@ -2067,7 +2073,7 @@ export async function saveEmployeeTransactions(employeeId: string, transactions:
       prisma.employeeTransaction.create({
         data: {
           id: t.id,
-          employeeId: t.employeeId ?? employeeId,
+          employee: fkConnect(t.employeeId ?? employeeId)!,
           date: new Date(t.date),
           type: t.type,
           amount: t.amount,
@@ -2094,6 +2100,8 @@ export async function saveClientTransaction(data: any): Promise<void> {
   await prisma.clientTransaction.upsert({
     where: { id: data.id },
     update: {
+      // Update block: оставляем scalar (Unchecked variant) — поддерживает
+      // null для очистки FK. Свитч agg↔agent делается через scalar safe.
       clientId,
       aggregatorId,
       counterAgentId,
@@ -2107,14 +2115,15 @@ export async function saveClientTransaction(data: any): Promise<void> {
     create: {
       id: data.id,
       clientId,
-      aggregatorId,
-      counterAgentId,
+      // Phase 60 helper: relation connect для Checked-create
+      aggregator: fkConnect(aggregatorId),
+      counterAgent: fkConnect(counterAgentId),
       date: new Date(data.date),
       type: data.type ?? 'payment',
       amount: data.amount,
       description: data.description ?? '',
       // Phase 57b.1: multi-company FK persistence
-      ourCompanyId: data.ourCompanyId ?? null,
+      ourCompany: fkConnect(data.ourCompanyId),
     },
   });
 }
@@ -2136,14 +2145,15 @@ export async function saveClientTransactions(clientId: string, transactions: any
         data: {
           id: t.id,
           clientId: t.clientId ?? clientId,
-          aggregatorId,
-          counterAgentId,
+          // Phase 60 helper: relation connect для Checked-create
+          aggregator: fkConnect(aggregatorId),
+          counterAgent: fkConnect(counterAgentId),
           date: new Date(t.date),
           type: t.type ?? 'payment',
           amount: t.amount,
           description: t.description ?? '',
           // Phase 57b.1: multi-company FK persistence
-          ourCompanyId: t.ourCompanyId ?? null,
+          ourCompany: fkConnect(t.ourCompanyId),
         },
       })
     ),
@@ -2278,7 +2288,8 @@ export async function saveEmployeeDayStatus(data: any): Promise<void> {
     },
     create: {
       id: data.id,
-      employeeId: data.employeeId,
+      // Phase 60 helper: relation connect для Checked-create
+      employee: fkConnect(data.employeeId)!,
       date: data.date,
       status: data.status,
       shiftType: data.shiftType ?? null,
@@ -2348,6 +2359,7 @@ export async function saveStockMovement(data: any): Promise<void> {
   await prisma.stockMovement.upsert({
     where: { id: data.id },
     update: {
+      // Update block: scalar (Unchecked) — для гибкого partial update + null-clearing employee
       materialId,
       type: data.type,
       amount: data.amount,
@@ -2361,7 +2373,8 @@ export async function saveStockMovement(data: any): Promise<void> {
     },
     create: {
       id: data.id,
-      materialId,
+      // Phase 60 helper: relation connect для Checked-create
+      material: fkConnect(materialId)!,
       type: data.type,
       amount: data.amount,
       balanceAfter: data.balanceAfter,
@@ -2369,7 +2382,7 @@ export async function saveStockMovement(data: any): Promise<void> {
       description: data.description ?? '',
       relatedEntityType: data.relatedEntityType ?? null,
       relatedEntityId: data.relatedEntityId ?? null,
-      employeeId: data.employeeId ?? null,
+      employee: fkConnect(data.employeeId),
       createdBy: data.createdBy ?? null,
     },
   });
@@ -2391,7 +2404,8 @@ export async function saveEmployeeCanister(data: any): Promise<void> {
     },
     create: {
       id: data.id,
-      employeeId: data.employeeId,
+      // Phase 60 helper: relation connect для Checked-create
+      employee: fkConnect(data.employeeId)!,
       issuedAt: new Date(data.issuedAt),
       initialAmountGrams: data.initialAmountGrams,
       remainingAmountGrams: data.remainingAmountGrams,
@@ -2609,20 +2623,17 @@ export async function createWashEventWithSideEffects(
           },
         });
       }
-      await tx.stockMovement.create({
-        data: {
-          id: stockMovement.id,
-          // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
-          material: { connect: { id: stockMovement.materialId } },
-          type: stockMovement.type,
-          amount: stockMovement.amount,
-          balanceAfter: stockMovement.balanceAfter,
-          date: new Date(stockMovement.date),
-          description: stockMovement.description ?? '',
-          relatedEntityType: stockMovement.relatedEntityType ?? null,
-          relatedEntityId: stockMovement.relatedEntityId ?? null,
-          ...(stockMovement.employeeId ? { employee: { connect: { id: stockMovement.employeeId } } } : {}),
-        },
+      await createStockMovement(tx, {
+        id: stockMovement.id,
+        materialId: stockMovement.materialId,
+        type: stockMovement.type,
+        amount: stockMovement.amount,
+        balanceAfter: stockMovement.balanceAfter,
+        date: new Date(stockMovement.date),
+        description: stockMovement.description ?? '',
+        relatedEntityType: stockMovement.relatedEntityType ?? null,
+        relatedEntityId: stockMovement.relatedEntityId ?? null,
+        employeeId: stockMovement.employeeId ?? null,
       });
     }
 
@@ -2732,7 +2743,8 @@ export async function saveViolation(violation: Violation): Promise<void> {
     where: { id: violation.id },
     create: {
       id: violation.id,
-      employeeId: violation.employeeId,
+      // Phase 60 helper: relation connect для Checked-create
+      employee: fkConnect(violation.employeeId)!,
       date: violation.date,
       type: violation.type,
       description: violation.description,
@@ -3090,22 +3102,19 @@ export async function issueCanisterAtomic(
       const prevBalance = lastMov?.balanceAfter ?? 0;
       const newBalance = prevBalance - amountGrams;
 
-      await tx.stockMovement.create({
-        data: {
-          id: `sm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-          // Phase 60 — relation connect для FK
-          material: { connect: { id: materialId } },
-          type: 'issue',
-          amount: -amountGrams,
-          balanceAfter: newBalance,
-          date: now,
-          description: `Канистра ${input.mode} → ${employee.fullName}`,
-          relatedEntityType: 'employee_canister',
-          relatedEntityId: canisterId,
-          employee: { connect: { id: input.employeeId } },
-          createdBy: input.issuedBy,
-          warehouse: 'main',
-        },
+      await createStockMovement(tx, {
+        id: `sm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        materialId,
+        type: 'issue',
+        amount: -amountGrams,
+        balanceAfter: newBalance,
+        date: now,
+        description: `Канистра ${input.mode} → ${employee.fullName}`,
+        relatedEntityType: 'employee_canister',
+        relatedEntityId: canisterId,
+        employeeId: input.employeeId,
+        createdBy: input.issuedBy,
+        warehouse: 'main',
       });
 
       // Update material currentStock
@@ -3246,8 +3255,9 @@ export async function createDriverKickback(data: {
 }): Promise<import('@/types').DriverKickback> {
   const created = await prisma.driverKickback.create({
     data: {
-      washEventId: data.washEventId,
-      counterAgentId: data.counterAgentId,
+      // Phase 60 helper: relation connect для Checked-create
+      washEvent: fkConnect(data.washEventId)!,
+      counterAgent: fkConnect(data.counterAgentId)!,
       driverName: data.driverName.trim(),
       driverPhone: (data.driverPhone ?? '').trim(),
       plate: (data.plate ?? '').trim(),

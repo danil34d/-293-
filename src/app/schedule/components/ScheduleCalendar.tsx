@@ -10,7 +10,7 @@ import { ChevronLeft, ChevronRight, Phone, ArrowRightLeft, Check, X, Users, Sun,
 import type { Shift, Employee, ShiftSwapRequest, ShiftAssignmentRequest, ShiftType, WashId } from '@/types';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { normalizeWashId } from '@/lib/wash';
 
 // --- Weather types ---
@@ -615,23 +615,24 @@ export function ScheduleCalendar({ initialShifts, initialMonth, initialWashId, e
   };
 
   // Export to Excel (filtered by current box)
-  const handleExportToExcel = () => {
+  const handleExportToExcel = async () => {
     try {
-      const excelData: any[][] = [];
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('График смен');
 
       const monthName = format(currentMonth, 'LLLL yyyy', { locale: ru });
-      excelData.push([`График смен - ${monthName} - ${selectedWashLabel}`]);
-      excelData.push([]);
+      ws.addRow([`График смен - ${monthName} - ${selectedWashLabel}`]);
+      ws.addRow([]);
 
       const headerRow = ['№', 'Сотрудник'];
       daysInMonth.forEach(day => headerRow.push(format(day, 'd')));
       headerRow.push('Смен', 'Дневных', 'Ночных', 'Часов');
-      excelData.push(headerRow);
+      ws.addRow(headerRow);
 
       const dayNamesRow = ['', ''];
       daysInMonth.forEach(day => dayNamesRow.push(format(day, 'EEE', { locale: ru })));
       dayNamesRow.push('', '', '', '');
-      excelData.push(dayNamesRow);
+      ws.addRow(dayNamesRow);
 
       employees.forEach((employee, index) => {
         const boxShifts = monthShifts.filter(s => s.employeeIds.includes(employee.id) && s.boxNumber === calendarBoxFilter);
@@ -655,22 +656,28 @@ export function ScheduleCalendar({ initialShifts, initialMonth, initialWashId, e
         });
 
         row.push(totalCount, dayCount, nightCount, hours);
-        excelData.push(row);
+        ws.addRow(row);
       });
 
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(excelData);
+      // Column widths
+      const colWidths: number[] = [5, 25];
+      daysInMonth.forEach(() => colWidths.push(8));
+      colWidths.push(8, 10, 10, 8);
+      ws.columns = colWidths.map(width => ({ width }));
 
-      const colWidths = [{ wch: 5 }, { wch: 25 }];
-      daysInMonth.forEach(() => colWidths.push({ wch: 8 }));
-      colWidths.push({ wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 8 });
-      ws['!cols'] = colWidths;
-
-      XLSX.utils.book_append_sheet(wb, ws, 'График смен');
-
+      // Write buffer and trigger download
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
       const washFilePart = selectedWashLabel.replace(/\s+/g, '_');
       const filename = `График_смен_${washFilePart}_${format(currentMonth, 'yyyy_MM')}.xlsx`;
-      XLSX.writeFile(wb, filename);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
 
       toast({ title: 'Excel файл загружен' });
     } catch (error) {
