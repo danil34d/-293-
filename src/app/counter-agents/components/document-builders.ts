@@ -468,10 +468,23 @@ export function buildAppendix3Docx({ agent, ourCompany, contractNumber, contract
 
 // ─── 4. Ведомость учёта обслуженного автотранспорта (за месяц / per volume) ──
 
+/** Одна строка ведомости — можно собрать из washes автоматически или передать
+ *  уже отредактированную (например, после inline-edit в preview-диалоге). */
+export interface VedomostRow {
+  date: string;            // dd.MM.yyyy
+  mark: string;            // марка/категория автомобиля
+  plate: string;           // ГРН
+  services: string;        // перечень услуг через ; (или что захотел пользователь)
+  totalRub: number;        // сумма за строку, руб
+  driver: string;          // ФИО водителя (или пусто)
+}
+
 export interface VedomostOptions {
   agent: CounterAgent;
   ourCompany: OurCompany;
-  washes: WashEvent[];
+  /** Источник строк: либо передать сырые WashEvent (тогда build сам соберёт), либо уже-отредактированные rows. */
+  washes?: WashEvent[];
+  rows?: VedomostRow[];
   year: number;
   monthIdx: number;
   monthName: string;
@@ -483,8 +496,43 @@ export interface VedomostOptions {
   blank?: boolean;
 }
 
+/**
+ * Собрать строки из массива WashEvent. Экспортируется для reuse в preview-диалоге.
+ */
+export function vedomostRowsFromWashes(agent: CounterAgent, washes: WashEvent[]): VedomostRow[] {
+  const carInfoMap = new Map<string, { mark?: string; category?: string }>();
+  (agent.cars || []).forEach(c => {
+    carInfoMap.set(c.licensePlate, { mark: (c as any).mark, category: (c as any).category });
+  });
+  return washes
+    .slice()
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    .map(w => {
+      const info = carInfoMap.get(w.vehicleNumber || '') || {};
+      const mark = info.mark || info.category || '—';
+      const svcList: string[] = [];
+      if (w.services?.main?.serviceName) svcList.push(w.services.main.serviceName);
+      if (Array.isArray(w.services?.additional)) {
+        const groups = new Map<string, number>();
+        w.services.additional.forEach(s => {
+          if (s.serviceName) groups.set(s.serviceName, (groups.get(s.serviceName) ?? 0) + 1);
+        });
+        groups.forEach((cnt, name) => svcList.push(cnt > 1 ? `${cnt}× ${name}` : name));
+      }
+      const driverComment = (w.driverComments && w.driverComments[0]?.text) || '';
+      return {
+        date: format(new Date(w.timestamp), 'dd.MM.yyyy'),
+        mark,
+        plate: w.vehicleNumber || '',
+        services: svcList.join('; '),
+        totalRub: w.totalAmount ?? 0,
+        driver: driverComment,
+      };
+    });
+}
+
 export function buildVedomostDocx({
-  agent, ourCompany, washes, year, monthIdx, monthName,
+  agent, ourCompany, washes, rows: rowsInput, year, monthIdx, monthName,
   contractNumber, contractDate, volumeNumber, blank,
 }: VedomostOptions): Document {
   const cnum = contractNumber || generateContractNumber(contractDate);
@@ -492,14 +540,10 @@ export function buildVedomostDocx({
   const contractDateStr = format(cdate, 'dd.MM.yyyy');
   const customer = agent.companies?.[0] || ({} as any);
   const customerName = customer.companyName || agent.name;
-  const ourName = ourCompany.fullName || ourCompany.shortName;
   const volSuffix = volumeNumber && volumeNumber > 1 ? ` (том ${volumeNumber})` : '';
 
-  // Сопоставление ГРН → марка/категория из автопарка
-  const carInfoMap = new Map<string, { mark?: string; category?: string }>();
-  (agent.cars || []).forEach(c => {
-    carInfoMap.set(c.licensePlate, { mark: (c as any).mark, category: (c as any).category });
-  });
+  // Источник строк: editable rows или auto-собранные из washes
+  const sourceRows: VedomostRow[] = rowsInput ?? (washes ? vedomostRowsFromWashes(agent, washes) : []);
 
   const children: any[] = [];
 
@@ -541,49 +585,27 @@ export function buildVedomostDocx({
       }));
     }
   } else {
-    // Заполняем из washes
-    const sortedWashes = washes.slice().sort((a, b) =>
-      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-    sortedWashes.forEach(w => {
-      const date = format(new Date(w.timestamp), 'dd.MM.yyyy');
-      const info = carInfoMap.get(w.vehicleNumber || '') || {};
-      const mark = info.mark || info.category || '—';
-      const svcList: string[] = [];
-      if (w.services?.main?.serviceName) svcList.push(w.services.main.serviceName);
-      if (Array.isArray(w.services?.additional)) {
-        const groups = new Map<string, number>();
-        w.services.additional.forEach(s => {
-          if (s.serviceName) groups.set(s.serviceName, (groups.get(s.serviceName) ?? 0) + 1);
-        });
-        groups.forEach((cnt, name) => svcList.push(cnt > 1 ? `${cnt}× ${name}` : name));
-      }
-      const services = svcList.join('; ');
-      const price = (w.totalAmount ?? 0).toLocaleString('ru-RU');
-      const driverComment = (w.driverComments && w.driverComments[0]?.text) || '';
-
+    sourceRows.forEach(r => {
       dataRows.push(new TableRow({
         children: [
-          cell(date, { center: true }),
-          cell(mark),
-          cell(w.vehicleNumber || ''),
-          cell(services),
-          cell(price, { right: true }),
-          cell(driverComment), // если в driverComment есть ФИО водителя
-          cell(' '), // подпись — пустое, ручкой
+          cell(r.date, { center: true }),
+          cell(r.mark),
+          cell(r.plate),
+          cell(r.services),
+          cell((r.totalRub ?? 0).toLocaleString('ru-RU'), { right: true }),
+          cell(r.driver),
+          cell(' '),
         ],
       }));
     });
-
-    // Итого
-    if (sortedWashes.length > 0) {
-      const total = sortedWashes.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
+    if (sourceRows.length > 0) {
+      const total = sourceRows.reduce((s, r) => s + (r.totalRub ?? 0), 0);
       dataRows.push(new TableRow({
         children: [
           cell('Итого:', { bold: true, shade: true }),
           cell(' ', { shade: true }),
           cell(' ', { shade: true }),
-          cell(` ${sortedWashes.length} моек`, { shade: true, right: true }),
+          cell(` ${sourceRows.length} моек`, { shade: true, right: true }),
           cell(total.toLocaleString('ru-RU'), { bold: true, shade: true, right: true }),
           cell(' ', { shade: true }),
           cell(' ', { shade: true }),

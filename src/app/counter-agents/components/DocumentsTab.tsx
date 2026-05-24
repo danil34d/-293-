@@ -11,6 +11,7 @@ import {
   buildContractDocx, buildAppendix1Docx, buildAppendix3Docx, buildActDocx, buildVedomostDocx,
   generateContractNumber,
 } from './document-builders';
+import { VedomostPreviewDialog } from './VedomostPreviewDialog';
 
 /**
  * Phase 59-doc (2026-05-24): таб «Документы» в /counter-agents/[id]/edit.
@@ -159,7 +160,7 @@ interface SaveContext {
   subfolder?: string | null;
 }
 
-async function saveDocxSmart(ctx: SaveContext, filename: string, doc: Document): Promise<{ mode: 'folder' | 'download'; path?: string }> {
+export async function saveDocxSmart(ctx: SaveContext, filename: string, doc: Document): Promise<{ mode: 'folder' | 'download'; path?: string }> {
   const blob = await Packer.toBlob(doc);
   if (ctx.rootHandle) {
     try {
@@ -431,10 +432,10 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
         />
         <DocButton
           icon={<FileText className="w-5 h-5 text-rose-600" />}
-          title="Ведомость учёта (за месяц)"
-          desc="Таблица: дата · ГРН · услуги · стоимость · ФИО водителя · подпись. Заполняется автоматически по мойкам месяца, либо пустой бланк для ручного заполнения. Можно сделать том №2, №3 если в одну не влезает."
+          title="Ведомость учёта (preview + редактирование)"
+          desc="Откроется большое окно с таблицей всех моек за месяц. Можно править услуги/ФИО/сумму, добавлять-удалять строки, потом «Печать» или «Сохранить .docx». Том 2, 3… если в одну не влезает. Пустой бланк — для ручного заполнения водителем."
           onClick={() => setVedDialogOpen(true)}
-          busy={busy === 'ved'}
+          busy={false}
           disabled={ipMissing}
         />
       </div>
@@ -532,73 +533,17 @@ export function DocumentsTab({ agent, ourCompany, washEvents }: Props) {
         </div>
       )}
 
-      {/* Phase 59-doc-vedomost: Vedomost dialog */}
-      <Dialog open={vedDialogOpen} onOpenChange={setVedDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-rose-500" />
-              Ведомость учёта за месяц
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[12px] font-semibold text-slate-600 mb-1">Месяц</label>
-                <select value={vedMonthIdx} onChange={e => setVedMonthIdx(Number(e.target.value))} className="w-full px-2 py-2 text-sm border border-slate-200 rounded-md bg-white">
-                  {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[12px] font-semibold text-slate-600 mb-1">Год</label>
-                <select value={vedYear} onChange={e => setVedYear(Number(e.target.value))} className="w-full px-2 py-2 text-sm border border-slate-200 rounded-md bg-white">
-                  {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[12px] font-semibold text-slate-600 mb-1">
-                Том ведомости (1 = единственная за месяц; 2, 3… — если первая забилась)
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={vedVolume}
-                onChange={e => setVedVolume(Math.max(1, Number(e.target.value)))}
-                className="w-full px-2 py-2 text-sm border border-slate-200 rounded-md bg-white"
-              />
-            </div>
-
-            <label className="flex items-start gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50 border border-slate-200">
-              <input
-                type="checkbox"
-                checked={vedBlank}
-                onChange={e => setVedBlank(e.target.checked)}
-                className="mt-0.5"
-              />
-              <div className="text-[12px] flex-1">
-                <div className="font-semibold text-slate-900">Пустой бланк</div>
-                <div className="text-slate-500">20 пустых строк — для ручного заполнения водителем при каждой мойке.</div>
-              </div>
-            </label>
-
-            {!vedBlank && (
-              <div className="rounded-lg bg-blue-50 border border-blue-200 p-2 text-[12px] text-blue-900">
-                Будет заполнена данными моек за {MONTHS[vedMonthIdx]} {vedYear}. Если моек нет — таблица будет пустой (только заголовки + итого).
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setVedDialogOpen(false)} disabled={busy === 'ved'}>Отмена</Button>
-            <Button onClick={() => generate('ved')} disabled={busy === 'ved'} className="bg-rose-600 hover:bg-rose-700">
-              {busy === 'ved' ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />}
-              Сформировать
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Phase 59-doc-vedomost + preview: editable preview dialog */}
+      {ourCompany && (
+        <VedomostPreviewDialog
+          open={vedDialogOpen}
+          onOpenChange={setVedDialogOpen}
+          agent={agent}
+          ourCompany={ourCompany}
+          washEvents={washEvents}
+          saveDocx={(filename, subfolder, doc) => saveDocxSmart(makeCtx(subfolder), filename, doc)}
+        />
+      )}
 
       {/* Act month dialog */}
       <Dialog open={actDialogOpen} onOpenChange={setActDialogOpen}>
