@@ -14,8 +14,9 @@
     --z-border-radius: 12px;
     --z-transition: all 0.35s cubic-bezier(0.165, 0.84, 0.44, 1);
     --z-shadow-light: 0 10px 30px rgba(0, 0, 0, 0.08);
-    --z-sidebar-width: 280px;
-    --z-sidebar-collapsed-width: 80px;
+    /* Phase 15: компактнее (220 expanded, 64 collapsed) для большего места под контент */
+    --z-sidebar-width: 220px;
+    --z-sidebar-collapsed-width: 64px;
 }
 
 /* ZORIN Styled Sidebar */

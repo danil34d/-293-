@@ -8,6 +8,8 @@ import type {
   Expense, Shift, ShiftSwapRequest, ShiftAssignmentRequest,
   EmployeeDayStatusEntry, SchedulePlan, Inventory, StockMovement,
   EmployeeChemicalCanister, ActiveSession, Violation,
+  Invoice, InvoiceItems,
+  Report, ReportStatus, ReportUsage,
 } from '@/types';
 
 const usePostgres = process.env.DATA_SOURCE === 'postgres';
@@ -68,6 +70,365 @@ export const getChemicalConfig: () => Promise<any> = adapter.getChemicalConfig;
 export const getVehicleTypes: () => Promise<any> = adapter.getVehicleTypes;
 export const getViolationsData: () => Promise<Violation[]> = adapter.getViolationsData;
 export const getShiftReportsData: () => Promise<any[]> = adapter.getShiftReportsData;
+export const getAppVersion: () => Promise<any> = adapter.getAppVersion;
+export const saveAppVersion: (data: any) => Promise<void> = adapter.saveAppVersion;
+
+// ─── UX-safety v1 (Postgres-only — на JSON-fallback стабы выбрасывают error) ──
+
+export const archiveSalaryScheme: (id: string) => Promise<void> =
+  adapter.archiveSalaryScheme ?? (async () => { throw new Error('archiveSalaryScheme requires DATA_SOURCE=postgres'); });
+export const unarchiveSalaryScheme: (id: string) => Promise<void> =
+  adapter.unarchiveSalaryScheme ?? (async () => { throw new Error('unarchiveSalaryScheme requires DATA_SOURCE=postgres'); });
+export const getSalaryPeriod: (month: string) => Promise<any | null> =
+  adapter.getSalaryPeriod ?? (async () => null);
+export const isSalaryPeriodClosed: (month: string) => Promise<boolean> =
+  adapter.isSalaryPeriodClosed ?? (async () => false);
+export const closeSalaryPeriod: (month: string, closedBy: string) => Promise<void> =
+  adapter.closeSalaryPeriod ?? (async () => { throw new Error('closeSalaryPeriod requires DATA_SOURCE=postgres'); });
+export const openSalaryPeriod: (month: string) => Promise<void> =
+  adapter.openSalaryPeriod ?? (async () => { throw new Error('openSalaryPeriod requires DATA_SOURCE=postgres'); });
+export const appendEmployeeSchemeHistory: (
+  employeeId: string, schemeId: string | null, changedBy: string
+) => Promise<void> =
+  adapter.appendEmployeeSchemeHistory ?? (async () => { /* no-op for JSON */ });
+
+// Phase 29 / V2-NEW-3: EmployeeChangeLog audit table
+export const createEmployeeChangeLog: (data: {
+  employeeId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  reason?: string | null;
+}) => Promise<void> =
+  adapter.createEmployeeChangeLog ?? (async () => { /* no-op for JSON */ });
+
+export const createEmployeeChangeLogBatch: (entries: Array<{
+  employeeId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  reason?: string | null;
+}>) => Promise<void> =
+  adapter.createEmployeeChangeLogBatch ?? (async () => { /* no-op for JSON */ });
+
+export const getEmployeeChangeLog: (
+  employeeId: string,
+  limit?: number
+) => Promise<import('@/types').EmployeeChangeLogEntry[]> =
+  adapter.getEmployeeChangeLog ?? (async () => []);
+
+// Phase 57 / multi-company: OurCompany CRUD + helper
+
+export const getOurCompaniesData: () => Promise<import('@/types').OurCompany[]> =
+  adapter.getOurCompaniesData ?? (async () => []);
+
+export const getOurCompanyById: (id: string) => Promise<import('@/types').OurCompany | null> =
+  adapter.getOurCompanyById ?? (async () => null);
+
+export const getPrimaryOurCompany: () => Promise<import('@/types').OurCompany | null> =
+  adapter.getPrimaryOurCompany ?? (async () => null);
+
+export const saveOurCompany: (data: Partial<import('@/types').OurCompany> & { id: string }) => Promise<import('@/types').OurCompany> =
+  adapter.saveOurCompany ?? (async () => { throw new Error('saveOurCompany requires DATA_SOURCE=postgres'); });
+
+export const archiveOurCompany: (id: string) => Promise<void> =
+  adapter.archiveOurCompany ?? (async () => {});
+
+export const unarchiveOurCompany: (id: string) => Promise<void> =
+  adapter.unarchiveOurCompany ?? (async () => {});
+
+/**
+ * Phase 57a: автоматическое определение ourCompanyId при POST WashEvent.
+ *   counterAgent → preferredOurCompanyId
+ *   aggregator → preferredOurCompanyId
+ *   розница → primary OurCompany
+ *   override через washEvent.ourCompanyId (admin)
+ */
+export const resolveOurCompanyIdForWashEvent: (washEvent: {
+  paymentMethod: string;
+  sourceId?: string;
+  ourCompanyId?: string | null;
+}) => Promise<string | null> =
+  adapter.resolveOurCompanyIdForWashEvent ?? (async () => null);
+
+// Phase 52 / V2-NEW-1: канистры — atomic issue
+export const issueCanisterAtomic: (input: {
+  employeeId: string;
+  mode: import('@/types').CanisterMode;
+  amountGrams?: number;
+  priceRub?: number;
+  washPoint?: string;
+  notes?: string;
+  issuedBy: string;
+  materialId?: string;
+}) => Promise<import('@/types').EmployeeChemicalCanister> =
+  adapter.issueCanisterAtomic ?? (async () => { throw new Error('issueCanisterAtomic requires DATA_SOURCE=postgres'); });
+
+// Phase 50 / V2-#4: split-pricing DriverKickback
+
+export const getDriverKickbacks: (filters?: {
+  counterAgentId?: string;
+  status?: import('@/types').DriverKickbackStatus;
+  washEventId?: string;
+}) => Promise<import('@/types').DriverKickback[]> =
+  adapter.getDriverKickbacks ?? (async () => []);
+
+export const getDriverKickbackById: (id: string) => Promise<import('@/types').DriverKickback | null> =
+  adapter.getDriverKickbackById ?? (async () => null);
+
+export const getDriverKickbacksByWashEvent: (washEventId: string) => Promise<import('@/types').DriverKickback[]> =
+  adapter.getDriverKickbacksByWashEvent ?? (async () => []);
+
+export const createDriverKickback: (data: {
+  washEventId: string;
+  counterAgentId: string;
+  driverName: string;
+  driverPhone?: string;
+  plate?: string;
+  amount: number;
+}) => Promise<import('@/types').DriverKickback> =
+  adapter.createDriverKickback ?? (async () => { throw new Error('createDriverKickback requires DATA_SOURCE=postgres'); });
+
+export const markDriverKickbacksReady: (ids: string[]) => Promise<number> =
+  adapter.markDriverKickbacksReady ?? (async () => 0);
+
+export const payDriverKickback: (
+  id: string,
+  paidByEmployeeId: string,
+) => Promise<{ kickback: import('@/types').DriverKickback; expenseId: string }> =
+  adapter.payDriverKickback ?? (async () => { throw new Error('payDriverKickback requires DATA_SOURCE=postgres'); });
+
+export const getWashEventKickbackBlockers: (washEventId: string) => Promise<{
+  paid: number;
+  ready: number;
+  pending: number;
+}> =
+  adapter.getWashEventKickbackBlockers ?? (async () => ({ paid: 0, ready: 0, pending: 0 }));
+
+// Phase 6.2: employee archive / impact pre-check
+export const archiveEmployee: (id: string) => Promise<void> =
+  adapter.archiveEmployee ?? (async () => { throw new Error('archiveEmployee requires DATA_SOURCE=postgres'); });
+export const unarchiveEmployee: (id: string) => Promise<void> =
+  adapter.unarchiveEmployee ?? (async () => { throw new Error('unarchiveEmployee requires DATA_SOURCE=postgres'); });
+export const getEmployeeImpact: (id: string) => Promise<{
+  washEvents: number;
+  transactions: number;
+  shifts: number;
+  violations: number;
+  canisters: number;
+  dayStatuses: number;
+}> = adapter.getEmployeeImpact ?? (async () => ({ washEvents: 0, transactions: 0, shifts: 0, violations: 0, canisters: 0, dayStatuses: 0 }));
+
+// Phase 7: Backend polish — реальные метрики, recompute, aggregator/agent pre-check
+export const getEmployeeSchemeImpact: (id: string) => Promise<{
+  monthsWorked: number;
+  monthlyTurnover: number;
+  washEventsCount: number;
+  firstWashAt: string | null;
+  lastWashAt: string | null;
+  currentMonthTurnover: number;
+}> =
+  adapter.getEmployeeSchemeImpact ?? (async () => ({
+    monthsWorked: 0,
+    monthlyTurnover: 0,
+    washEventsCount: 0,
+    firstWashAt: null,
+    lastWashAt: null,
+    currentMonthTurnover: 0,
+  }));
+
+export const recomputeInventoryStock: (apply: boolean) => Promise<{
+  materials: Array<{
+    id: string;
+    name: string;
+    currentStock: number;
+    computedStock: number;
+    delta: number;
+    movementCount: number;
+  }>;
+  applied: boolean;
+}> =
+  adapter.recomputeInventoryStock ?? (async () => { throw new Error('recomputeInventoryStock requires DATA_SOURCE=postgres'); });
+
+export const archiveAggregator: (id: string) => Promise<void> =
+  adapter.archiveAggregator ?? (async () => { throw new Error('archiveAggregator requires DATA_SOURCE=postgres'); });
+export const unarchiveAggregator: (id: string) => Promise<void> =
+  adapter.unarchiveAggregator ?? (async () => { throw new Error('unarchiveAggregator requires DATA_SOURCE=postgres'); });
+
+export const getAggregatorImpact: (id: string) => Promise<{
+  washEvents: number;
+  clientTransactions: number;
+  schemesUsingAsRateSource: Array<{ id: string; name: string; type: string }>;
+}> =
+  adapter.getAggregatorImpact ?? (async () => ({ washEvents: 0, clientTransactions: 0, schemesUsingAsRateSource: [] }));
+
+export const getCounterAgentImpact: (id: string) => Promise<{
+  washEvents: number;
+  clientTransactions: number;
+  schemesUsingAsRateSource: Array<{ id: string; name: string; type: string }>;
+}> =
+  adapter.getCounterAgentImpact ?? (async () => ({ washEvents: 0, clientTransactions: 0, schemesUsingAsRateSource: [] }));
+
+export const findSchemesUsingRateSource: (
+  sourceType: 'aggregator' | 'counterAgent' | 'retail',
+  sourceId: string
+) => Promise<Array<{ id: string; name: string; type: string }>> =
+  adapter.findSchemesUsingRateSource ?? (async () => []);
+
+// Phase 11 / finding #39: shift lookup для retroactive POST WashEvent
+export const findShiftForTimestamp: (
+  timestamp: Date | string,
+  boxNumber: 1 | 2
+) => Promise<string | null> =
+  adapter.findShiftForTimestamp ?? (async () => null);
+
+// Phase 14 / UX полировка: метрики для /employees таблицы
+export const getEmployeesMetrics: () => Promise<Map<string, {
+  washesThisMonth: number;
+  lastWashAt: string | null;
+}>> =
+  adapter.getEmployeesMetrics ?? (async () => new Map());
+
+// Phase 22 / Invoice БД
+export const getInvoicesData: (filters?: {
+  counterAgentId?: string;
+  status?: string;
+  periodFrom?: string;
+  periodTo?: string;
+}) => Promise<Invoice[]> =
+  adapter.getInvoicesData ?? (async () => []);
+
+export const getInvoiceById: (id: string) => Promise<Invoice | null> =
+  adapter.getInvoiceById ?? (async () => null);
+
+export const getInvoicesByCounterAgent: (counterAgentId: string) => Promise<Invoice[]> =
+  adapter.getInvoicesByCounterAgent ?? (async () => []);
+
+export const generateInvoiceNumber: (periodStart: Date) => Promise<string> =
+  adapter.generateInvoiceNumber ?? (async () => 'TEMP-001');
+
+export const buildInvoicePreview: (
+  counterAgentId: string,
+  periodStart: Date,
+  periodEnd: Date,
+  discountPercent?: number
+) => Promise<{
+  counterAgentId: string;
+  periodStart: string;
+  periodEnd: string;
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments: number;
+  totalAmount: number;
+  items: InvoiceItems;
+  washCount: number;
+}> =
+  adapter.buildInvoicePreview ?? (async () => { throw new Error('buildInvoicePreview requires DATA_SOURCE=postgres'); });
+
+export const createInvoice: (data: {
+  counterAgentId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments?: number;
+  totalAmount: number;
+  items: InvoiceItems;
+  createdByEmployeeId?: string;
+  notes?: string;
+}) => Promise<Invoice> =
+  adapter.createInvoice ?? (async () => { throw new Error('createInvoice requires DATA_SOURCE=postgres'); });
+
+export const updateInvoice: (id: string, data: any) => Promise<Invoice> =
+  adapter.updateInvoice ?? (async () => { throw new Error('updateInvoice requires DATA_SOURCE=postgres'); });
+
+export const deleteInvoice: (id: string) => Promise<void> =
+  adapter.deleteInvoice ?? (async () => { throw new Error('deleteInvoice requires DATA_SOURCE=postgres'); });
+
+// Phase 23 / Report БД (AI-аналитика persistence)
+export const getReportsData: (filters?: {
+  status?: string;
+  periodFrom?: string;
+  periodTo?: string;
+}) => Promise<Report[]> =
+  adapter.getReportsData ?? (async () => []);
+
+export const getReportById: (id: string) => Promise<Report | null> =
+  adapter.getReportById ?? (async () => null);
+
+// generateReportTitle — sync utility, importить напрямую из @/lib/utils/report-title
+
+export const createReport: (data: {
+  title?: string;
+  periodStart: Date;
+  periodEnd: Date;
+  reportMarkdown: string;
+  prompt?: string;
+  usage?: ReportUsage;
+  createdByEmployeeId?: string;
+  notes?: string;
+}) => Promise<Report> =
+  adapter.createReport ?? (async () => { throw new Error('createReport requires DATA_SOURCE=postgres'); });
+
+export const updateReport: (id: string, data: { title?: string; status?: ReportStatus; notes?: string }) => Promise<Report> =
+  adapter.updateReport ?? (async () => { throw new Error('updateReport requires DATA_SOURCE=postgres'); });
+
+export const deleteReport: (id: string) => Promise<void> =
+  adapter.deleteReport ?? (async () => { throw new Error('deleteReport requires DATA_SOURCE=postgres'); });
+
+// Phase 24a / V2-#2 / finding #7 АРХ-НАХОДКИ: атомарный реверс StockMovement при DELETE Expense
+export const reverseExpenseStockMovements: (expenseId: string, employeeId?: string) => Promise<{
+  reversed: number;
+  totalGramsReversed: number;
+  reverseMovementIds: string[];
+}> =
+  adapter.reverseExpenseStockMovements ?? (async () => ({ reversed: 0, totalGramsReversed: 0, reverseMovementIds: [] }));
+
+// Phase 20 / finding #8 АРХ-НАХОДКИ: scan orphan StockMovement (soft FK без проверки)
+export const findOrphanedStockMovements: () => Promise<{
+  total: number;
+  orphans: Array<{
+    id: string;
+    materialId: string;
+    type: string;
+    amount: number;
+    date: string;
+    description: string;
+    relatedEntityType: string;
+    relatedEntityId: string;
+    reason: string;
+  }>;
+  summary: {
+    totalMovements: number;
+    withSoftFK: number;
+    orphanCount: number;
+    byReason: Record<string, number>;
+  };
+}> =
+  adapter.findOrphanedStockMovements ?? (async () => ({ total: 0, orphans: [], summary: { totalMovements: 0, withSoftFK: 0, orphanCount: 0, byReason: {} } }));
+
+// Phase 16 / finding #35: backfill StockMovement.purchase из исторических Expense
+export const backfillChemicalPurchasesFromExpenses: (apply: boolean) => Promise<{
+  candidates: Array<{
+    expenseId: string;
+    date: string;
+    category: string;
+    description: string;
+    quantity: number;
+    unit: string;
+    grams: number;
+    skipReason?: string;
+  }>;
+  alreadyBackfilled: number;
+  willCreate: number;
+  skipped: number;
+  applied: boolean;
+}> =
+  adapter.backfillChemicalPurchasesFromExpenses ?? (async () => { throw new Error('backfillChemicalPurchasesFromExpenses requires DATA_SOURCE=postgres'); });
 
 // ─── Cache invalidation (no-ops for PG, real for JSON) ──────
 

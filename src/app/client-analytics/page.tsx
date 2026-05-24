@@ -5,6 +5,7 @@ import "@/styles/client-analytics.css";
 import { AlertTriangle } from 'lucide-react';
 import { getWashEventsData, getAggregatorsData, getCounterAgentsData } from '@/lib/data';
 import { ClientAnalyticsDashboard } from './components/ClientAnalyticsDashboard';
+import { ClientAnalyticsExtrasWrapper } from './components/ClientAnalyticsExtrasWrapper';
 
 async function fetchData() {
     try {
@@ -57,6 +58,12 @@ export default async function ClientAnalyticsPage() {
                 </div>
             </div>
             <div className="analytics-dashboard">
+                {/* Phase 28b / V2-#20: KPI tiles + donut по сегментам + heatmap дней недели */}
+                <ClientAnalyticsExtrasWrapper
+                    washEvents={washEvents}
+                    counterAgents={counterAgents}
+                    aggregators={aggregators}
+                />
                 <ClientAnalyticsDashboard
                     washEvents={washEvents}
                     aggregators={aggregators}

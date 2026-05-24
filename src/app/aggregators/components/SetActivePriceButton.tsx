@@ -1,19 +1,28 @@
 "use client";
 
-import { useState } from 'react';
 import { Star } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import type { Aggregator } from '@/types';
 
 interface SetActivePriceButtonProps {
-  aggregatorId: string;
+  aggregator: Aggregator;
   priceListName: string;
   isActive: boolean;
+  /** Phase 27a: callback в parent (AggregatorsSearch держит state модала
+   *  чтобы он не unmount-ился вместе с popover prайс-листов). */
+  onRequestSwitch?: (aggregator: Aggregator, targetPriceListName: string) => void;
 }
 
-export function SetActivePriceButton({ aggregatorId, priceListName, isActive }: SetActivePriceButtonProps) {
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
-
+/**
+ * Phase 27a: раньше один клик делал прямой PUT и сменял активный прайс
+ * без предупреждения — все будущие мойки пойдут по новому прайсу
+ * (V2 README #7 orange safety gap).
+ *
+ * Теперь: клик вызывает onRequestSwitch — AggregatorsSearch открывает
+ * SwitchPriceModal с warning + 2 CheckItem + сравнение текущего vs
+ * целевого прайса. Модал живёт в parent чтобы не закрывался когда popover
+ * прайс-листов сворачивается.
+ */
+export function SetActivePriceButton({ aggregator, priceListName, isActive, onRequestSwitch }: SetActivePriceButtonProps) {
   if (isActive) {
     return (
       <span style={{
@@ -27,36 +36,20 @@ export function SetActivePriceButton({ aggregatorId, priceListName, isActive }: 
     );
   }
 
-  const handleClick = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/aggregators/${aggregatorId}/active-price`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activePriceListName: priceListName }),
-      });
-      if (res.ok) {
-        router.refresh();
-      }
-    } catch {
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <button
-      onClick={handleClick}
-      disabled={loading}
+      type="button"
+      onClick={() => onRequestSwitch?.(aggregator, priceListName)}
+      title="Открыть подтверждение смены прайса"
       style={{
         display: 'inline-flex', alignItems: 'center', gap: '4px',
         fontSize: '11px', color: '#6b7280', background: '#f3f4f6',
         padding: '2px 8px', borderRadius: '8px', border: '1px solid #d1d5db',
-        cursor: loading ? 'wait' : 'pointer', fontWeight: 500
+        cursor: 'pointer', fontWeight: 500,
       }}
     >
       <Star className="h-3 w-3" />
-      {loading ? '...' : 'Сделать активным'}
+      Сделать активным
     </button>
   );
 }

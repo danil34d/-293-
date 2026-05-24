@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import type { VehicleType } from '@/types';
 import { requireAdmin } from '@/lib/server-auth';
 import { getVehicleTypes } from '@/lib/data';
@@ -44,8 +45,10 @@ export async function POST(req: NextRequest) {
       vehicles = [];
     }
 
-    // Generate ID and consumption
-    const id = `custom_${Date.now()}`;
+    // Generate ID and consumption.
+    // Phase 41 / АРХ-#11: id теперь UUID v4 (server-side, через crypto.randomUUID),
+    // префикс "custom_" сохранён для совместимости с UI (isCustom фильтр в /settings).
+    const id = `custom_${randomUUID()}`;
     const consumptionCoefficient = 2.0 / 116.43; // Based on truck
     const consumptionLiters = newVehicle.areaM2 * consumptionCoefficient;
     const recommendedPrice = Math.round(newVehicle.areaM2 * (1800 / 116.43));

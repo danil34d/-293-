@@ -4,7 +4,7 @@ import React, { useEffect } from "react";
 import { useForm, type FieldErrors } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@/lib/zod-resolver";
-import type { CounterAgent, WashEvent } from "@/types";
+import type { CounterAgent, WashEvent, OurCompany } from "@/types";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeLicensePlate } from "@/lib/utils";
@@ -20,7 +20,20 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CompanyAccordion, companySchema, baseCompany } from "@/components/common/CompanyAccordion";
 import { PriceListEditor, priceListItemSchema } from "@/components/common/PriceListEditor";
-import { Cog, Copy, Save, X } from "lucide-react";
+import { DriversEditor } from "./DriversEditor";
+import { Cog, Copy, Save, X, Scale, HandCoins } from "lucide-react";
+import { DangerGate } from "@/components/admin";
+
+/**
+ * Phase 51b / V2-#4 split-pricing: schema водителя контрагента.
+ * Хранится как CounterAgent.drivers Json. Используется в /workstation
+ * для auto-match по plate при оформлении split-услуги.
+ */
+const driverSchema = z.object({
+  name: z.string().min(2, "ФИО водителя — минимум 2 символа"),
+  phone: z.string().optional(),
+  plates: z.string().optional(), // multi-line text, parsed на submit
+});
 
 const schema = z.object({
   name: z.string().min(2, "Имя агента должно содержать не менее 2 символов."),
@@ -43,6 +56,10 @@ const schema = z.object({
   additionalPriceList: z.array(priceListItemSchema).optional(),
   allowCustomServices: z.boolean().optional(),
   balance: z.coerce.number().optional(),
+  /** Phase 51b: список водителей для split-услуг */
+  drivers: z.array(driverSchema).optional(),
+  /** Phase 57c: предпочитаемое ИП для платежей по этому контрагенту. "" = default (primary). */
+  preferredOurCompanyId: z.string().optional(),
 });
 
 type Values = z.infer<typeof schema>;
@@ -54,6 +71,8 @@ interface Props {
   agentId?: string;
   referenceAgents?: CounterAgent[];
   washEvents?: WashEvent[];
+  /** Phase 57c: список наших ИП для выбора preferredOurCompanyId. */
+  ourCompanies?: OurCompany[];
 }
 
 const RECENT_DAYS = 30;
@@ -112,6 +131,7 @@ export function CounterAgentForm({
   agentId,
   referenceAgents = [],
   washEvents = [],
+  ourCompanies = [],
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -122,6 +142,13 @@ export function CounterAgentForm({
   const [quickCarInput, setQuickCarInput] = React.useState("");
   const [bulkCarsInput, setBulkCarsInput] = React.useState("");
   const [balanceAdjustment, setBalanceAdjustment] = React.useState("1000");
+  // Phase 6.3: balance под DangerGate-замком на edit (на create — открыт)
+  const isExisting = !!agentId;
+  const [balanceUnlocked, setBalanceUnlocked] = React.useState(!isExisting);
+  // Phase 26b: для нового агента — initial payment через ClientTransaction (audit-trail)
+  const [recordPrepaid, setRecordPrepaid] = React.useState(false);
+  const [prepaidAmount, setPrepaidAmount] = React.useState("");
+  const [prepaidMethod, setPrepaidMethod] = React.useState<"transfer" | "cash" | "card">("transfer");
 
   const defaults = React.useMemo(() => ({
     name: initialData?.name || "",
@@ -131,6 +158,14 @@ export function CounterAgentForm({
     additionalPriceList: normalizeItems(initialData?.additionalPriceList),
     allowCustomServices: initialData?.allowCustomServices ?? true,
     balance: initialData?.balance ?? 0,
+    // Phase 51b: drivers из CounterAgent.drivers Json (plates → multi-line text)
+    drivers: (initialData?.drivers || []).map((d) => ({
+      name: d.name || "",
+      phone: d.phone || "",
+      plates: (d.plates || []).join("\n"),
+    })),
+    // Phase 57c: preferredOurCompanyId — "" = default (primary)
+    preferredOurCompanyId: initialData?.preferredOurCompanyId || "",
   }), [initialData]);
 
   const form = useForm<Values>({
@@ -375,7 +410,10 @@ export function CounterAgentForm({
   }
 
   async function onSubmit(data: Values) {
-    const currentAgentId = agentId || `agent_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // Phase 48 / АРХ-#12: UUID v4 для новых агентов (теоретическая защита от коллизий
+    // двух параллельных POST в 1ms). Префикс "agent_" сохранён для UI-фильтрации.
+    // crypto.randomUUID() — browser API, поддержка с Chrome 92 / FF 95 / Safari 15.4.
+    const currentAgentId = agentId || `agent_${crypto.randomUUID()}`;
     const {
       parsedCars,
       mergedCars,
@@ -394,6 +432,19 @@ export function CounterAgentForm({
       return;
     }
 
+    // Phase 51b / V2-#4: serialize drivers (plates multi-line → string[]).
+    // Пустые имена/без plates отфильтруем — невалидные записи.
+    const driversToSave = (data.drivers || [])
+      .map((d) => ({
+        name: (d.name || '').trim(),
+        phone: (d.phone || '').trim(),
+        plates: (d.plates || '')
+          .split('\n')
+          .map((p) => normalizeLicensePlate(p.trim()))
+          .filter(Boolean),
+      }))
+      .filter((d) => d.name.length >= 2);
+
     const agentToSave: CounterAgent = {
       id: currentAgentId,
       name: data.name,
@@ -408,6 +459,9 @@ export function CounterAgentForm({
       additionalPriceList: data.additionalPriceList || [],
       allowCustomServices: data.allowCustomServices,
       balance: data.balance,
+      drivers: driversToSave,
+      // Phase 57c: preferredOurCompanyId — "" → null (default к primary ИП)
+      preferredOurCompanyId: data.preferredOurCompanyId ? data.preferredOurCompanyId : undefined,
     };
 
     try {
@@ -420,6 +474,39 @@ export function CounterAgentForm({
         const errorData = await response.json();
         throw new Error(errorData.error || `Failed to save agent: ${response.statusText}`);
       }
+      // Phase 26b: после успешного создания нового агента — если отмечена предоплата,
+      // создаём ClientTransaction через audit-эндпоинт (server-side гарантировал balance=0 при PUT).
+      const prepaidNum = Number((prepaidAmount || "").replace(/\s/g, "")) || 0;
+      if (!agentId && recordPrepaid && prepaidNum > 0) {
+        try {
+          // Phase 33: контрагенты ВСЕГДА по договору безналом — hardcoded label
+          const txResponse = await fetch(`/api/client-transactions/${currentAgentId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount: prepaidNum,
+              description: `Безнал по договору · первоначальный платёж при создании контрагента`,
+            }),
+          });
+          if (!txResponse.ok) {
+            const txError = await txResponse.json().catch(() => ({}));
+            // Не упасть всей операцией — агент создан, просто платёж не записался
+            toast({
+              title: "Агент создан, но платёж не записан",
+              description: txError.error || `${prepaidNum.toLocaleString('ru-RU')} ₽ — добавьте вручную через «Платёж» в списке.`,
+              variant: "destructive",
+            });
+          }
+        } catch (txErr: any) {
+          console.error("Initial payment failed:", txErr);
+          toast({
+            title: "Платёж не записан",
+            description: `Агент создан, но ${prepaidNum.toLocaleString('ru-RU')} ₽ нужно добавить вручную.`,
+            variant: "destructive",
+          });
+        }
+      }
+
       const normalizedCarsText = mergedCars.join("\n");
       form.reset({ ...data, cars: normalizedCarsText });
       setQuickCarInput("");
@@ -430,6 +517,7 @@ export function CounterAgentForm({
         description: (
           <span>
             Контрагент <strong>{agentToSave.name}</strong> успешно сохранен.
+            {!agentId && recordPrepaid && prepaidNum > 0 ? ` + ${prepaidNum.toLocaleString('ru-RU')} ₽ предоплаты записано.` : ""}
             {mergedCars.length > parsedCars.length ? ` Автоматически добавлено номеров: ${mergedCars.length - parsedCars.length}.` : ""}
             {pendingBulk.invalidLines.length > 0 ? ` Пропущено невалидных строк: ${pendingBulk.invalidLines.length}.` : ""}
           </span>
@@ -493,34 +581,147 @@ export function CounterAgentForm({
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem><FormLabel>Имя агента</FormLabel><FormControl><Input placeholder="например, ООО 'Авто Коммерц'" {...field} className="text-base" /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="balance" render={({ field }) => (
-                  <FormItem><FormLabel>Текущий баланс (руб.)</FormLabel><FormControl><Input type="number" placeholder="0" {...field} /></FormControl><FormDescription>Отрицательное значение означает долг клиента, положительное — предоплату.</FormDescription><FormMessage /></FormItem>
-                )} />
-                <div className="rounded-lg border bg-muted/20 p-4">
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <div className="text-sm text-muted-foreground">Статус баланса</div>
-                        <div className="mt-2 flex flex-wrap items-center gap-3">
-                          <div className="text-2xl font-semibold">{watchedBalance.toLocaleString("ru-RU")} ₽</div>
+                {/* Phase 57c: preferredOurCompanyId — на чьё ИП пойдут платежи по этому контрагенту */}
+                {ourCompanies.length > 0 && (
+                  <FormField control={form.control} name="preferredOurCompanyId" render={({ field }) => {
+                    const activeCompanies = ourCompanies.filter(c => !c.archived);
+                    const primary = activeCompanies.find(c => c.isPrimary);
+                    return (
+                      <FormItem>
+                        <FormLabel>От имени какого ИП работает этот контрагент</FormLabel>
+                        <Select
+                          value={field.value || "__default__"}
+                          onValueChange={(v) => field.onChange(v === "__default__" ? "" : v)}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="text-base">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__default__">
+                              По умолчанию ({primary?.shortName || "основное ИП"})
+                            </SelectItem>
+                            {activeCompanies.map((oc) => (
+                              <SelectItem key={oc.id} value={oc.id}>
+                                {oc.shortName}
+                                {oc.isPrimary ? " ⭐" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          Все мойки и платежи от этого контрагента будут учитываться на выбранном ИП. Если оставить «По умолчанию» — пойдёт на основное ИП.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }} />
+                )}
+                {/* Phase 6.3: balance был под DangerGate.
+                    Phase 25 (17.05.2026): backend теперь ИГНОРИРУЕТ balance в PUT
+                    (server-side audit enforcement, см. /api/counter-agents/[id]/route.ts).
+                    Поэтому форма показывает balance read-only + явный CTA на PaymentModal. */}
+                {isExisting ? (
+                  <div className="rounded-xl border-2 border-amber-200 bg-amber-50/30 p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-amber-100 p-2 flex-shrink-0">
+                        <Scale className="h-5 w-5 text-amber-700" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] uppercase tracking-wider font-bold text-amber-700 flex items-center gap-1.5">
+                          🔒 Баланс защищён от прямой правки
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-3 flex-wrap">
+                          <div className="text-3xl font-extrabold tabular-nums">
+                            {(initialData?.balance ?? 0).toLocaleString("ru-RU")} ₽
+                          </div>
                           <Badge variant="outline" className={balanceMeta.className}>{balanceMeta.label}</Badge>
                         </div>
-                        <div className="mt-2 text-sm text-muted-foreground">{balanceMeta.hint}</div>
+                        <div className="text-[12px] text-muted-foreground mt-1">{balanceMeta.hint}</div>
+                        <div className="mt-3 text-[12px] text-amber-900 leading-snug">
+                          Phase 25 (17.05.2026): прямая правка баланса в этой форме <b>отключена</b> на уровне сервера
+                          (PUT игнорирует поле <code className="bg-amber-100 px-1 rounded text-[11px]">balance</code>).
+                          Любое изменение должно идти через <b>«Добавить платёж»</b> в списке контрагентов
+                          — это создаёт <code className="bg-amber-100 px-1 rounded text-[11px]">ClientTransaction(type='payment')</code> с audit-меткой.
+                        </div>
                       </div>
-                      {agentId ? <Button type="button" variant="outline" onClick={() => router.push(`/counter-agents/${agentId}/finance`)}>Открыть финансы</Button> : null}
                     </div>
-                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                      <Input type="number" value={balanceAdjustment} onChange={(event) => setBalanceAdjustment(event.target.value)} placeholder="Сумма корректировки" className="xl:w-56" />
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" onClick={() => applyBalance("increase")}>Прибавить сумму</Button>
-                        <Button type="button" variant="outline" onClick={() => applyBalance("decrease")}>Списать сумму</Button>
-                        <Button type="button" variant="outline" onClick={() => setBalanceValue(0)}>Обнулить</Button>
-                        <Button type="button" variant="ghost" onClick={() => setBalanceValue(Math.abs(watchedBalance || 0))}>Сделать предоплатой</Button>
-                        <Button type="button" variant="ghost" onClick={() => setBalanceValue(-Math.abs(watchedBalance || 0))}>Сделать долгом</Button>
-                      </div>
+                    <div className="flex gap-2 pt-1">
+                      <Button type="button" variant="outline" onClick={() => router.push('/counter-agents')}>
+                        <HandCoins className="w-4 h-4 mr-1.5" /> К списку → Добавить платёж
+                      </Button>
+                      {agentId ? (
+                        <Button type="button" variant="ghost" onClick={() => router.push(`/counter-agents/${agentId}/finance`)}>
+                          Открыть финансы
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
-                </div>
+                ) : (
+                  // Phase 26b / V2 «counter-agent-new»: убран прямой инпут balance.
+                  // Контрагент всегда создаётся с balance=0 (server forces, Phase 26a).
+                  // Если клиент сразу внёс предоплату — checkbox ниже создаёт ClientTransaction
+                  // (audit-trail) сразу после успешного создания агента.
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-lg bg-emerald-100 p-2 flex-shrink-0">
+                        <HandCoins className="h-5 w-5 text-emerald-700" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-[11px] uppercase tracking-wider font-bold text-emerald-700 flex items-center gap-1.5">
+                          🛡 Стартовый баланс — через audit
+                        </div>
+                        <div className="text-[12px] text-slate-700 mt-1 leading-snug">
+                          Контрагент создаётся с balance=0. Если клиент сразу внёс предоплату
+                          — отметьте чекбокс ниже, и после создания будет записан
+                          <code className="bg-emerald-100 px-1 rounded text-[11px] mx-0.5">ClientTransaction(type='payment')</code>
+                          с audit-меткой.
+                        </div>
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer pt-1 select-none">
+                      <input
+                        type="checkbox"
+                        checked={recordPrepaid}
+                        onChange={(e) => setRecordPrepaid(e.target.checked)}
+                        className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-[13px] font-medium text-slate-800">
+                        Да, клиент сразу внёс предоплату
+                      </span>
+                    </label>
+
+                    {recordPrepaid && (
+                      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-emerald-200">
+                        <div className="col-span-2">
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Сумма (₽)</label>
+                          <Input
+                            type="text"
+                            value={prepaidAmount}
+                            onChange={(e) => setPrepaidAmount(e.target.value.replace(/[^\d\s]/g, ''))}
+                            placeholder="0"
+                            className="text-[16px] font-bold tabular-nums"
+                          />
+                        </div>
+                        {/* Phase 33: контрагенты ВСЕГДА платят по договору безналом — picker убран */}
+                        <div className="col-span-2 rounded-md border border-blue-200 bg-blue-50/60 px-3 py-2 flex items-center gap-2">
+                          <span className="text-[18px]">🏦</span>
+                          <div className="flex-1 min-w-0 text-[11px]">
+                            <div className="font-bold text-blue-900">Безнал по договору</div>
+                            <div className="text-blue-700">Контрагенты платят только через расчётный счёт.</div>
+                          </div>
+                        </div>
+                        <div className="col-span-2 text-[11px] text-emerald-800">
+                          Будет создана запись:
+                          {prepaidAmount ? ` +${Number(prepaidAmount.replace(/\s/g, '') || 0).toLocaleString('ru-RU')} ₽` : ' (введите сумму)'}
+                          {' '}через безналичный перевод по договору.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -654,6 +855,9 @@ export function CounterAgentForm({
                 </div>
               </CardContent>
             </Card>
+
+            {/* Phase 51b / V2-#4: водители для split-услуг */}
+            <DriversEditor control={form.control} />
           </TabsContent>
 
           <TabsContent value="pricing" className="space-y-6">

@@ -26,8 +26,9 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { normalizeLicensePlate, cn } from "@/lib/utils";
 
-import { Save, X, ListPlus, Trash2, Calendar, Clock, Car, Users, DollarSign, Briefcase, CreditCard, Landmark, ChevronDown, ListChecks, Cog, PlusCircle, Wand, ArrowLeft, Check, Pencil, AlertCircle } from "lucide-react";
+import { Save, X, ListPlus, Trash2, Calendar, Clock, Car, Users, DollarSign, Briefcase, CreditCard, Landmark, ChevronDown, ListChecks, Cog, PlusCircle, Wand, ArrowLeft, Check, Pencil, AlertCircle, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 
 const washEventSchema = z.object({
@@ -112,6 +113,18 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
   const prevPaymentMethod = useRef(paymentMethod);
   const prevSourceId = useRef(sourceId);
 
+  // Phase 17 / finding #24: confirm перед сбросом услуг.
+  // Раньше: при смене paymentMethod/sourceId услуги тихо сбрасывались —
+  // сотрудник терял уже выбранные услуги без предупреждения.
+  // Теперь: если есть заполненные услуги — открываем AlertDialog. Если cancel —
+  // откатываем paymentMethod/sourceId на prev. Если confirm — reset услуг.
+  const [pendingPaymentChange, setPendingPaymentChange] = useState<null | {
+    fromPayment: WashEvent['paymentMethod'];
+    fromSource: string | undefined;
+    toPayment: WashEvent['paymentMethod'];
+    toSource: string | undefined;
+  }>(null);
+
   useEffect(() => {
     // Skip initial render to preserve pre-loaded services
     if (isInitialRender.current) {
@@ -119,13 +132,48 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
       return;
     }
     // Only reset if payment method or source actually changed (not on mount)
-    if (prevPaymentMethod.current !== paymentMethod || prevSourceId.current !== sourceId) {
-      form.setValue("services.main", { serviceName: '', price: 0, chemicalConsumption: 0 });
-      form.setValue("services.additional", []);
-      prevPaymentMethod.current = paymentMethod;
-      prevSourceId.current = sourceId;
+    if (prevPaymentMethod.current === paymentMethod && prevSourceId.current === sourceId) return;
+
+    // Есть ли уже заполненные услуги? Тогда показываем confirm.
+    const mainFilled = !!(mainService?.serviceName && mainService.serviceName.trim());
+    const hasAdditional = Array.isArray(additionalServices) && additionalServices.length > 0;
+
+    if (mainFilled || hasAdditional) {
+      setPendingPaymentChange({
+        fromPayment: prevPaymentMethod.current,
+        fromSource: prevSourceId.current,
+        toPayment: paymentMethod,
+        toSource: sourceId,
+      });
+      // Не сбрасываем сразу — ждём решения user'а.
+      return;
     }
+
+    // Услуг нет → silent reset (старое поведение)
+    form.setValue("services.main", { serviceName: '', price: 0, chemicalConsumption: 0 });
+    form.setValue("services.additional", []);
+    prevPaymentMethod.current = paymentMethod;
+    prevSourceId.current = sourceId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentMethod, sourceId, form]);
+
+  const confirmPaymentChange = () => {
+    if (!pendingPaymentChange) return;
+    form.setValue("services.main", { serviceName: '', price: 0, chemicalConsumption: 0 });
+    form.setValue("services.additional", []);
+    prevPaymentMethod.current = pendingPaymentChange.toPayment;
+    prevSourceId.current = pendingPaymentChange.toSource;
+    setPendingPaymentChange(null);
+  };
+
+  const cancelPaymentChange = () => {
+    if (!pendingPaymentChange) return;
+    // Откатываем paymentMethod/sourceId на предыдущие значения.
+    form.setValue("paymentMethod", pendingPaymentChange.fromPayment);
+    form.setValue("sourceId", pendingPaymentChange.fromSource);
+    // refs остаются как есть — после rollback useEffect снова сравнит и не сработает.
+    setPendingPaymentChange(null);
+  };
   
 
   const currentServiceSource = useMemo(() => {
@@ -556,6 +604,31 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
           </div>
         </div>
       </form>
+
+      {/* Phase 17 / finding #24: confirm перед сбросом услуг при смене paymentMethod/sourceId */}
+      <AlertDialog open={!!pendingPaymentChange} onOpenChange={(o) => { if (!o) cancelPaymentChange(); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-700">
+              <AlertTriangle className="h-5 w-5" />
+              Услуги будут сброшены
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы выбрали другой источник прайса. У разных источников разные цены и услуги,
+              поэтому уже выбранные услуги <b>(основная + {Array.isArray(additionalServices) ? additionalServices.length : 0} доп.)</b> будут <b>удалены</b>,
+              и вам придётся выбрать заново под новый прайс.
+              <br /><br />
+              Если вы случайно выбрали не тот источник — нажмите «Отмена» (вернёт прежний выбор).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelPaymentChange}>Отмена (вернуть прежний)</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmPaymentChange} className="bg-amber-600 hover:bg-amber-700">
+              Да, сбросить услуги
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Form>
   )
 }

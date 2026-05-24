@@ -58,6 +58,21 @@ export interface PriceListItem {
   isCustom?: boolean;
   chemicalConsumption?: number; // Norma per service, in grams
   employeeConsumptions?: EmployeeConsumption[]; // Actual consumption per employee
+  /**
+   * Phase 51e / V2-#4 split-pricing: схема разделения дохода.
+   * Если установлен — услуга split.
+   *   Контрагент платит `price` →
+   *     `driverBonus` водителю (DriverKickback workflow Phase 50)
+   *     остаток × `employeePct`/100 — мойщику (через ZP)
+   *     остаток × (100-employeePct)/100 — мойке (прибыль)
+   * Используется для UI бэйджа 🔀 и SplitEditor money-flow viz.
+   * Backend Phase 50d также читает SalaryScheme.rates[].splitDriverBonus
+   * для создания DriverKickback при POST WashEvent.
+   */
+  split?: {
+    driverBonus: number;
+    employeePct: number; // 0-100
+  };
 }
 
 export interface RetailPriceConfig {
@@ -79,6 +94,52 @@ export interface CounterAgent {
   priceList?: PriceListItem[];
   additionalPriceList?: PriceListItem[];
   allowCustomServices?: boolean;
+  /** Phase 50 / V2-#4: список водителей для split-услуг (мойка скотовоза). */
+  drivers?: CounterAgentDriver[];
+  /**
+   * Phase 57 / multi-company: дефолтное НАШЕ ИП для оформления моек этого контрагента.
+   * Пример: ЭкоФуд → ИП Орлов К.Р. (договор подписан через Орлова).
+   */
+  preferredOurCompanyId?: string;
+}
+
+export interface CounterAgentDriver {
+  /** Уникальный id внутри контрагента (для apply-patch операций). Не обязателен на legacy записях. */
+  id?: string;
+  name: string;
+  phone?: string;
+  /** Phase 60c — должность (для подписи в Ведомости / Акте, напр. «Водитель», «Экспедитор»). */
+  position?: string;
+  /** Госномера, закреплённые за водителем (для auto-match при оформлении). */
+  plates?: string[];
+  /**
+   * Phase 60c — образец цифровой росписи водителя (base64 PNG dataURL).
+   * Сохраняется один раз (либо вручную через админку, либо автоматически
+   *  после первой росписи на терминале), потом подставляется в Ведомость учёта
+   *  при последующих мойках без необходимости расписываться повторно.
+   */
+  signature?: string;
+}
+
+/**
+ * Phase 50 / V2-#4 split-pricing: бонус водителю за split-услугу.
+ * Workflow: pending → ready (после оплаты счёта) → paid (выплата + Expense).
+ */
+export type DriverKickbackStatus = 'pending' | 'ready' | 'paid';
+
+export interface DriverKickback {
+  id: string;
+  washEventId: string;
+  counterAgentId: string;
+  driverName: string;
+  driverPhone?: string;
+  plate?: string;
+  amount: number;
+  status: DriverKickbackStatus;
+  createdAt: string; // ISO
+  readyAt?: string;
+  paidAt?: string;
+  paidBy?: string; // employeeId менеджера
 }
 
 export interface NamedPriceList {
@@ -96,6 +157,8 @@ export interface Aggregator {
   cars: Car[];
   priceLists: NamedPriceList[];
   activePriceListName?: string;
+  /** Phase 57 / multi-company: дефолтное НАШЕ ИП для моек через этот агрегатор. */
+  preferredOurCompanyId?: string;
 }
 
 export type PaymentType = 'cash' | 'card' | 'transfer';
@@ -163,6 +226,13 @@ export interface Employee {
   targetShiftsPerMonth?: number; // Р–РµР»Р°РµРјРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ СЃРјРµРЅ РІ РјРµСЃСЏС†
   wantsMoreShifts?: boolean; // Хочет больше смен при авторасределении (legacy)
 
+  /**
+   * Phase 52 / V2-NEW-1: персональная норма расхода химии в граммах на одну мойку.
+   * UI бэйдж эффективности на /inventory «Канистры у сотрудников»:
+   *   ≤600 = экономно (зелёный) / 601-650 = норма (синий) / >650 = перерасход (красный).
+   */
+  avgChemPerWash?: number;
+
   // Расширенные предпочтения расписания
   shiftLoadPreference?: 'less' | 'standard' | 'more'; // Нагрузка: меньше / стандарт / больше смен
   availableDays?: 'all' | 'weekdays_only' | 'weekends_only'; // Доступность: все / только будни / только выходные
@@ -181,12 +251,58 @@ export interface Employee {
     note?: string; // Комментарий менеджера
     updatedAt?: string; // Когда менеджер обновил
   };
+
+  // UX-safety: soft delete (Phase 6.2).
+  // Архивные сотрудники скрыты из активных списков и графиков,
+  // но история WashEvent / EmployeeTransaction / Shift сохраняется.
+  archived?: boolean;
+  archivedAt?: string; // ISO timestamp
 }
 
 export interface SalaryRate {
   serviceName: string;
   rate: number;
   deduction?: number;
+  /**
+   * Phase 50 / V2-#4 split-pricing: фиксированный бонус водителю в ₽.
+   * Если определён — услуга split: процент схемы игнорируется, rate = фикс мойщику,
+   * splitDriverBonus = фикс водителю (через DriverKickback workflow).
+   * Пример: Мойка скотовоза 9000₽ → rate=3500, splitDriverBonus=2000, остаток 3500 мойке.
+   */
+  splitDriverBonus?: number;
+}
+
+/**
+ * Phase 57 / multi-company (ЭкоФуд кейс): НАШЕ юр.лицо-исполнитель.
+ *
+ * У владельца 2 ИП: Абанин (primary, основное) и Орлов К.Р. (для договора с ЭкоФуд).
+ * Каждая WashEvent / Invoice / Expense / ClientTransaction помечается ourCompanyId,
+ * чтобы бухгалтерия видела выручку/расход каждого ИП раздельно.
+ */
+export interface OurCompany {
+  id: string;
+  shortName: string; // «ИП Абанин» / «ИП Орлов К.Р.»
+  fullName: string; // полное юридическое имя
+  inn?: string;
+  kpp?: string;
+  ogrn?: string;
+  ownerName?: string; // ФИО руководителя для подписи на счетах
+  legalAddress?: string;
+  // Банковские реквизиты для счетов
+  bankName?: string;
+  settlementAccount?: string;
+  correspondentAccount?: string;
+  bik?: string;
+  /** 'usn-6' | 'usn-15' | 'osno' | 'patent' | null */
+  taxRegime?: string;
+  /** Acquiring % — если задано, override общего из retailPriceConfig для карт. */
+  cardAcquiringPercentage?: number;
+  /** Primary флаг — одно ИП по умолчанию (для розницы). */
+  isPrimary: boolean;
+  archived: boolean;
+  archivedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RateSource {
@@ -203,6 +319,48 @@ export interface SalaryScheme {
   fixedDeduction?: number;
   rateSource?: RateSource;
   rates?: SalaryRate[];
+  // UX-safety: soft delete (см. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #1).
+  // Schemes with archived=true скрыты из основной таблицы /salary-schemes
+  // и не могут быть назначены сотруднику, но история ZP сохраняется.
+  archived?: boolean;
+  archivedAt?: string; // ISO timestamp
+}
+
+/** Закрытый период ЗП — блокирует правки WashEvent после выплаты (423 Locked). */
+export interface SalaryPeriod {
+  id: string;
+  month: string;       // "2026-05"
+  closed: boolean;
+  closedBy?: string;   // employeeId admin'а
+  closedAt?: string;   // ISO
+  createdAt: string;
+}
+
+/** История смены salaryScheme — для эффективного расчёта ZP по периоду. */
+export interface EmployeeSalarySchemeHistoryEntry {
+  id: string;
+  employeeId: string;
+  schemeId: string | null;
+  effectiveFrom: string; // ISO
+  effectiveTo: string | null;
+  changedBy: string;     // employeeId admin'а
+  createdAt: string;
+}
+
+/** Phase 29 / V2-NEW-3: общий audit log для опасных правок Employee.
+ *  В отличие от EmployeeSalarySchemeHistoryEntry — без интервалов effectiveFrom/To.
+ *  Просто запись «field X у employee Y был oldVal, стал newVal — admin Z, в момент T». */
+export interface EmployeeChangeLogEntry {
+  id: string;
+  employeeId: string;
+  /** Поля: 'role' | 'username' | 'password' | 'archived' | 'paymentDetails'
+   *  | 'phone' | 'salarySchemeId' | 'fullName' и др. */
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;     // employeeId admin'а из cookie
+  reason: string | null; // опц. комментарий
+  createdAt: string;     // ISO
 }
 
 export interface WashEventEditHistory {
@@ -284,9 +442,144 @@ export interface WashEvent {
   status?: 'completed' | 'dismissed' | 'restored';
   dismissal?: WashEventDismissalMeta;
   restoration?: WashEventRestorationMeta;
+  /** Phase 8 / finding #38: true если мойка создана с timestamp в уже закрытый SalaryPeriod.
+   *  Не блокирует POST, но даёт админу видимый сигнал (amber-бэйдж в /wash-log).
+   *  Используется для post-hoc пересчёта ZP за выплаченный период. */
+  createdInClosedPeriod?: boolean;
+  /** YYYY-MM месяца закрытого периода на момент создания (для аудита). */
+  closedPeriodAtCreate?: string;
+  /** Phase 10 / finding #40: кто фактически нажал «Сохранить» (cookie identity).
+   *  Может отличаться от employeeIds — UI подсвечивает «оформил не свой». */
+  createdByEmployeeId?: string;
+  /**
+   * Phase 50 / V2-#4 split-pricing: метаданные водителя для создания DriverKickback.
+   * Передаются терминалом при оформлении split-услуги (Мойка скотовоза).
+   * Не хранятся в WashEvent (отдельная таблица DriverKickback).
+   * Сервер валидирует: если в SalaryScheme.rates есть splitDriverBonus — поле обязательно.
+   */
+  driverKickback?: {
+    driverName: string;
+    driverPhone?: string;
+    plate?: string;
+  };
+  /**
+   * Phase 57 / multi-company: какое НАШЕ ИП оказало услугу.
+   * Определяется resolveOurCompanyIdForWashEvent на момент POST.
+   * Audit-snapshot — после save не меняется автоматически (даже если admin сменит
+   * preferredOurCompanyId у контрагента).
+   */
+  ourCompanyId?: string;
+  /** Phase 60a: ФИО водителя — авто-заполняется в Ведомости учёта. */
+  driverName?: string;
+  /** Phase 60b: цифровая роспись водителя (base64 PNG dataURL) — встраивается в Ведомость как картинка. */
+  driverSignature?: string;
 }
 
-export type EmployeeTransactionType = 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off';
+// ─── Phase 22 / Invoice ─────────────────────────────────────────
+
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'cancelled';
+export type InvoicePaidVia = 'cash' | 'card' | 'transfer';
+
+/** Item-снепшот: агрегация по услугам (для сводной таблицы Combo-варианта). */
+export interface InvoiceServiceItem {
+  name: string;
+  qty: number;
+  pricePerUnit: number;
+  total: number;
+}
+
+/** Item-снепшот: детализация по мойкам (для сворачиваемого блока Combo-варианта). */
+export interface InvoiceWashItem {
+  id: string;          // WashEvent.id
+  date: string;        // ISO
+  plate: string;
+  vehicleType?: string;
+  services: string;    // короткое описание услуг
+  total: number;
+}
+
+export interface InvoiceItems {
+  services: InvoiceServiceItem[];
+  washes: InvoiceWashItem[];
+}
+
+export interface Invoice {
+  id: string;
+  number: string; // "2026-05-001"
+  counterAgentId: string;
+  counterAgentName?: string; // для UI без JOIN
+  periodStart: string; // ISO
+  periodEnd: string;   // ISO
+  status: InvoiceStatus;
+
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments?: number;
+  totalAmount: number;
+
+  items: InvoiceItems;
+
+  createdByEmployeeId?: string;
+  sentAt?: string;
+  sentToEmail?: string;
+  paidAt?: string;
+  paidVia?: InvoicePaidVia;
+  paidTransactionId?: string;
+
+  notes?: string;
+
+  /** Phase 57: ИП-получатель платежа (для печати реквизитов). Auto-resolved из counterAgent.preferredOurCompanyId. */
+  ourCompanyId?: string;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Phase 23 / Report (AI-аналитика) ──────────────────────────
+
+export type ReportStatus = 'draft' | 'archived';
+
+/** AI usage метаданные (для будущего rate-limit / cost tracking, finding #5-6). */
+export interface ReportUsage {
+  model?: string;
+  tokensIn?: number;
+  tokensOut?: number;
+}
+
+export interface Report {
+  id: string;
+  /** Название отчёта — автогенерация "Отчёт за май 2026" или ручное. */
+  title: string;
+  periodStart: string; // ISO
+  periodEnd: string;   // ISO
+  status: ReportStatus;
+
+  /** Markdown-контент (immutable snapshot от AI flow). */
+  reportMarkdown: string;
+  /** Вопрос пользователя в AI-flow. */
+  prompt: string;
+
+  usage?: ReportUsage;
+
+  createdByEmployeeId?: string;
+  notes?: string;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Phase 52 / V2-NEW-1: расширен 'salary-deduction' для канистр-режима «В счёт ЗП».
+ * 'purchase' / 'bonus' уже были (использовались для других целей раньше).
+ */
+export type EmployeeTransactionType =
+  | 'payment'
+  | 'loan'
+  | 'bonus'
+  | 'purchase'
+  | 'salary-deduction'
+  | 'debt_write_off';
 
 export interface EmployeeTransaction {
   id: string;
@@ -304,6 +597,8 @@ export interface ClientTransaction {
   type: 'payment';
   amount: number;
   description: string;
+  /** Phase 57: ИП-получатель этого платежа. Inherited из aggregator/counterAgent.preferredOurCompanyId. */
+  ourCompanyId?: string;
 }
 
 
@@ -347,6 +642,8 @@ export interface Expense {
   quantity?: number;
   unit?: string;
   pricePerUnit?: number;
+  /** Phase 57: на чей расход. Driver-kickback → ourCompanyId из WashEvent. Прочие → primary. */
+  ourCompanyId?: string;
 }
 
 // --- Structures for Chemical Analytics ---
@@ -550,15 +847,33 @@ export interface StockMovement {
 }
 
 // РљР°РЅРёСЃС‚СЂР° С…РёРјРёРё Сѓ СЃРѕС‚СЂСѓРґРЅРёРєР°
+/**
+ * Phase 52 / V2-NEW-1: 4 режима выдачи канистры.
+ * - purchase: долг сотрудника (-3000₽ EmployeeTransaction)
+ * - bonus: премия без денег (EmployeeTransaction amount=0 с reason)
+ * - gift: расход мойки (NEW Expense category='gift')
+ * - salary-deduction: удержание из ЗП (-3000₽ EmployeeTransaction)
+ */
+export type CanisterMode = 'purchase' | 'bonus' | 'gift' | 'salary-deduction';
+
 export interface EmployeeChemicalCanister {
   id: string;
   employeeId: string;
-  issuedAt: string; // Р”Р°С‚Р° РІС‹РґР°С‡Рё
-  initialAmountGrams: number; // РќР°С‡Р°Р»СЊРЅС‹Р№ РѕР±СЉС‘Рј (РѕР±С‹С‡РЅРѕ 20000-21000 Рі)
-  remainingAmountGrams: number; // РўРµРєСѓС‰РёР№ РѕСЃС‚Р°С‚РѕРє
-  priceRub: number; // РЎС‚РѕРёРјРѕСЃС‚СЊ РєР°РЅРёСЃС‚СЂС‹ (РґРѕР»Рі СЃРѕС‚СЂСѓРґРЅРёРєР°)
+  issuedAt: string; // Дата выдачи
+  initialAmountGrams: number; // Начальный объём (обычно 20000-21000 г)
+  remainingAmountGrams: number; // Текущий остаток
+  priceRub: number; // Стоимость канистры (3000₽ — для всех режимов кроме bonus)
   status: 'active' | 'empty' | 'returned';
-  transactionId?: string; // РЎРІСЏР·СЊ СЃ С‚СЂР°РЅР·Р°РєС†РёРµР№ РґРѕР»РіР°
+  transactionId?: string; // Связь с EmployeeTransaction (purchase/bonus/salary-deduction)
+                          // или Expense.id (gift) — для audit-trail
+  /** Phase 52: 4 режима выдачи. Default 'purchase' для совместимости. */
+  mode?: CanisterMode;
+  /** Phase 52: admin employeeId выдавшего канистру. */
+  issuedBy?: string;
+  /** Phase 52: reason для bonus / комментарий («Лидер мая · 64 мойки»). */
+  notes?: string;
+  /** Phase 52: привязка к мойке (wash_1 / wash_2) на момент выдачи. */
+  washPoint?: string;
 }
 
 // РќР°СЃС‚СЂРѕР№РєРё СЃРєР»Р°РґР°

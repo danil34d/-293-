@@ -9,40 +9,112 @@ datasource db {
 
 // ─── Справочники ──────────────────────────────────────────────
 
+/// Phase 57 / multi-company (V2 handoff кейс ЭкоФуд): НАШИ юр.лица-исполнители.
+/// У владельца 2 ИП — Абанин (основное, primary) и Орлов (для ЭкоФуд скотовоза).
+/// Каждая WashEvent / Invoice / Expense / ClientTransaction помечается ourCompanyId
+/// чтобы бухгалтерия видела выручку/расход каждого ИП раздельно.
+///
+/// Workflow:
+///   - Контрагент → preferredOurCompanyId (дефолт при оформлении)
+///   - WashEvent.ourCompanyId фиксирует кто оказал услугу
+///   - Invoice.ourCompanyId печатает НАШИ реквизиты подписанта
+///   - Expense.ourCompanyId — на чей расход (бонус водителю, химия, etc)
+///   - ClientTransaction.ourCompanyId — на чей счёт пришёл платёж
+model OurCompany {
+  id           String  @id @default(uuid())
+  shortName    String // «ИП Абанин Д.А.» / «ИП Орлов К.Р.»
+  fullName     String  @default("") // полное юридическое имя
+  inn          String?
+  kpp          String?
+  ogrn         String?
+  ownerName    String? // ФИО руководителя для подписи в счетах
+  legalAddress String?
+
+  // Банковские реквизиты для печати на счетах
+  bankName             String?
+  settlementAccount    String? // расчётный счёт
+  correspondentAccount String? // корреспондентский счёт
+  bik                  String?
+
+  /// Налоговый режим (для будущих бухгалтерских отчётов):
+  /// 'usn-6' | 'usn-15' | 'osno' | 'patent' | null
+  taxRegime String?
+
+  /// Acquiring % — у каждого ИП может быть свой эквайринг.
+  /// Если задано — используется на терминале вместо общего из retailPriceConfig.
+  cardAcquiringPercentage Float?
+
+  /// Primary флаг — одно ИП = primary (для розницы и default).
+  /// Гарантируется application-level (не unique constraint, чтобы можно было сменить).
+  isPrimary Boolean @default(false)
+
+  archived   Boolean @default(false)
+  archivedAt String?
+
+  washEvents               WashEvent[]
+  invoices                 Invoice[]
+  expenses                 Expense[]
+  clientTransactions       ClientTransaction[]
+  preferredByCounterAgents CounterAgent[]
+  preferredByAggregators   Aggregator[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([archived])
+  @@index([isPrimary])
+}
+
 model SalaryScheme {
-  id             String  @id
+  id             String @id
   name           String
-  type           String  // 'percentage' | 'rate'
+  type           String // 'percentage' | 'rate'
   percentage     Float?
   fixedDeduction Float?
-  rateSource     Json?   // { type, id, priceListName }
-  rates          Json?   // [{ serviceName, rate, deduction }]
+  rateSource     Json? // { type, id, priceListName }
+  rates          Json? // [{ serviceName, rate, deduction }]
+
+  // UX-safety: soft delete via Archive (см. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #1)
+  archived   Boolean @default(false)
+  archivedAt String?
 
   employees Employee[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([archived])
 }
 
 model Employee {
-  id                        String  @id
+  id                        String   @id
   fullName                  String
-  phone                     String  @default("")
-  paymentDetails            String  @default("")
-  hasCar                    Boolean @default(false)
-  role                      String  @default("employee")
+  phone                     String   @default("")
+  paymentDetails            String   @default("")
+  hasCar                    Boolean  @default(false)
+  role                      String   @default("employee")
   telegramChatId            String?
-  username                  String? @unique
+  username                  String?  @unique
   password                  String?
   salarySchemeId            String?
-  canSwapShifts             Boolean @default(true)
+  canSwapShifts             Boolean  @default(true)
   preferredShiftType        String?
   weekdayPreferredShiftType String?
   weekendPreferredShiftType String?
   targetShiftsPerMonth      Int?
   wantsMoreShifts           Boolean?
 
-  salaryScheme         SalaryScheme?        @relation(fields: [salarySchemeId], references: [id], onDelete: SetNull)
+  /// Phase 52 / V2-NEW-1 канистры: персональная норма расхода химии в граммах на мойку.
+  /// UI бэйдж эффективности: ≤600 = экономно (зелёный), 601-650 = норма (синий), >650 = перерасход (красный).
+  /// Вычисляется или вручную, или авто из последних N моек (chemicalConsumptionGrams / count).
+  avgChemPerWash Int?
+
+  // UX-safety: soft delete вместо hard delete с cascade на 7 таблиц.
+  // См. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #1 + Phase 6.2.
+  archived   Boolean @default(false)
+  archivedAt String?
+
+  salaryScheme         SalaryScheme?         @relation(fields: [salarySchemeId], references: [id], onDelete: SetNull)
   washEvents           WashEventEmployee[]
   employeeTransactions EmployeeTransaction[]
   shifts               ShiftEmployee[]
@@ -55,24 +127,38 @@ model Employee {
   updatedAt DateTime @updatedAt
 
   @@index([salarySchemeId])
+  @@index([archived])
 }
 
 // ─── Клиенты ──────────────────────────────────────────────────
 
 model Aggregator {
-  id                  String @id
+  id                  String  @id
   name                String
-  balance             Float  @default(0)
-  companies           Json   @default("[]")
-  cars                Json   @default("[]")
-  priceLists          Json   @default("[]")
+  balance             Float   @default(0)
+  companies           Json    @default("[]")
+  cars                Json    @default("[]")
+  priceLists          Json    @default("[]")
   activePriceListName String?
 
-  washEvents         WashEvent[]
-  clientTransactions ClientTransaction[]
+  // UX-safety: soft delete (Phase 7 / finding #26).
+  // До этого PATCH archived молча терялся — поля не было в БД.
+  archived   Boolean @default(false)
+  archivedAt String?
+
+  /// Phase 57 / multi-company: какое НАШЕ ИП работает с этим агрегатором по умолчанию.
+  /// При POST WashEvent с этим агрегатором — ourCompanyId инициализируется из этого поля.
+  preferredOurCompanyId String?
+
+  washEvents          WashEvent[]
+  clientTransactions  ClientTransaction[]
+  preferredOurCompany OurCompany?         @relation(fields: [preferredOurCompanyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([archived])
+  @@index([preferredOurCompanyId])
 }
 
 model CounterAgent {
@@ -87,11 +173,152 @@ model CounterAgent {
   archived            Boolean @default(false)
   archivedAt          String?
 
-  washEvents         WashEvent[]
-  clientTransactions ClientTransaction[]
+  /// Phase 50 (V2-#4 split-pricing): водители контрагента для split-услуг.
+  /// JSON array of { name, phone, plates: string[] }.
+  /// Используется в /workstation для выбора водителя при оформлении мойки скотовоза.
+  /// Q1 решён вариантом (а) — Json field, не отдельная таблица Driver.
+  drivers Json @default("[]")
+
+  /// Phase 57 / multi-company: какое НАШЕ ИП работает с этим контрагентом по умолчанию.
+  /// Пример: ЭкоФуд → ИП Орлов (договор на скотовоз заключён через Орлова).
+  /// При POST WashEvent с этим контрагентом — ourCompanyId автоматически = это поле.
+  preferredOurCompanyId String?
+
+  washEvents          WashEvent[]
+  clientTransactions  ClientTransaction[]
+  invoices            Invoice[]
+  driverKickbacks     DriverKickback[]
+  preferredOurCompany OurCompany?         @relation(fields: [preferredOurCompanyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([preferredOurCompanyId])
+}
+
+/// Phase 50 (V2-#4 split-pricing): бонус водителю за услугу со split-pricing.
+/// Создаётся при POST WashEvent если в SalaryScheme.rates[N].splitDriverBonus определён.
+/// Workflow: pending → ready (после ClientTransaction оплаты от контрагента, manual select)
+///           ready → paid (при выплате — создаётся Expense(category='driver-kickback')).
+/// onDelete:Cascade — Phase 50f защищает только paid/ready через API проверки.
+model DriverKickback {
+  id             String @id @default(uuid())
+  washEventId    String
+  counterAgentId String
+  driverName     String
+  driverPhone    String @default("")
+  plate          String @default("")
+  amount         Float
+
+  /// 'pending' (default) — мойка оформлена, ждём оплаты от контрагента
+  /// 'ready'             — менеджер пометил после оплаты счёта (Q2 рекомендация: manual select)
+  /// 'paid'              — деньги отданы водителю + Expense(category='driver-kickback')
+  status String @default("pending")
+
+  createdAt DateTime  @default(now())
+  readyAt   DateTime?
+  paidAt    DateTime?
+  paidBy    String? // employeeId менеджера
+
+  washEvent    WashEvent    @relation(fields: [washEventId], references: [id], onDelete: Cascade)
+  counterAgent CounterAgent @relation(fields: [counterAgentId], references: [id], onDelete: Cascade)
+
+  @@index([counterAgentId, status])
+  @@index([washEventId])
+  @@index([status])
+}
+
+/// Phase 22 (finding `#3` АРХ-НАХОДКИ / `#20` ТЕХ-ДОЛГ): persistence для счетов клиентам.
+/// Раньше счета были виртуальной агрегацией WashEvent на лету — нет audit trail кто/когда отправил.
+/// Теперь — immutable snapshot всех WashEvent в момент создания (items JSON), статус workflow.
+/// UI layout = вариант 3 «Combo» (сводка по услугам + сворачиваемая детализация по машинам).
+model Invoice {
+  id             String   @id @default(uuid())
+  number         String   @unique // напр. "2026-05-001" (генерируется автоматически)
+  counterAgentId String
+  periodStart    DateTime
+  periodEnd      DateTime
+
+  /// Реальный enum: 'draft' | 'sent' | 'paid' | 'cancelled'
+  status String @default("draft")
+
+  // Финансы (snapshot на момент создания)
+  subtotal        Float // сумма моек без скидок
+  discountPercent Float? // % скидки (если есть)
+  discountAmount  Float? @default(0) // вычисленная скидка в рублях
+  prepayments     Float? @default(0) // учтённые предоплаты (из ClientTransaction)
+  totalAmount     Float // итого к оплате
+
+  /// Items snapshot (immutable JSON):
+  /// {
+  ///   services: [{ name, qty, pricePerUnit, total }],     // агрегация по услугам (для сводки)
+  ///   washes:   [{ id, date, plate, vehicleType, services, total }]  // детализация по машинам
+  /// }
+  items Json
+
+  // Audit
+  createdByEmployeeId String?
+  sentAt              DateTime?
+  sentToEmail         String?
+  paidAt              DateTime?
+  paidVia             String? // 'cash' | 'card' | 'transfer'
+  paidTransactionId   String? // FK на ClientTransaction (опционально)
+
+  notes String? @default("")
+
+  /// Phase 57 / multi-company: НАШЕ юр.лицо-исполнитель на счёте.
+  /// Реквизиты подписанта (банк, ИНН, ОГРН) берутся из OurCompany на момент create
+  /// (snapshot — если позже изменим OurCompany, старые счета сохраняют свои реквизиты).
+  ourCompanyId String?
+
+  counterAgent CounterAgent @relation(fields: [counterAgentId], references: [id], onDelete: Restrict)
+  ourCompany   OurCompany?  @relation(fields: [ourCompanyId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([counterAgentId])
+  @@index([status])
+  @@index([periodStart])
+  @@index([number])
+  @@index([createdAt])
+  @@index([ourCompanyId])
+}
+
+/// Phase 23 (finding `#4` АРХ-НАХОДКИ / `#21` ТЕХ-ДОЛГ): persistence для AI-аналитических отчётов.
+/// Раньше /reports был ephemeral — markdown терялся при reload, нет audit, нет повторного просмотра.
+/// Теперь — сохраняется в БД с фильтрами по периоду, автогенерацией title и soft-archive.
+/// Используется в /reports (Tabs: Saved + Quick preview).
+model Report {
+  id          String   @id @default(uuid())
+  /// Название отчёта — автогенерация ("Отчёт за май 2026") или ручное при сохранении
+  title       String
+  periodStart DateTime
+  periodEnd   DateTime
+
+  /// Markdown-контент (immutable snapshot, от AI flow generatePerformanceReport)
+  reportMarkdown String
+
+  /// Вопрос пользователя в AI-flow (для контекста, дефолт-prompt если пусто)
+  prompt String @default("")
+
+  /// Реальный enum: 'draft' | 'archived'
+  status String @default("draft")
+
+  /// AI usage метаданные (для будущего rate-limit / cost tracking, finding #5-6)
+  /// { model: 'gemini-1.5-flash-latest', tokensIn?: number, tokensOut?: number }
+  usage Json?
+
+  /// Audit
+  createdByEmployeeId String?
+  notes               String? @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([periodStart])
+  @@index([createdAt])
 }
 
 // ─── Мойки ────────────────────────────────────────────────────
@@ -109,13 +336,18 @@ model WashEvent {
   totalAmount              Float
   netAmount                Float?
   acquiringFee             Float?
-  services                 Json     // { main, additional }
+  services                 Json // { main, additional }
   driverComments           Json?
   editHistory              Json?
   photos                   Json?
   chemicalConsumptionGrams Float?
   chemicalCostRub          Float?
-  status                   String?  // 'in_progress' | 'completed' | 'cancelled'
+  /// Реальный enum в коде: 'completed' | 'dismissed' | 'restored' (см. types/index.ts).
+  /// Prisma хранит String? для гибкости, валидация на уровне TypeScript.
+  /// Phase 21 (15.05.2026): рассмотрена миграция в enum WashEventStatus, отложена —
+  /// требует ручного SQL `ALTER TABLE ... USING status::"WashEventStatus"`, не критично
+  /// (prod-данные уже совместимы с enum, валидация работает на TS-уровне).
+  status                   String?
   completedAt              String?
   refundedAt               String?
   refundReason             String?
@@ -125,10 +357,42 @@ model WashEvent {
   cameraSession            Json?
   dismissal                Json?
   restoration              Json?
+  /// Phase 8 (finding #38): true если мойка создана в уже закрытый SalaryPeriod.
+  /// Сотрудник не блокируется, но админ видит amber-бэйдж в /wash-log
+  /// и может вручную пересчитать ZP за уже выплаченный месяц.
+  createdInClosedPeriod    Boolean  @default(false)
+  /// YYYY-MM закрытого периода на момент создания (для аудита, кто и когда).
+  closedPeriodAtCreate     String?
+  /// Phase 10 (finding #40): аудит — кто фактически нажал «Сохранить» (cookie identity).
+  /// Может отличаться от employeeIds (например, ретроактивная мойка: вчера работал
+  /// Дима, не оформил → сегодня Петя оформляет за Диму). UI показывает «оформил»
+  /// и подсвечивает несовпадение.
+  createdByEmployeeId      String?
 
-  aggregator   Aggregator?   @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
-  counterAgent CounterAgent? @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
-  employees    WashEventEmployee[]
+  /// Phase 57 / multi-company: какое НАШЕ ИП оказало услугу.
+  /// Определяется при POST: если counterAgent/aggregator → preferredOurCompanyId,
+  /// иначе → primary OurCompany (розница). Override возможен на терминале.
+  /// Audit-snapshot: после save не меняется (даже если admin сменит preferredOurCompanyId
+  /// у контрагента — старые мойки остаются на старом ИП).
+  ourCompanyId String?
+
+  /// Phase 60a: ФИО водителя машины — заполняется кассиром на терминале при оформлении.
+  /// Используется для автозаполнения колонки «ФИО водителя» в Ведомости учёта.
+  /// Для split-услуг также синхронизируется с DriverKickback.driverName.
+  driverName String?
+
+  /// Phase 60b: цифровая роспись водителя — base64 PNG dataURL.
+  /// Захватывается signature pad'ом на терминале при подтверждении мойки.
+  /// При генерации Ведомости вставляется как картинка в колонку «Подпись».
+  driverSignature String?
+
+  aggregator      Aggregator?         @relation(fields: [aggregatorId], references: [id], onDelete: SetNull)
+  counterAgent    CounterAgent?       @relation(fields: [counterAgentId], references: [id], onDelete: SetNull)
+  ourCompany      OurCompany?         @relation(fields: [ourCompanyId], references: [id], onDelete: SetNull)
+  employees       WashEventEmployee[]
+  /// Phase 50 (V2-#4 split-pricing): связь с DriverKickback (бонус водителю).
+  /// Создаётся 1 запись на каждую split-услугу в WashEvent.services.
+  driverKickbacks DriverKickback[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -139,6 +403,9 @@ model WashEvent {
   @@index([vehicleNumber])
   @@index([status])
   @@index([shiftId])
+  @@index([createdInClosedPeriod])
+  @@index([createdByEmployeeId])
+  @@index([ourCompanyId])
 }
 
 model WashEventEmployee {
@@ -158,7 +425,7 @@ model EmployeeTransaction {
   id          String   @id
   employeeId  String
   date        DateTime
-  type        String   // 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off'
+  type        String // 'payment' | 'loan' | 'bonus' | 'purchase' | 'debt_write_off'
   amount      Float
   description String   @default("")
 
@@ -172,7 +439,7 @@ model EmployeeTransaction {
 
 model ClientTransaction {
   id             String   @id
-  clientId       String   // backward compat: agg_xxx or agent_xxx
+  clientId       String // backward compat: agg_xxx or agent_xxx
   aggregatorId   String?
   counterAgentId String?
   date           DateTime
@@ -180,14 +447,21 @@ model ClientTransaction {
   amount         Float
   description    String   @default("")
 
+  /// Phase 57 / multi-company: на чей расчётный счёт пришёл платёж.
+  /// Inherited из CounterAgent.preferredOurCompanyId или Aggregator.preferredOurCompanyId.
+  /// Если клиент перевёл на «не своё» ИП — admin может override.
+  ourCompanyId String?
+
   aggregator   Aggregator?   @relation(fields: [aggregatorId], references: [id], onDelete: Cascade)
   counterAgent CounterAgent? @relation(fields: [counterAgentId], references: [id], onDelete: Cascade)
+  ourCompany   OurCompany?   @relation(fields: [ourCompanyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
   @@index([aggregatorId])
   @@index([counterAgentId])
   @@index([date])
+  @@index([ourCompanyId])
 }
 
 model Expense {
@@ -200,21 +474,31 @@ model Expense {
   unit         String?
   pricePerUnit Float?
 
+  /// Phase 57 / multi-company: на чей расход списан Expense.
+  /// Для split-pricing бонусов водителю (driver-kickback): ourCompanyId = тот ИП,
+  /// который оказал split-услугу (Икафут → ИП Орлов; розница → ИП Абанин).
+  /// Для канистры-подарка (gift): ourCompanyId = primary OurCompany по умолчанию.
+  /// Иначе backfill = primary.
+  ourCompanyId String?
+
+  ourCompany OurCompany? @relation(fields: [ourCompanyId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([date])
   @@index([category])
+  @@index([ourCompanyId])
 }
 
 // ─── Смены и расписание ───────────────────────────────────────
 
 model Shift {
   id                 String    @id
-  date               String    // YYYY-MM-DD
+  date               String // YYYY-MM-DD
   washId             String    @default("wash_1") // 'wash_1' | 'wash_2'
   boxNumber          Int
-  shiftType          String    // 'day' | 'night'
+  shiftType          String // 'day' | 'night'
   startTime          String    @default("08:00")
   endTime            String    @default("20:00")
   releasedEmployeeId String?
@@ -246,12 +530,12 @@ model ShiftEmployee {
 
 model ShiftSwapRequest {
   id               String    @id
-  type             String    // 'giveaway' | 'swap'
+  type             String // 'giveaway' | 'swap'
   requesterId      String
   requesterShiftId String
   targetEmployeeId String?
   targetShiftId    String?
-  status           String    // 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  status           String // 'pending' | 'accepted' | 'rejected' | 'cancelled'
   resolvedAt       DateTime?
 
   createdAt DateTime @default(now())
@@ -260,10 +544,10 @@ model ShiftSwapRequest {
 model ShiftAssignmentRequest {
   id         String    @id
   employeeId String
-  date       String    // YYYY-MM-DD
-  shiftType  String    // 'day' | 'night'
+  date       String // YYYY-MM-DD
+  shiftType  String // 'day' | 'night'
   boxNumber  Int
-  status     String    // 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  status     String // 'pending' | 'accepted' | 'rejected' | 'cancelled'
   resolvedAt DateTime?
   resolvedBy String?
   comment    String?
@@ -274,8 +558,8 @@ model ShiftAssignmentRequest {
 model EmployeeDayStatus {
   id         String  @id
   employeeId String
-  date       String  // YYYY-MM-DD
-  status     String  // 'free' | 'doesnt_want' | 'vacation_sick' | 'must_work' | 'auto_assigned'
+  date       String // YYYY-MM-DD
+  status     String // 'free' | 'doesnt_want' | 'vacation_sick' | 'must_work' | 'auto_assigned'
   shiftType  String?
   boxNumber  Int?
 
@@ -286,15 +570,15 @@ model EmployeeDayStatus {
 }
 
 model SchedulePlan {
-  id                String   @id
+  id                String  @id
   name              String
-  month             String   // "2025-12"
+  month             String // "2025-12"
   createdBy         String
   clonedFrom        String?
-  isActive          Boolean  @default(false)
+  isActive          Boolean @default(false)
   washId            String?
-  employeeConfigs   Json     @default("[]")
-  dailyRequirements Json     @default("[]")
+  employeeConfigs   Json    @default("[]")
+  dailyRequirements Json    @default("[]")
   weeklyPattern     Json?
 
   createdAt DateTime @default(now())
@@ -308,8 +592,8 @@ model SchedulePlan {
 model InventoryMaterial {
   id           String  @id
   name         String
-  category     String  // 'chemical' | 'consumable' | 'equipment' | 'other'
-  unit         String  // 'grams' | 'kg' | 'liters' | 'pieces' | 'sets'
+  category     String // 'chemical' | 'consumable' | 'equipment' | 'other'
+  unit         String // 'grams' | 'kg' | 'liters' | 'pieces' | 'sets'
   currentStock Float   @default(0)
   minStock     Float?
   pricePerUnit Float?
@@ -325,7 +609,7 @@ model InventoryMaterial {
 model StockMovement {
   id                String   @id
   materialId        String
-  type              String   // 'purchase' | 'consumption' | 'issue' | 'return' | 'adjustment' | 'write_off'
+  type              String // 'purchase' | 'consumption' | 'issue' | 'return' | 'adjustment' | 'write_off'
   amount            Float
   balanceAfter      Float
   date              DateTime
@@ -334,6 +618,12 @@ model StockMovement {
   relatedEntityId   String?
   employeeId        String?
   createdBy         String?
+
+  /// Phase 52 / V2-NEW-1 multi-warehouse: к какому складу относится движение.
+  /// 'main' = главный склад (закупки), 'wash_1' / 'wash_2' = склады моек (для мойок).
+  /// Перемещения создают 2 записи: -X на источнике + +X на цели.
+  /// Default 'main' для backward compat с существующими StockMovement.
+  warehouse String @default("main")
 
   material InventoryMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
   employee Employee?         @relation(fields: [employeeId], references: [id], onDelete: SetNull)
@@ -352,13 +642,32 @@ model EmployeeCanister {
   initialAmountGrams   Float
   remainingAmountGrams Float
   priceRub             Float
-  status               String   // 'active' | 'empty' | 'returned'
+  status               String // 'active' | 'empty' | 'returned'
   transactionId        String?
+
+  /// Phase 52 / V2-NEW-1: 4 режима выдачи канистры (CANISTER_MODES).
+  ///   'purchase'         — долг сотрудника, EmployeeTransaction(type='purchase', amount=-price)
+  ///   'bonus'            — премия, EmployeeTransaction(type='bonus', amount=0, description=notes)
+  ///   'gift'             — расход мойки, NEW Expense(category='gift', amount=price)
+  ///   'salary-deduction' — удержание из ЗП, EmployeeTransaction(type='salary-deduction', amount=-price)
+  /// Default 'purchase' для совместимости с существующими записями.
+  mode String @default("purchase")
+
+  /// Phase 52: кто выдал (admin employeeId) — audit.
+  issuedBy String?
+
+  /// Phase 52: reason для bonus / комментарий менеджера ("Лидер мая", "Поощрение").
+  notes String @default("")
+
+  /// Phase 52: к какой мойке привязан сотрудник на момент выдачи (wash_1 / wash_2).
+  /// Используется для бизнес-аналитики «канистры на складе мойки» в /inventory.
+  washPoint String?
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
   @@index([status])
+  @@index([mode])
 }
 
 // ─── Конфигурация (синглтоны) ─────────────────────────────────
@@ -373,7 +682,7 @@ model AppConfig {
 // ─── Отчёты по сменам ─────────────────────────────────────────
 
 model ShiftReport {
-  id        String   @id
+  id        String  @id
   date      String
   shiftType String
   boxNumber Int
@@ -386,18 +695,80 @@ model ShiftReport {
   @@index([shiftId])
 }
 
+// ─── UX-safety редизайн v1 (admin_safety pilot, 2026-05-13) ──
+
+/// Закрытый период ЗП — блокирует правки WashEvent после выплаты.
+/// Создаётся при «Закрыть период» в /salary-report.
+/// Используется в PUT/DELETE /api/wash-events/[id] → 423 Locked.
+/// См. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #6.
+model SalaryPeriod {
+  id        String    @id @default(uuid())
+  month     String    @unique // "2026-05"
+  closed    Boolean   @default(false)
+  closedBy  String? // employeeId
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([month])
+  @@index([closed])
+}
+
+/// История смены salaryScheme сотрудника.
+/// Запись создаётся в PUT /api/employees/[id] когда salarySchemeId меняется.
+/// Позволяет считать ZP по схеме, действовавшей на момент мойки (effective_from/to).
+/// См. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #2, тех-долг #16/#19.
+model EmployeeSalarySchemeHistory {
+  id            String    @id @default(uuid())
+  employeeId    String
+  schemeId      String? // null = снят со схемы
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  changedBy     String // employeeId (admin)
+  createdAt     DateTime  @default(now())
+
+  @@index([employeeId])
+  @@index([effectiveFrom])
+}
+
+/// Phase 29 / V2-NEW-3: общий audit log для опасных правок Employee.
+/// EmployeeSalarySchemeHistory покрывает только смену schemeId (с effectiveFrom/To
+/// для retrospective ZP). EmployeeChangeLog — широкий audit: role, username,
+/// password, archived, paymentDetails и др. Без интервалов — просто кто и когда.
+/// Запись создаётся в PUT /api/employees/[id] когда меняется любое из tracked-полей.
+model EmployeeChangeLog {
+  id         String   @id @default(uuid())
+  employeeId String
+  /// Имя поля: 'role', 'username', 'password', 'archived', 'paymentDetails',
+  /// 'phone', 'salarySchemeId', 'fullName' и др.
+  fieldName  String
+  /// Старое значение (string repr; для password — '***')
+  oldValue   String?
+  /// Новое значение (string repr; для password — '***')
+  newValue   String?
+  /// Кто менял — employeeId admin'а из cookie identity
+  changedBy  String
+  /// Опциональный комментарий (если в будущем UI попросит причину)
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([employeeId])
+  @@index([changedBy])
+  @@index([fieldName])
+  @@index([createdAt])
+}
+
 // ─── Нарушения ───────────────────────────────────────────────
 
 model Violation {
-  id              String   @id
+  id              String  @id
   employeeId      String
-  date            String   // YYYY-MM-DD
-  type            String   // lateness | early_leave | no_show | equipment_damage | client_complaint | quality_issue | safety_violation | other
-  description     String   @default("")
+  date            String // YYYY-MM-DD
+  type            String // lateness | early_leave | no_show | equipment_damage | client_complaint | quality_issue | safety_violation | other
+  description     String  @default("")
   penaltyAmount   Float?
   shiftId         String?
   createdBy       String
-  resolved        Boolean  @default(false)
+  resolved        Boolean @default(false)
   resolvedComment String?
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)

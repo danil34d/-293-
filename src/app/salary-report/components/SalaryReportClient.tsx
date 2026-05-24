@@ -3,11 +3,11 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { DateRange } from "react-day-picker";
-import { startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns";
-import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, EmployeeTransactionType, SalaryReportData } from '@/types';
+import { startOfMonth, endOfMonth, startOfDay, endOfDay, format } from "date-fns";
+import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, EmployeeTransactionType, SalaryReportData, OurCompany } from '@/types';
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Card, CardContent } from '@/components/ui/card';
-import { Loader2, FilePieChart, TrendingUp, Wallet, AlertTriangle, Trophy, EyeOff, Eye, Car } from 'lucide-react';
+import { Loader2, FilePieChart, TrendingUp, Wallet, AlertTriangle, Trophy, EyeOff, Eye, Car, Building2 } from 'lucide-react';
 import { getEmployeesData, getWashEventsData, getSalarySchemesData, getAllEmployeeTransactions, getViolationsData } from "@/lib/data-loader";
 import { SalaryReportRow } from "./SalaryReportRow";
 import { generateSalaryReport } from "@/services/salary-calculator";
@@ -17,6 +17,8 @@ import { isEmployeeAdmin, isKiosk } from "@/lib/employee-role";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TableCell, TableRow as TableRowUI, TableFooter } from "@/components/ui/table";
+import { SafetyBar } from "@/components/admin";
+import { ClosePeriodButton } from "./ClosePeriodButton";
 
 
 interface FullEmployeeData {
@@ -38,6 +40,50 @@ export function SalaryReportClient() {
     const [periodWashEvents, setPeriodWashEvents] = useState<WashEvent[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showInactive, setShowInactive] = useState(false);
+    // Phase 57d: фильтр по ourCompanyId (ИП). "all" = без фильтра. Перезагружает отчёт.
+    const [allOurCompanies, setAllOurCompanies] = useState<OurCompany[]>([]);
+    const [selectedOurCompanyId, setSelectedOurCompanyId] = useState<string>("all");
+
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/our-companies')
+            .then(r => r.ok ? r.json() : [])
+            .then(list => { if (!cancelled && Array.isArray(list)) setAllOurCompanies(list); })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, []);
+
+    // UX-safety (Phase 4C3): статус закрытия периода ЗП.
+    // Используется в /api/wash-events/[id] для 423 Locked при попытке правки.
+    // Период определяется по месяцу dateRange.from.
+    const reportMonth = useMemo(() => {
+        if (!dateRange?.from) return null;
+        return format(dateRange.from, "yyyy-MM");
+    }, [dateRange]);
+    const [periodStatus, setPeriodStatus] = useState<{ closed: boolean; closedBy?: string | null; closedAt?: string | null } | null>(null);
+
+    const fetchPeriodStatus = async () => {
+        if (!reportMonth) {
+            setPeriodStatus(null);
+            return;
+        }
+        try {
+            const response = await fetch(`/api/salary-period?month=${reportMonth}`);
+            if (response.ok) {
+                const data = await response.json();
+                setPeriodStatus(data);
+            } else {
+                setPeriodStatus({ closed: false });
+            }
+        } catch {
+            setPeriodStatus({ closed: false });
+        }
+    };
+
+    useEffect(() => {
+        fetchPeriodStatus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reportMonth]);
 
     // Define transactionTypeDetails here
     const transactionTypeDetails: Record<EmployeeTransactionType, { sign: number }> = {
@@ -51,13 +97,25 @@ export function SalaryReportClient() {
     const fetchAndProcessData = async () => {
         setIsLoading(true);
         try {
-            const [employees, allWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
-                (await getEmployeesData()).filter((e) => !isEmployeeAdmin(e) && !isKiosk(e)),
-                await getWashEventsData(),
-                await getSalarySchemesData(),
-                await getAllEmployeeTransactions(),
-                await getViolationsData(),
+            const [allEmployeesRaw, rawWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
+                getEmployeesData(),
+                getWashEventsData(),
+                getSalarySchemesData(),
+                getAllEmployeeTransactions(),
+                getViolationsData(),
             ]);
+
+            // Phase 57d: фильтрация моек по ourCompanyId. "all" = без фильтра.
+            // ВАЖНО: только мойки с этим ourCompanyId попадают в расчёт ЗП — позволяет видеть
+            // отдельно сколько заработали сотрудники именно от ИП Орлов vs ИП Абанин.
+            const allWashEvents = selectedOurCompanyId === "all"
+                ? rawWashEvents
+                : rawWashEvents.filter(w => (w as any).ourCompanyId === selectedOurCompanyId);
+
+            // employees — кому считаем зарплату (без admin и kiosk).
+            // allEmployeesRaw — полный список (с kiosk!) для определения команды
+            // в generateSalaryReport (иначе делитель numEmployeesOnWash будет неправильным).
+            const employees = allEmployeesRaw.filter((e) => !isEmployeeAdmin(e) && !isKiosk(e));
 
             const periodStart = dateRange?.from ? startOfDay(dateRange.from) : null;
             const periodEnd = dateRange?.from ? endOfDay(dateRange.to || dateRange.from) : null;
@@ -83,7 +141,7 @@ export function SalaryReportClient() {
                         we.employeeIds.includes(emp.id)
                     );
                     const previousViolations = allViolations.filter((v: any) => v.employeeId === emp.id && v.date && new Date(v.date + 'T00:00:00') < periodStart);
-                    const previousReport = await generateSalaryReport(previousWashEvents, [emp], allSchemes, previousViolations);
+                    const previousReport = await generateSalaryReport(previousWashEvents, [emp], allSchemes, previousViolations, allEmployeesRaw);
                     balance += (previousReport[0]?.totalEarnings ?? 0) - (previousReport[0]?.totalPenalties ?? 0);
 
                     const previousTransactions = employeeTransactions.filter(t => new Date(t.date) < periodStart);
@@ -110,7 +168,7 @@ export function SalaryReportClient() {
                     new Date(v.date + 'T00:00:00') >= periodStart &&
                     new Date(v.date + 'T00:00:00') <= periodEnd
                 );
-                const periodReport = (await generateSalaryReport(periodWashEvents, [emp], allSchemes, periodViolations))[0];
+                const periodReport = (await generateSalaryReport(periodWashEvents, [emp], allSchemes, periodViolations, allEmployeesRaw))[0];
                 const earningsForPeriod = (periodReport?.totalEarnings ?? 0) - (periodReport?.totalPenalties ?? 0);
 
                 const periodTransactions = employeeTransactions.filter(t =>
@@ -152,7 +210,7 @@ export function SalaryReportClient() {
     useEffect(() => {
         fetchAndProcessData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dateRange]);
+    }, [dateRange, selectedOurCompanyId]);
 
     const { activeEmployees, inactiveEmployees } = useMemo(() => {
         const active: FullEmployeeData[] = [];
@@ -218,10 +276,93 @@ export function SalaryReportClient() {
 
     return (
         <div className="space-y-4">
-            {/* Date range picker */}
-            <div className="mb-2">
+            {/* Date range picker + Close-period button */}
+            <div className="mb-2 flex items-center justify-between gap-3 flex-wrap">
                 <DateRangePicker date={dateRange} setDate={setDateRange} />
+                {reportMonth && (
+                    <ClosePeriodButton
+                        month={reportMonth}
+                        periodStatus={periodStatus}
+                        onChange={fetchPeriodStatus}
+                    />
+                )}
             </div>
+
+            {/* Phase 57d: фильтр «По какому ИП показывать»  */}
+            {allOurCompanies.length > 1 && (
+                <div className="flex items-center gap-2 flex-wrap p-3 rounded-xl bg-indigo-50/40 border border-indigo-100">
+                    <Building2 className="w-4 h-4 text-indigo-600" />
+                    <span className="text-[12px] text-indigo-900 font-semibold mr-1">Фильтр по ИП:</span>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedOurCompanyId("all")}
+                        className={cn(
+                            "px-3 py-1 rounded-full text-[12px] font-semibold border transition-colors",
+                            selectedOurCompanyId === "all"
+                                ? "bg-indigo-600 text-white border-indigo-600"
+                                : "bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                        )}
+                    >
+                        Все ИП
+                    </button>
+                    {allOurCompanies.filter(c => !c.archived).map(oc => (
+                        <button
+                            key={oc.id}
+                            type="button"
+                            onClick={() => setSelectedOurCompanyId(oc.id)}
+                            className={cn(
+                                "px-3 py-1 rounded-full text-[12px] font-semibold border transition-colors",
+                                selectedOurCompanyId === oc.id
+                                    ? "bg-indigo-600 text-white border-indigo-600"
+                                    : "bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+                            )}
+                        >
+                            {oc.shortName}{oc.isPrimary ? " ⭐" : ""}
+                        </button>
+                    ))}
+                    {selectedOurCompanyId !== "all" && (
+                        <span className="text-[11px] text-indigo-600 ml-2">
+                            ← в отчёте только мойки этого ИП
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {/* UX-safety: SafetyBar со статусом периода ЗП */}
+            {!isLoading && reportMonth && (
+                <SafetyBar
+                    level={periodStatus?.closed ? "safe" : "warn"}
+                    items={[
+                        {
+                            icon: "calendar",
+                            label: "Период",
+                            value: reportMonth,
+                        },
+                        {
+                            icon: periodStatus?.closed ? "lock" : "unlock",
+                            label: "Статус",
+                            value: periodStatus?.closed ? "Закрыт (правки моек заблокированы)" : "Открыт (правки моек разрешены)",
+                        },
+                        {
+                            icon: "banknote",
+                            label: "К выплате",
+                            value: `${summaryStats.totalPayable.toLocaleString("ru-RU")} ₽`,
+                        },
+                    ]}
+                />
+            )}
+
+            {/* Recommendation banner — пока период не закрыт и есть выплаты */}
+            {!isLoading && reportMonth && !periodStatus?.closed && summaryStats.totalPayable !== 0 && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+                    <div className="text-[12px] text-amber-900 leading-snug flex-1">
+                        <b>Перед выплатой ЗП</b> рекомендуется закрыть период кнопкой <b>«Закрыть период»</b> сверху —
+                        это запретит правки моек за <code className="bg-white px-1 rounded text-[11px]">{reportMonth}</code>,
+                        чтобы факт vs выплачено не разошлись.
+                    </div>
+                </div>
+            )}
 
             {/* Summary stats strip */}
             {!isLoading && allEmployeeData.length > 0 && (
@@ -309,12 +450,25 @@ export function SalaryReportClient() {
                                             <TableHead className="text-right text-xs uppercase tracking-wider font-semibold text-gray-500">Выплачено</TableHead>
                                             <TableHead className="text-right text-xs uppercase tracking-wider font-semibold text-gray-500">Прочее</TableHead>
                                             <TableHead className="text-right text-xs uppercase tracking-wider font-semibold text-gray-500 pr-4">Итого</TableHead>
+                                            <TableHead className="w-[110px] text-center text-xs uppercase tracking-wider font-semibold text-gray-500">Статус</TableHead>
                                             <TableHead className="w-[160px] text-center text-xs uppercase tracking-wider font-semibold text-gray-500"></TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {displayedEmployees.map((data, idx) => {
                                             const isInactive = inactiveEmployees.includes(data);
+                                            // Phase 4D-3: compute status
+                                            const payable = data.balanceAtStart + data.earningsForPeriod + data.otherOperationsTotal - data.paymentsForPeriod;
+                                            // Check if any wash in period has editHistory entries
+                                            const hasEdits = periodWashEvents.some(w =>
+                                                w.employeeIds?.includes(data.employee.id) &&
+                                                Array.isArray(w.editHistory) && w.editHistory.length > 0
+                                            );
+                                            let status: 'ready' | 'overpaid' | 'paid' | 'idle' | 'edited' = 'idle';
+                                            if (payable < 0) status = 'overpaid';
+                                            else if (hasEdits) status = 'edited';
+                                            else if (payable > 0) status = 'ready';
+                                            else if (data.earningsForPeriod > 0 && data.paymentsForPeriod > 0 && Math.abs(payable) < 1) status = 'paid';
                                             return (
                                                 <SalaryReportRow
                                                     key={data.employee.id}
@@ -327,6 +481,11 @@ export function SalaryReportClient() {
                                                     onActionSuccess={fetchAndProcessData}
                                                     isInactive={isInactive}
                                                     rank={!isInactive ? idx + 1 : undefined}
+                                                    status={status}
+                                                    // Phase 13: контекст для PayModal
+                                                    currentMonth={reportMonth ?? undefined}
+                                                    isPeriodClosed={Boolean(periodStatus?.closed)}
+                                                    hasUnpaidEdits={hasEdits}
                                                 />
                                             );
                                         })}
@@ -349,6 +508,7 @@ export function SalaryReportClient() {
                                             <TableCell className="text-right pr-4 text-base tabular-nums font-bold text-gray-900">
                                                 {tableTotals.payable.toLocaleString('ru-RU')}
                                             </TableCell>
+                                            <TableCell></TableCell>
                                             <TableCell></TableCell>
                                         </TableRowUI>
                                     </TableFooter>

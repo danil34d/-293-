@@ -42,6 +42,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Wash event ID is required' }, { status: 400 });
     }
 
+    // Phase 10 / finding #40: серверная фиксация автора создания мойки.
+    // Клиент мог передать что угодно — мы перезаписываем на cookie identity.
+    // Это аудит-след: видно кто фактически нажал «Сохранить», даже если
+    // employeeIds содержит других сотрудников (ретроактивный кейс).
+    washEvent.createdByEmployeeId = auth.id;
+
     const savedEvent = await createWashEvent(washEvent);
     return NextResponse.json({ message: 'Wash event created successfully', event: savedEvent }, { status: 201 });
   } catch (error: any) {

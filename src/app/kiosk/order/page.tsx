@@ -20,8 +20,10 @@ export default async function KioskOrderPage() {
   const hour = new Date().getHours();
   const currentShiftType = (hour >= 8 && hour < 20) ? 'day' : 'night';
 
-  // Filter out kiosk accounts
-  const realEmployees = employees.filter(e => e.role !== 'kiosk');
+  // Filter out kiosk/kiosk1 (это устройства-терминалы, не сотрудники)
+  const realEmployees = employees.filter(
+    (e) => (e.role as string) !== 'kiosk' && (e.role as string) !== 'kiosk1'
+  );
   const boxShiftStates = resolveCurrentBoxShiftStates({
     shifts,
     employees: realEmployees,

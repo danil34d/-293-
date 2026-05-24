@@ -2,10 +2,17 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Search, X, PlusCircle, Edit, Star, Briefcase, WalletCards, Scale, AlertTriangle, Archive, RotateCcw } from 'lucide-react';
+import { Search, X, PlusCircle, Edit, Star, Briefcase, WalletCards, Scale, AlertTriangle, Archive, RotateCcw, Zap, Car as CarIcon, ListChecks, Calendar as CalendarIcon, HandCoins } from 'lucide-react';
 import type { Aggregator, NamedPriceList } from '@/types';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
 import { SetActivePriceButton } from './SetActivePriceButton';
+import { SwitchPriceModal } from './SwitchPriceModal';
+import { SafetyBar } from '@/components/admin';
+import { type AgentSignal, SIGNAL_COLORS } from '@/lib/counter-agent-signals';
+
+function formatMoney(n: number): string {
+  return n.toLocaleString('ru-RU');
+}
 
 type AggregatorsView = 'active' | 'archived' | 'all';
 
@@ -51,11 +58,16 @@ function getActivePriceList(aggregator: Aggregator): NamedPriceList | null {
 interface AggregatorsSearchProps {
   allAggregators: Aggregator[];
   fetchError: string | null;
+  /** Phase 43 / V2-#10 deferred: precomputed derived signals per aggregator. */
+  signalsByAggregatorId?: Record<string, AgentSignal[]>;
 }
 
-export default function AggregatorsSearch({ allAggregators, fetchError }: AggregatorsSearchProps) {
+export default function AggregatorsSearch({ allAggregators, fetchError, signalsByAggregatorId = {} }: AggregatorsSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentView, setCurrentView] = useState<AggregatorsView>('active');
+  // Phase 27a: state модала смены прайса — в parent чтобы не закрывался
+  // вместе с popover при клике на «Сделать активным»
+  const [switchTarget, setSwitchTarget] = useState<{ aggregator: Aggregator; priceListName: string } | null>(null);
 
   const sortedAggregators = useMemo(() =>
     [...allAggregators].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
@@ -86,19 +98,68 @@ export default function AggregatorsSearch({ allAggregators, fetchError }: Aggreg
     ? sortedAggregators.filter(a => aggregatorMatchesSearch(a, searchQuery)).length
     : sortedAggregators.length;
 
+  // Phase 27b: KPI tiles aggregation from active aggregators
+  const kpi = useMemo(() => {
+    const active = sortedAggregators.filter(a => !a.archived);
+    const debt = active.filter(a => Number(a.balance ?? 0) < 0);
+    const totalDebt = debt.reduce((s, a) => s + Number(a.balance ?? 0), 0);
+    const totalCars = active.reduce((s, a) => s + (a.cars?.length ?? 0), 0);
+    const totalPriceLists = active.reduce((s, a) => s + (a.priceLists?.length ?? 0), 0);
+    return {
+      activeCount: active.length,
+      archivedCount: sortedAggregators.length - active.length,
+      debtCount: debt.length,
+      totalDebt,
+      totalCars,
+      totalPriceLists,
+    };
+  }, [sortedAggregators]);
+
   return (
     <div className="aggregators">
       {/* Page Header */}
       <div className="page-header-section">
         <div className="page-header-content">
           <div className="page-title-section">
+            <div className="text-[10px] uppercase tracking-wider font-bold text-amber-600 flex items-center gap-1.5 mb-1">
+              <AlertTriangle className="w-3 h-3" /> Смена активного прайса меняет расчёт для всех будущих моек
+            </div>
             <h1>Агрегаторы</h1>
-            <p>Управляйте вашими ��артнерс��вами с агрегаторами и их ценами.</p>
+            <p>Партнёры-маркетплейсы (Яндекс, ДС). Они присылают клиентов и платят процент.</p>
           </div>
           <Link href="/aggregators/new" className="add-aggregator-btn">
             <PlusCircle className="h-4 w-4" />
             Добавить нового агрегатора
           </Link>
+        </div>
+
+        {/* Phase 27b: SafetyBar */}
+        <div className="mt-4">
+          <SafetyBar
+            level={kpi.debtCount > 0 ? 'warn' : 'info'}
+            items={[
+              { icon: 'zap', label: 'Активных', value: `${kpi.activeCount}` },
+              { icon: 'car', label: 'Машин в автопарках', value: `${kpi.totalCars}` },
+              { icon: 'alert-triangle', label: 'Долги',
+                value: kpi.debtCount > 0 ? `${kpi.debtCount} · ${formatMoney(kpi.totalDebt)} ₽` : '—' },
+            ]}
+          />
+        </div>
+
+        {/* Phase 27b: 4 KPI tiles */}
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiTileAg label="Агрегаторов" value={`${kpi.activeCount}`}
+            sub={kpi.archivedCount > 0 ? `+${kpi.archivedCount} в архиве` : 'архив пуст'}
+            Icon={Zap} color="#0088CC" />
+          <KpiTileAg label="Машин" value={`${kpi.totalCars}`}
+            sub={kpi.activeCount > 0 ? `~${Math.round(kpi.totalCars / kpi.activeCount)} на агрегатор` : '—'}
+            Icon={CarIcon} color="#8b5cf6" />
+          <KpiTileAg label="С долгом" value={`${kpi.debtCount}`}
+            sub={kpi.debtCount > 0 ? `${formatMoney(kpi.totalDebt)} ₽` : 'все в нуле'}
+            Icon={AlertTriangle} color={kpi.debtCount > 0 ? "#f59e0b" : "#94a3b8"} />
+          <KpiTileAg label="Прайс-листов" value={`${kpi.totalPriceLists}`}
+            sub={`всего вариантов цен`}
+            Icon={ListChecks} color="#10b981" />
         </div>
 
         {/* Search */}
@@ -179,6 +240,37 @@ export default function AggregatorsSearch({ allAggregators, fetchError }: Aggreg
                 <tr key={aggregator.id} className="aggregators-table-row">
                   <td className="aggregators-table-cell align-top">
                     <div className="aggregator-name">{aggregator.name}</div>
+                    {/* Phase 43 / V2-#10 deferred: derived signals — top 3 */}
+                    {(() => {
+                      const signals = signalsByAggregatorId[aggregator.id] || [];
+                      const topSignals = signals.slice(0, 3);
+                      if (topSignals.length === 0) return null;
+                      return (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {topSignals.map((s) => {
+                            const c = SIGNAL_COLORS[s.level];
+                            return (
+                              <span
+                                key={s.id}
+                                title={s.description}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border"
+                                style={{ background: c.bg, color: c.text, borderColor: c.border }}
+                              >
+                                {s.label}
+                              </span>
+                            );
+                          })}
+                          {signals.length > 3 && (
+                            <span
+                              title={`Ещё ${signals.length - 3} сигналов`}
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 bg-slate-100"
+                            >
+                              +{signals.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {aggregator.archived && (
                       <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
                         Архив
@@ -223,9 +315,10 @@ export default function AggregatorsSearch({ allAggregators, fetchError }: Aggreg
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                                   <h4 style={{ margin: 0 }}>Прайс-лист &quot;{pl.name}&quot;</h4>
                                   <SetActivePriceButton
-                                    aggregatorId={aggregator.id}
+                                    aggregator={aggregator}
                                     priceListName={pl.name}
                                     isActive={activePriceList?.name === pl.name}
+                                    onRequestSwitch={(agg, name) => setSwitchTarget({ aggregator: agg, priceListName: name })}
                                   />
                                 </div>
                                 <div className="scroll-area">
@@ -358,6 +451,39 @@ export default function AggregatorsSearch({ allAggregators, fetchError }: Aggreg
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Phase 27a: SwitchPriceModal — рендерится в parent чтобы не unmount-иться с popover */}
+      <SwitchPriceModal
+        aggregator={switchTarget?.aggregator ?? null}
+        targetPriceListName={switchTarget?.priceListName ?? null}
+        open={!!switchTarget}
+        onOpenChange={(o) => { if (!o) setSwitchTarget(null); }}
+      />
+    </div>
+  );
+}
+
+// Phase 27b: KPI tile with icon — same pattern as CounterAgentsSearch
+function KpiTileAg({ label, value, sub, Icon, color }: {
+  label: string;
+  value: string;
+  sub: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  color: string;
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">{label}</div>
+          <div className="text-[22px] font-extrabold tabular-nums mt-1" style={{ color }}>{value}</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>
+        </div>
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ background: color + '15', color }}>
+          <Icon className="h-4 w-4" />
         </div>
       </div>
     </div>

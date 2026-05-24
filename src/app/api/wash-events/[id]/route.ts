@@ -5,8 +5,10 @@ import type { WashEvent, Inventory } from '@/types';
 import {
   getInventory,
   getWashEventById,
+  getWashEventKickbackBlockers,
   invalidateInventoryCache,
   invalidateWashEventsCache,
+  isSalaryPeriodClosed,
 } from '@/lib/data';
 import {
   deleteEntity,
@@ -17,6 +19,35 @@ import {
 } from '@/lib/data/write-helpers';
 import { requireAuth } from '@/lib/server-auth';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
+
+/**
+ * UX-safety: проверка что WashEvent не из закрытого периода ЗП.
+ *
+ * После «Закрыть период» (POST /api/salary-period/close) edit/delete мойки
+ * за этот месяц возвращает 423 Locked. Это защищает от пост-выплатных правок,
+ * которые ломают баланс факт vs выплачено (см. АРХИТЕКТУРНЫЕ-НАХОДКИ #6).
+ *
+ * Возвращает NextResponse(423) если период закрыт, иначе null.
+ * Решение владельца (2026-05-13): блокировка ТОЛЬКО на WashEvent edit/delete,
+ * выплаты/расходы/склад — без блокировки.
+ */
+async function checkWashEventPeriodLocked(washEvent: WashEvent | null): Promise<NextResponse | null> {
+  if (!washEvent?.timestamp) return null;
+  try {
+    const month = new Date(washEvent.timestamp).toISOString().slice(0, 7);
+    if (await isSalaryPeriodClosed(month)) {
+      return NextResponse.json({
+        error: `Период ${month} закрыт. Откройте период через /salary-report (admin), чтобы редактировать мойки.`,
+        month,
+        suggestUnlock: '/salary-report',
+      }, { status: 423 });
+    }
+  } catch (e) {
+    // На JSON-fallback isSalaryPeriodClosed просто вернёт false — пропускаем.
+    console.warn('[salary-period] check failed (non-fatal):', (e as any)?.message);
+  }
+  return null;
+}
 
 function calculateExplicitChemicalConsumption(washEvent: WashEvent): number {
   let total = 0;
@@ -117,6 +148,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     let oldAmount = 0;
     let oldSourceId: string | undefined;
     const oldEvent = await readEntity<WashEvent>('washEvent', id);
+
+    // UX-safety: если период закрыт — отказ 423.
+    const locked = await checkWashEventPeriodLocked(oldEvent);
+    if (locked) return locked;
+
     if (oldEvent) {
       oldConsumption = getRecordedConsumption(oldEvent);
       oldAmount = oldEvent.totalAmount || 0;
@@ -194,6 +230,42 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     let washAmount = 0;
     let sourceId: string | undefined;
     const washEvent = await readEntity<WashEvent>('washEvent', id);
+
+    // UX-safety: если период закрыт — отказ 423.
+    const locked = await checkWashEventPeriodLocked(washEvent);
+    if (locked) return locked;
+
+    // Phase 50f / V2-#4: проверка DriverKickback блокеров перед DELETE.
+    //   paid   → 423 Locked: деньги уже отданы, бухгалтерия не сойдётся
+    //   ready  → 409 Conflict: бонус готов к выплате, требуется ручная отмена
+    //   pending → cascade OK (Prisma onDelete:Cascade)
+    try {
+      const blockers = await getWashEventKickbackBlockers(id);
+      if (blockers.paid > 0) {
+        return NextResponse.json(
+          {
+            error: `Нельзя удалить мойку: уже выплачено ${blockers.paid} бонусов водителю по split-цене.`,
+            blockers,
+            hint: 'Выплаченные DriverKickback нельзя откатить — деньги отданы. Если ошибочно создали — обратитесь к бухгалтеру для ручного оформления возврата.',
+          },
+          { status: 423 }
+        );
+      }
+      if (blockers.ready > 0) {
+        return NextResponse.json(
+          {
+            error: `Нельзя удалить мойку: ${blockers.ready} бонусов водителю в статусе "ready" (готовы к выплате).`,
+            blockers,
+            hint: 'Сначала откатите эти DriverKickback в "pending" вручную через UI контрагента, потом удалите мойку.',
+          },
+          { status: 409 }
+        );
+      }
+      // pending kickbacks — cascade OK (onDelete:Cascade в Prisma)
+    } catch (err) {
+      console.warn(`[wash-events DELETE ${id}] kickback check failed (proceeding):`, err);
+    }
+
     if (washEvent) {
       consumedChemicals = getRecordedConsumption(washEvent);
       washAmount = washEvent.totalAmount || 0;

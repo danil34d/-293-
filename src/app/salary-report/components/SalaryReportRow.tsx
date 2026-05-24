@@ -19,6 +19,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ArrowDownToLine } from "lucide-react";
+import { PayModal } from "./PayModal";
+import { LoanModal } from "./LoanModal";
+
+/**
+ * Phase 4D-3: status badge для колонки «Статус» — даёт быстрое визуальное
+ * понимание состояния расчёта без чтения чисел.
+ */
+export type SalaryRowStatus = 'ready' | 'overpaid' | 'paid' | 'idle' | 'edited';
 
 interface SalaryReportRowProps {
     employeeId: string;
@@ -30,6 +39,12 @@ interface SalaryReportRowProps {
     onActionSuccess: () => void;
     isInactive?: boolean;
     rank?: number;
+    /** Pre-computed status from parent (knows about editHistory in period). */
+    status?: SalaryRowStatus;
+    /** Phase 13: контекст периода для PayModal (закрыт ли + есть ли правки) */
+    currentMonth?: string;
+    isPeriodClosed?: boolean;
+    hasUnpaidEdits?: boolean;
 }
 
 const transactionTypeDetails: Record<Exclude<EmployeeTransactionType, 'payment'>, { label: string; icon: React.ElementType, sign: number, color: string }> = {
@@ -136,55 +151,61 @@ function AddTransactionDialog({ employeeId, employeeName, onActionSuccess, route
     );
 }
 
-export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earningsForPeriod, paymentsForPeriod, otherOperationsTotal, onActionSuccess, isInactive, rank }: SalaryReportRowProps) {
+/** Phase 4D-3 — render status pill для колонки «Статус». */
+function StatusBadge({ status }: { status: SalaryRowStatus }) {
+    const cfg: Record<SalaryRowStatus, { label: string; bg: string; text: string }> = {
+        ready:    { label: 'готов',      bg: '#dbeafe', text: '#1d4ed8' },
+        overpaid: { label: 'переплата',  bg: '#fee2e2', text: '#b91c1c' },
+        paid:     { label: 'выплачено',  bg: '#dcfce7', text: '#15803d' },
+        idle:     { label: '—',          bg: '#f1f5f9', text: '#94a3b8' },
+        edited:   { label: 'правки',     bg: '#fef3c7', text: '#92400e' },
+    };
+    const c = cfg[status];
+    return (
+        <span
+            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+            style={{ background: c.bg, color: c.text }}
+        >
+            {c.label}
+        </span>
+    );
+}
+
+export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earningsForPeriod, paymentsForPeriod, otherOperationsTotal, onActionSuccess, isInactive, rank, status, currentMonth, isPeriodClosed, hasUnpaidEdits }: SalaryReportRowProps) {
     const { toast } = useToast();
     const router = useRouter();
-    const [isPaying, setIsPaying] = useState(false);
-    // Hide button after a successful pay until parent provides fresh props.
-    // Prevents the user from triggering duplicate payments while the data
-    // refresh round-trips back from the server.
     const [justPaid, setJustPaid] = useState(false);
+    // Phase 13: оба модала — Pay (если payable>0) и Loan (если payable<0)
+    const [payModalOpen, setPayModalOpen] = useState(false);
+    const [loanModalOpen, setLoanModalOpen] = useState(false);
 
     const payableTotal = balanceAtStart + earningsForPeriod + otherOperationsTotal - paymentsForPeriod;
 
-    const handlePay = async () => {
-        if (payableTotal <= 0) {
-            toast({ title: "Нечего выплачивать", description: "Сумма к выплате равна нулю или отрицательна.", variant: "default" });
-            return;
+    const handleConfirmPay = async () => {
+        const response = await fetch(`/api/employees/${employeeId}/transactions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: 'payment',
+                amount: payableTotal,
+                description: `Выплата зарплаты за период`
+            }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(result?.error || "Не удалось зарегистрировать выплату.");
         }
-        if (isPaying || justPaid) return;
 
-        setIsPaying(true);
-        try {
-             const response = await fetch(`/api/employees/${employeeId}/transactions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'payment',
-                    amount: payableTotal,
-                    description: `Выплата зарплаты за период`
-                }),
-            });
-            const result = await response.json().catch(() => ({}));
-            if (!response.ok) {
-                throw new Error(result?.error || "Не удалось зарегистрировать выплату.");
-            }
-
-            setJustPaid(true);
-            const skipped = result?.skipped === true;
-            toast({
-                title: skipped ? "Уже выплачено" : "Успешно!",
-                description: skipped
-                    ? `Дублирующая выплата ${payableTotal.toLocaleString('ru-RU')} руб. отклонена.`
-                    : `Сотруднику ${employeeName} выплачено ${payableTotal.toLocaleString('ru-RU')} руб.`,
-            });
-            router.refresh();
-            onActionSuccess();
-        } catch (error: any) {
-            toast({ title: "Ошибка", description: error.message, variant: "destructive" });
-        } finally {
-            setIsPaying(false);
-        }
+        setJustPaid(true);
+        const skipped = result?.skipped === true;
+        toast({
+            title: skipped ? "Уже выплачено" : "Успешно!",
+            description: skipped
+                ? `Дублирующая выплата ${payableTotal.toLocaleString('ru-RU')} руб. отклонена.`
+                : `Сотруднику ${employeeName} выплачено ${payableTotal.toLocaleString('ru-RU')} руб.`,
+        });
+        router.refresh();
+        onActionSuccess();
     };
 
     // Short first name: "Костылев Валерий" -> "Костылев В."
@@ -263,18 +284,36 @@ export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earn
                 </span>
             </TableCell>
 
+            {/* Phase 4D-3: Колонка «Статус» */}
+            <TableCell className="text-center py-3">
+                {status && <StatusBadge status={
+                    // override: если только что выплатил — показываем 'paid'
+                    justPaid ? 'paid' : status
+                } />}
+            </TableCell>
+
             {/* Actions */}
             <TableCell className="text-center py-3">
                 <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {payableTotal > 0 && !justPaid && (
                         <Button
-                            onClick={handlePay}
-                            disabled={isPaying}
+                            onClick={() => setPayModalOpen(true)}
                             size="sm"
                             className="h-7 text-xs px-2.5 gap-1 bg-green-600 hover:bg-green-700"
                         >
-                            {isPaying ? <Loader2 className="h-3 w-3 animate-spin"/> : <Banknote className="h-3 w-3" />}
+                            <Banknote className="h-3 w-3" />
                             Выплатить
+                        </Button>
+                    )}
+                    {payableTotal < 0 && (
+                        <Button
+                            onClick={() => setLoanModalOpen(true)}
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs px-2.5 gap-1 border-orange-300 text-orange-700 hover:bg-orange-50"
+                        >
+                            <ArrowDownToLine className="h-3 w-3" />
+                            Зачесть
                         </Button>
                     )}
                     <DropdownMenu>
@@ -305,6 +344,27 @@ export function SalaryReportRow({ employeeId, employeeName, balanceAtStart, earn
                     </DropdownMenu>
                 </div>
             </TableCell>
+
+            {/* Phase 13: PayModal + LoanModal */}
+            <PayModal
+                open={payModalOpen}
+                onOpenChange={setPayModalOpen}
+                employeeName={employeeName}
+                employeeId={employeeId}
+                amount={Math.max(0, payableTotal)}
+                currentMonth={currentMonth}
+                isPeriodClosed={Boolean(isPeriodClosed)}
+                hasUnpaidEdits={Boolean(hasUnpaidEdits)}
+                onConfirm={handleConfirmPay}
+            />
+            <LoanModal
+                open={loanModalOpen}
+                onOpenChange={setLoanModalOpen}
+                employeeName={employeeName}
+                employeeId={employeeId}
+                overpaymentAmount={Math.abs(Math.min(0, payableTotal))}
+                onActionSuccess={onActionSuccess}
+            />
         </TableRow>
     );
 }

@@ -27,9 +27,15 @@ import {
   Timer,
   Coins,
   ArrowLeft,
-  Box
+  Box,
+  X,
+  ArrowRight,
 } from 'lucide-react';
-import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment } from '@/types';
+import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment, OurCompany } from '@/types';
+import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
+import { SplitDriverCard, DriverPickerModal } from './SplitDriverWidgets';
+import SignaturePad from './SignaturePad';
+import DriverComboBox from './DriverComboBox';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
@@ -94,6 +100,14 @@ interface WorkstationProps {
   isKioskMode?: boolean;
   /** Pre-select box number (from URL param) */
   initialBoxNumber?: number;
+  /**
+   * 🔥 ФИКС 2026-05-11: callback вызывается когда оператор переходит
+   * в активный wizard (payment / aggregator / service / confirmation) —
+   * родитель скрывает вспомогательные panels (Pending vehicles, History)
+   * чтобы они не наезжали на список услуг.
+   * Передаёт false когда оператор на idle / vehicleInput (можно показывать всё).
+   */
+  onWizardStateChange?: (isInWizard: boolean) => void;
 }
 
 type BoxKey = 'box1' | 'box2';
@@ -113,7 +127,7 @@ function getBoxKey(boxNumber: number): BoxKey {
   return boxNumber === 2 ? 'box2' : 'box1';
 }
 
-export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKioskMode, initialBoxNumber }: WorkstationProps = {}) {
+export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKioskMode, initialBoxNumber, onWizardStateChange }: WorkstationProps = {}) {
   const { employee: loggedInEmployee } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -198,6 +212,26 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   const [lastWashComment, setLastWashComment] = useState<WashComment | null>(null);
   const [driverComment, setDriverComment] = useState('');
 
+  // Phase 51c / V2-#4 split-pricing: выбранный водитель + UI state для модала.
+  // Активируется когда среди выбранных услуг есть split.driverBonus > 0.
+  // Без выбранного водителя кнопка «Подтвердить» disabled.
+  const [selectedDriver, setSelectedDriver] = useState<{ name: string; phone?: string } | null>(null);
+  const [driverPickerOpen, setDriverPickerOpen] = useState(false);
+  const [newDriverName, setNewDriverName] = useState('');
+  const [newDriverPhone, setNewDriverPhone] = useState('');
+
+  // Phase 60a/b — ФИО водителя + цифровая роспись (sticky на конкретную мойку,
+  //   попадают в WashEvent.driverName / driverSignature; автоподтягиваются в Ведомость).
+  // driverNameInput пред-заполняется из selectedDriver (для split-услуг) или из последнего
+  //   водителя на этом номере (см. effect ниже). Можно править вручную.
+  const [driverNameInput, setDriverNameInput] = useState('');
+  const [driverSignatureDataUrl, setDriverSignatureDataUrl] = useState<string | null>(null);
+  // Phase 60e — источник росписи:
+  //   'cached'  — подтянута из CounterAgent.drivers[*].signature (водителю не нужно расписываться)
+  //   'fresh'   — нарисована сейчас (новый образец, пойдёт в save-signature)
+  //   null      — росписи нет
+  const [driverSignatureSource, setDriverSignatureSource] = useState<'cached' | 'fresh' | null>(null);
+
   const lastConsumptionRef = useRef<Record<string, Record<string, number>>>({});
 
   const [customExtraServiceName, setCustomExtraServiceName] = useState('');
@@ -250,12 +284,26 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   }, [boxShiftStateByBox, isAdminMode, isKioskMode]);
 
   const [currentStep, setCurrentStep] = useState<CurrentStep>("idle");
+
+  // 🔥 ФИКС 2026-05-11: уведомляем родителя (KioskOrderClient) когда оператор
+  // перешёл в активный wizard. Родитель скрывает вспомогательные panels
+  // (Pending vehicles, History) чтобы они не наезжали на список услуг.
+  // Активные шаги: paymentSelection / aggregatorSelection / serviceSelection / confirmation.
+  // Пассивные: idle / vehicleInput — там panels видны, оператор может выбрать оттуда.
+  useEffect(() => {
+    const isInWizard =
+      currentStep !== 'idle' && currentStep !== 'vehicleInput';
+    onWizardStateChange?.(isInWizard);
+  }, [currentStep, onWizardStateChange]);
+
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const [allCounterAgents, setAllCounterAgents] = useState<CounterAgent[]>([]);
   const [allAggregators, setAllAggregators] = useState<Aggregator[]>([]);
   const [allWashEvents, setAllWashEvents] = useState<WashEvent[]>([]);
   const [retailPriceConfig, setRetailPriceConfig] = useState<RetailPriceConfig>({ mainPriceList: [], additionalPriceList: [], allowCustomRetailServices: true, cardAcquiringPercentage: 1.2 });
+  // Phase 57c: список наших ИП для отображения бейджа «От имени ИП» в шаге подтверждения
+  const [allOurCompanies, setAllOurCompanies] = useState<OurCompany[]>([]);
 
   useEffect(() => {
     setBoxShiftStateByBox({
@@ -412,24 +460,27 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
       if (isShiftActive) {
         setIsLoading(true);
         try {
-          const [agentsRes, aggregatorsRes, retailRes, employeesRes, washEventsRes] = await Promise.all([
+          const [agentsRes, aggregatorsRes, retailRes, employeesRes, washEventsRes, ourCompaniesRes] = await Promise.all([
             fetch('/api/counter-agents'),
             fetch('/api/aggregators'),
             fetch('/api/retail-price-config'),
             fetch('/api/employees'),
             fetch('/api/wash-events'),
+            // Phase 57c: список наших ИП для бейджа «От имени ИП» (best-effort)
+            fetch('/api/our-companies').catch(() => null),
           ]);
 
           if (!agentsRes.ok || !aggregatorsRes.ok || !retailRes.ok || !employeesRes.ok || !washEventsRes.ok) {
             throw new Error('API error');
           }
 
-          const [agentsData, aggregatorsData, retailData, employeesData, washEventsData] = await Promise.all([
+          const [agentsData, aggregatorsData, retailData, employeesData, washEventsData, ourCompaniesData] = await Promise.all([
             agentsRes.json(),
             aggregatorsRes.json(),
             retailRes.json(),
             employeesRes.json(),
             washEventsRes.json(),
+            ourCompaniesRes && ourCompaniesRes.ok ? ourCompaniesRes.json() : [],
           ]);
 
           // Filter active counter agents
@@ -441,6 +492,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           setAllEmployees(activeEmployees);
           setEmployeeMap(new Map(activeEmployees.map((e: any) => [e.id, e.fullName])));
           setAllWashEvents(washEventsData);
+          // Phase 57c: ИП для бейджа (best-effort, не блокирует терминал)
+          setAllOurCompanies(Array.isArray(ourCompaniesData) ? ourCompaniesData : []);
         } catch (error) {
           console.error("Error fetching data for workstation:", error);
           toast({ title: "Ошибка", description: "Не удалось загрузить данные для рабочей станции.", variant: "destructive"});
@@ -448,6 +501,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           setAllAggregators([]);
           setAllEmployees([]);
           setAllWashEvents([]);
+          setAllOurCompanies([]);
           setRetailPriceConfig({ mainPriceList: [], additionalPriceList: [], allowCustomRetailServices: true, cardAcquiringPercentage: 1.2 });
         } finally {
           setIsLoading(false);
@@ -492,6 +546,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
       setWashTimerElapsed(0);
     }
   }, [currentStep]);
+
+  // Phase 60a/b — синхронизация ФИО водителя из split-modal в общее поле.
+  //   Если кассир выбрал водителя через SplitDriverCard — автоматически прописываем в driverNameInput
+  //   (можно потом поправить вручную). Не перезаписываем, если уже что-то введено.
+  useEffect(() => {
+    if (selectedDriver?.name && !driverNameInput) {
+      setDriverNameInput(selectedDriver.name);
+    }
+  }, [selectedDriver?.name]);
 
   useEffect(() => {
     if (!cameraSessionContext) {
@@ -785,6 +848,18 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         if (lastWash.driverComments && lastWash.driverComments.length > 0) {
           setLastWashComment(lastWash.driverComments[lastWash.driverComments.length - 1]);
         }
+        // Phase 60a/b — пред-заполнить ФИО водителя и роспись из последней мойки на этом номере.
+        // Сотрудник видит «уже было: <ФИО>», может оставить или поправить.
+        const prevDriverName = (lastWash as any).driverName
+          || (lastWash as any).driverKickback?.driverName
+          || '';
+        if (prevDriverName) {
+          setDriverNameInput(prevDriverName);
+        }
+        const prevSignature = (lastWash as any).driverSignature;
+        if (prevSignature) {
+          setDriverSignatureDataUrl(prevSignature);
+        }
     }
 
     const agent = counterAgentsForCheck.find(ca =>
@@ -938,6 +1013,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
             return prev.filter(s => s.serviceName !== service.serviceName); // Deselect
         }
         return [...prev, serviceWithId]; // Select
+    });
+  };
+
+  // Phase 58b: всегда добавляет копию (для счётчика «Доп час ×N»).
+  // НЕ снимает существующее как handleServiceSelect — только инкремент.
+  const handleServiceAddMore = (service: PriceListItem) => {
+    setWashServices(prev => {
+      const newId = `service-${service.serviceName}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      return [...prev, { ...service, id: newId }];
     });
   };
 
@@ -1100,6 +1184,16 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
          new Date().toISOString())
       : new Date().toISOString();
 
+    // Phase 51c / V2-#4 split-pricing: подмешиваем driverKickback meta если split-услуга.
+    const hasSplitServiceLocal = washServices.some((s) => (s as any).split?.driverBonus > 0);
+    const driverKickbackPayload = hasSplitServiceLocal && selectedDriver?.name
+      ? {
+          driverName: selectedDriver.name,
+          driverPhone: selectedDriver.phone || undefined,
+          plate: normalizedVehicleNumber || undefined,
+        }
+      : undefined;
+
 	    const washEventToSave: Omit<WashEvent, 'driverComments'> & { driverComments?: WashComment[] } = {
         id: `we_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
         timestamp: washTimestamp,
@@ -1128,6 +1222,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         shiftId: activeShiftId || undefined,
         boxNumber: selectedBoxNumber as 1 | 2,
         cameraSession: cameraSessionLink,
+        // Phase 51c: метаданные водителя для backend Phase 50d
+        // (создаст DriverKickback после atomic POST)
+        ...(driverKickbackPayload ? { driverKickback: driverKickbackPayload } : {}),
+        // Phase 60a/b — ФИО водителя + цифровая роспись (только для split-услуг + contract).
+        // Поле UI скрыто для разовых/не-split, поэтому даже если state остался — не отправляем.
+        ...(selectedPaymentMethod === 'counterAgentContract' && hasSplitServiceLocal && driverNameInput.trim()
+          ? { driverName: driverNameInput.trim() } : {}),
+        ...(selectedPaymentMethod === 'counterAgentContract' && hasSplitServiceLocal && driverSignatureDataUrl
+          ? { driverSignature: driverSignatureDataUrl } : {}),
     };
 
     try {
@@ -1140,6 +1243,28 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || 'Не удалось сохранить мойку.');
+        }
+
+        // Phase 60c/e — fire-and-forget: сохранить роспись на CounterAgent.drivers[*].signature
+        //   только если это СВЕЖАЯ роспись (cached уже лежит у водителя). Не блокируем UI.
+        if (
+          selectedPaymentMethod === 'counterAgentContract' &&
+          hasSplitServiceLocal &&
+          foundCounterAgent?.id &&
+          driverNameInput.trim() &&
+          driverSignatureDataUrl &&
+          driverSignatureSource === 'fresh'
+        ) {
+          fetch(`/api/counter-agents/${foundCounterAgent.id}/drivers/save-signature`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              driverName: driverNameInput.trim(),
+              signature: driverSignatureDataUrl,
+              // overwrite=false — не перетираем существующий образец
+              overwrite: false,
+            }),
+          }).catch(err => console.warn('[Phase 60c] save driver signature failed (non-blocking):', err));
         }
 
         toast({
@@ -1177,6 +1302,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
     setFoundAggregators([]);
     setSelectedPaymentMethod(null);
     setSelectedAggregator(null);
+    // Phase 51c: reset split-driver state на новую мойку
+    setSelectedDriver(null);
+    setDriverPickerOpen(false);
+    setNewDriverName('');
+    setNewDriverPhone('');
+    // Phase 60a/b — reset driver name + signature
+    setDriverNameInput('');
+    setDriverSignatureDataUrl(null);
+    setDriverSignatureSource(null);
     setWashServices([]);
     setCustomExtraServiceName('');
     setCustomExtraServicePrice('');
@@ -1256,6 +1390,63 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           return a.serviceName.localeCompare(b.serviceName);
       });
   }, [servicesToShow, lastWashServices]);
+
+  // Phase 58a: топ-3 услуг по реальной частоте использования за последние 60 дней,
+  // фильтр по текущему источнику (counterAgent / aggregator / retail). Передаётся
+  // в KioskServiceSelectionStep вместо `services.slice(0, 3)` как раньше.
+  const topServicesForSource = useMemo<PriceListItem[]>(() => {
+    const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000;
+    const since = Date.now() - SIXTY_DAYS_MS;
+    const isCounterAgent = selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent;
+    const isAggregator = selectedPaymentMethod === 'aggregator' && (selectedAggregator || foundAggregators?.[0]);
+    const isRetail = ['cash', 'card', 'transfer'].includes(selectedPaymentMethod || '');
+    const aggId = isAggregator ? ((selectedAggregator?.id) ?? (foundAggregators?.[0]?.id)) : undefined;
+    const caId = isCounterAgent ? foundCounterAgent?.id : undefined;
+
+    // Filter washEvents by source + period
+    const relevant = allWashEvents.filter(we => {
+      const ts = new Date(we.timestamp).getTime();
+      if (!Number.isFinite(ts) || ts < since) return false;
+      if (isCounterAgent) {
+        // legacy: paymentMethod might be 'transfer' for contractor — check counterAgentId via sourceId
+        return we.paymentMethod === 'counterAgentContract' && (we as any).sourceId === caId;
+      }
+      if (isAggregator) {
+        return we.paymentMethod === 'aggregator' && (we as any).sourceId === aggId;
+      }
+      if (isRetail) {
+        return ['cash', 'card', 'transfer'].includes(we.paymentMethod);
+      }
+      return false;
+    });
+
+    // Count frequency per serviceName (main + additional)
+    const freq = new Map<string, { count: number; price: number; src?: PriceListItem }>();
+    relevant.forEach(we => {
+      const list: any[] = [];
+      if (we.services?.main?.serviceName) list.push(we.services.main);
+      if (Array.isArray(we.services?.additional)) list.push(...we.services.additional);
+      list.forEach(svc => {
+        const name = svc?.serviceName;
+        if (!name) return;
+        const existing = freq.get(name);
+        if (existing) existing.count += 1;
+        else freq.set(name, { count: 1, price: svc.price ?? 0 });
+      });
+    });
+
+    // Привяжем к актуальной цене из текущего прайса (если услуга всё ещё есть)
+    const fromPrice = new Map(servicesToShow.map(s => [s.serviceName, s] as const));
+    const result: PriceListItem[] = [];
+    Array.from(freq.entries())
+      .sort((a, b) => b[1].count - a[1].count)
+      .forEach(([name, info]) => {
+        const fromCurrent = fromPrice.get(name);
+        if (fromCurrent) result.push(fromCurrent);
+        // если услуги больше нет в прайсе — пропускаем (нечего предлагать)
+      });
+    return result;
+  }, [allWashEvents, selectedPaymentMethod, foundCounterAgent, selectedAggregator, foundAggregators, servicesToShow]);
 
   const filteredServices = useMemo(() => {
     const query = serviceSearchQuery.trim().toLowerCase();
@@ -1354,10 +1545,12 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         throw new Error(err.error || 'Не удалось завершить смену');
       }
       const data = await res.json();
-      const summary = data.summary || { totalWashes: 0, totalAmount: 0 };
+      const summary = data.summary || { totalWashes: 0 };
+      // Phase 60g — НЕ показываем общую выручку сотруднику (включает безнал/контрагентов).
+      // Касса смены (нал/карта/перевод) была видна на главной /kiosk весь день.
       toast({
         title: "Смена завершена",
-        description: `Моек: ${summary.totalWashes}, Выручка: ${summary.totalAmount.toLocaleString('ru-RU')} ₽`,
+        description: `Моек за смену: ${summary.totalWashes}. Хорошая работа!`,
       });
       setActiveShiftId(null);
       setIsShiftActive(false);
@@ -1382,7 +1575,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   };
 
   return (
-    <div className="zorin-workstation">
+    <div className={`zorin-workstation${isKioskMode ? ' kiosk-mode' : ''}`}>
       {/* Navigation Header */}
       {/* Header — hide in kiosk mode (kiosk has its own layout) */}
       {!isKioskMode && (
@@ -1519,36 +1712,31 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 )}
               </div>
 
-              {/* Photos: thumbnail (car) + plate (crop of plate) */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mb-3">
-                {/* Thumbnail — full car photo */}
-                <div className="overflow-hidden rounded-lg border border-amber-200 bg-black">
-                  <img
-                    src={buildCameraSessionMediaUrl(cameraSessionContext, 'thumbnail')}
-                    alt="Фото машины"
-                    className="aspect-video w-full object-cover"
-                    loading="lazy"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                </div>
-                {/* Plate crop — cropped license plate region */}
-                <div className="overflow-hidden rounded-lg border-2 border-blue-300 bg-black flex items-center justify-center">
-                  <img
-                    src={buildCameraSessionMediaUrl(cameraSessionContext, 'plate_crop')}
-                    alt="Кроп номера"
-                    className="w-full object-contain"
-                    loading="lazy"
-                    onError={(e) => {
-                      const img = e.target as HTMLImageElement;
-                      const fallbackUrl = buildCameraSessionMediaUrl(cameraSessionContext, 'plate');
-                      if (img.src !== fallbackUrl) {
-                        img.src = fallbackUrl;
+              {/* 🔥 ФИКС 2026-05-05: одно фото — крупный план номера. Раньше показывали
+                  два (общий план + crop) — общий лишний, оператору важен только номер.
+                  Fallback chain: plate_crop → plate → thumbnail (через бэкенд route) */}
+              <div className="overflow-hidden rounded-lg border-2 border-blue-300 bg-black flex items-center justify-center mb-3 max-h-[260px]">
+                <img
+                  src={buildCameraSessionMediaUrl(cameraSessionContext, 'plate_crop')}
+                  alt="Номер машины (крупный план)"
+                  className="w-full object-contain"
+                  loading="lazy"
+                  onError={(e) => {
+                    const img = e.target as HTMLImageElement;
+                    const fallbackUrl = buildCameraSessionMediaUrl(cameraSessionContext, 'plate');
+                    if (!img.src.endsWith('kind=plate')) {
+                      img.src = fallbackUrl;
+                    } else {
+                      // Если и plate.jpg нет — показываем thumbnail последним фолбэком
+                      const thumbUrl = buildCameraSessionMediaUrl(cameraSessionContext, 'thumbnail');
+                      if (img.src !== thumbUrl) {
+                        img.src = thumbUrl;
                       } else {
                         img.style.display = 'none';
                       }
-                    }}
-                  />
-                </div>
+                    }
+                  }}
+                />
               </div>
 
               {/* Recognized plate — big and prominent */}
@@ -1782,197 +1970,73 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
             </div>
           )}
 
-          {/* Service Selection */}
+          {/* Service Selection — новый компактный UI из прототипа (kiosk-style).
+              Включён везде с 2026-05-12 (был только для isKioskMode). */}
           {currentStep === "serviceSelection" && (
-            <div className="zorin-form-section">
-              <h4 className="flex items-center gap-2 mb-4">
-                <CheckCircle size={20} />
-                Выберите услуги
-                {washTimerStart && (
-                  <span className="ml-auto flex items-center gap-1 text-sm font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                    <Timer size={14} />
-                    {formatTimer(washTimerElapsed)}
-                  </span>
-                )}
-              </h4>
-
-              {selectedPaymentMethod && ['cash', 'card', 'transfer'].includes(selectedPaymentMethod) && !foundCounterAgent && (
-                <p className="mb-4 text-gray-600">Услуга для розничного клиента ({paymentMethodLabels[selectedPaymentMethod]}).</p>
-              )}
-              {selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent && (
-                <p className="mb-4 text-gray-600">Специальные услуги для контрагента: <strong>{foundCounterAgent.name}</strong> (по договору).</p>
-              )}
-              {selectedPaymentMethod === 'aggregator' && selectedAggregator && (
-                <p className="mb-4 text-gray-600">Услуги для агрегатора: <strong>{selectedAggregator.name}</strong></p>
-              )}
-
-              {/* Repeat Visit */}
-              {lastWashServices && lastWashServices.length > 0 && (
-                <div className="mb-4 p-4 rounded-lg bg-amber-50 border border-amber-200">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="flex items-center gap-2 font-semibold text-amber-800">
-                        <Repeat size={18} />
-                        Повторный визит
-                      </h4>
-                      <p className="text-sm text-amber-700 mt-1">
-                        Услуги в прошлый раз: {lastWashServices.map(s => s.serviceName).join(', ')}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setWashServices(lastWashServices.map(s => ({
+            <KioskServiceSelectionStep
+              vehicleNumber={normalizedVehicleNumber || vehicleNumberInput}
+              boxNumber={selectedBoxNumber}
+              clientType={
+                selectedPaymentMethod === 'aggregator'
+                  ? 'aggregator'
+                  : selectedPaymentMethod === 'counterAgentContract'
+                    ? 'counterAgent'
+                    : 'retail'
+              }
+              clientTypeLabel={
+                selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent
+                  ? `Контрагент: ${foundCounterAgent.name} (по договору)`
+                  : selectedPaymentMethod === 'aggregator' && selectedAggregator
+                    ? `Агрегатор: ${selectedAggregator.name}`
+                    : selectedPaymentMethod && ['cash', 'card', 'transfer'].includes(selectedPaymentMethod)
+                      ? `Розница: ${paymentMethodLabels[selectedPaymentMethod] || 'оплата'}`
+                      : 'Розничный клиент'
+              }
+              paymentMethod={(selectedPaymentMethod ?? 'cash') as KioskPaymentMethod}
+              timerLabel={washTimerStart ? formatTimer(washTimerElapsed) : '00:00'}
+              services={servicesToShow}
+              selectedServices={washServices.map((s) => ({
+                id: s.id,
+                serviceName: s.serviceName,
+                price: s.price,
+              }))}
+              searchQuery={serviceSearchQuery}
+              onSearchChange={setServiceSearchQuery}
+              onServiceToggle={handleServiceSelect}
+              onServiceRemove={handleRemoveService}
+              onServiceAddMore={handleServiceAddMore}
+              topServices={topServicesForSource}
+              predefinedExtraServices={predefinedExtraServices}
+              lastWashServices={lastWashServices ?? undefined}
+              onRepeatLast={
+                lastWashServices && lastWashServices.length > 0
+                  ? () => {
+                      setWashServices(
+                        lastWashServices.map((s) => ({
                           ...s,
-                          id: `service-${s.serviceName}-${Date.now()}-${Math.random()}`
-                        })));
-                        toast({ title: "Услуги добавлены", description: "Выбраны услуги из предыдущего визита." });
-                      }}
-                      className="zorin-button primary"
-                    >
-                      <Repeat size={16} className="mr-2" />
-                      Повторить
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Search */}
-              <div className="relative mb-4">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <input
-                  placeholder="Поиск по названию услуги..."
-                  value={serviceSearchQuery}
-                  onChange={(e) => setServiceSearchQuery(e.target.value)}
-                  className="zorin-input pl-8"
-                />
-              </div>
-
-              {/* Services List */}
-              <div className="zorin-service-list mb-4">
-                {filteredServices.length > 0 ? (
-                  filteredServices.map(service => {
-                    const isFromLast = (service as any).isFromLastWash;
-                    return (
-                    <div
-                      key={service.serviceName}
-                      className={cn(
-                        "zorin-service-item",
-                        washServices.some(s => s.serviceName === service.serviceName) && "selected",
-                        isFromLast && "from-last-wash"
-                      )}
-                      onClick={() => handleServiceSelect(service)}
-                    >
-                      <div className="flex items-center gap-2 flex-1">
-                        <span className="zorin-service-name flex items-center gap-2">
-                          {service.serviceName}
-                        </span>
-                        {isFromLast && (
-                          <span className="last-wash-badge">
-                            <Repeat className="h-3 w-3" />
-                            В прошлый раз
-                          </span>
-                        )}
-                      </div>
-                      {showPrices && <span className="zorin-service-price">{service.price} руб.</span>}
-                    </div>
-                    );
-                  })
-                ) : (
-                  <p className="text-center text-muted-foreground py-4">
-                    {servicesToShow.length > 0 ? "Услуги, соответствующие поиску, не найдены." : "Для данного клиента нет доступных услуг."}
-                  </p>
-                )}
-              </div>
-
-              {/* Additional Services */}
-              {(predefinedExtraServices && predefinedExtraServices.length > 0) && (
-                <div className="mb-4">
-                  <label className="zorin-form-label">Добавить предопределенные доп. услуги:</label>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {predefinedExtraServices.map(service => (
-                      <button key={service.serviceName} onClick={() => handleServiceSelect(service)} className="zorin-button secondary">
-                        <PlusCircle size={16} className="mr-1"/>
-                        {service.serviceName} {showPrices && `(${service.price} руб.)`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Selected Services */}
-              {washServices.length > 0 && (
-                <div className="mb-4">
-                  <label className="zorin-form-label">Выбранные услуги:</label>
-                  {washServices.map((service) => (
-                    <div key={service.id} className="flex items-center justify-between p-3 border rounded-md bg-background mb-2">
-                      <span className="font-medium">{service.serviceName}</span>
-                      <div className="flex items-center gap-2">
-                        {showPrices && <span className="font-semibold">{service.price} руб.</span>}
-                        <button onClick={() => handleRemoveService(service.id)} className="zorin-action-btn delete">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Custom Service */}
-              {canAddCustomServices && (
-                <div className="p-3 border rounded-md bg-muted/20 space-y-2">
-                  <label className="text-sm font-medium">Добавить произвольную доп. услугу</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <input
-                      value={customExtraServiceName}
-                      onChange={(e) => setCustomExtraServiceName(e.target.value)}
-                      placeholder="Название услуги"
-                      className="zorin-input text-sm sm:col-span-2"
-                    />
-                    <input
-                      type="number"
-                      value={customExtraServicePrice}
-                      onChange={(e) => setCustomExtraServicePrice(e.target.value)}
-                      placeholder="Цена"
-                      className="zorin-input text-sm"
-                      hidden={!showPrices}
-                    />
-                  </div>
-                  <button onClick={handleAddCustomExtraService} className="zorin-button secondary">
-                    <PlusCircle size={16} className="mr-2" /> Добавить
-                  </button>
-                </div>
-              )}
-
-              {/* Summary */}
-              {washServices.length > 0 && (
-                <div className="text-right">
-                  {showPrices ? (
-                    <div className="flex flex-col items-end gap-1">
-                      <p className="zorin-total-amount">Итого: {totalAmount.toFixed(2)} руб.</p>
-                      {selectedPaymentMethod === 'card' && acquiringFee > 0 && (
-                        <p className="text-sm text-muted-foreground">К получению: {netAmount.toFixed(2)} руб. (вкл. комиссию {acquiringFee.toFixed(2)} руб.)</p>
-                      )}
-                      {totalChemicalGrams > 0 && (
-                        <p className="text-sm text-blue-600 font-medium mt-1">
-                          🧪 Химия: {(totalChemicalGrams / 1000).toFixed(3)} кг ({totalChemicalGrams}г)
-                          {selectedEmployees.length > 1 && (
-                            <span className="text-xs ml-1">
-                              (по {(totalChemicalGrams / selectedEmployees.length).toFixed(0)}г на чел.)
-                            </span>
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xl font-bold">Оплата по договору</p>
-                  )}
-                  <button onClick={proceedToConfirmation} className="zorin-button primary mt-4">
-                    Далее к подтверждению
-                  </button>
-                </div>
-              )}
-            </div>
+                          id: `service-${s.serviceName}-${Date.now()}-${Math.random()}`,
+                        })),
+                      );
+                      toast({
+                        title: 'Услуги добавлены',
+                        description: 'Выбраны услуги из предыдущего визита.',
+                      });
+                    }
+                  : undefined
+              }
+              canAddCustomServices={canAddCustomServices}
+              customExtraServiceName={customExtraServiceName}
+              customExtraServicePrice={customExtraServicePrice}
+              onCustomNameChange={setCustomExtraServiceName}
+              onCustomPriceChange={setCustomExtraServicePrice}
+              onAddCustomService={handleAddCustomExtraService}
+              totalAmount={totalAmount}
+              showPrices={showPrices}
+              onProceed={proceedToConfirmation}
+            />
           )}
+
+          {/* Service Selection — старый UI удалён 2026-05-12, теперь только новый KioskServiceSelectionStep выше */}
 
           {/* Confirmation */}
           {currentStep === "confirmation" && washServices.length > 0 && (
@@ -2000,11 +2064,185 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 }</p>
                 <p><strong>Исполнители:</strong> {selectedEmployees.map(e => e.fullName).join(', ')}</p>
 
+                {/* Phase 57c: бейдж «От имени ИП» — какое наше юр.лицо оформит мойку.
+                    Логика дублирует серверный resolveOurCompanyIdForWashEvent: counterAgent.preferredOurCompanyId
+                    → aggregator.preferredOurCompanyId → primary. Сотрудник видит куда пойдут деньги. */}
+                {(() => {
+                  if (allOurCompanies.length === 0) return null;
+                  const active = allOurCompanies.filter(c => !c.archived);
+                  let targetOc: OurCompany | undefined;
+                  let reasonHint = '';
+                  if (selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent?.preferredOurCompanyId) {
+                    targetOc = active.find(c => c.id === foundCounterAgent.preferredOurCompanyId);
+                    reasonHint = `назначено контрагенту ${foundCounterAgent.name}`;
+                  } else if (selectedPaymentMethod === 'aggregator' && selectedAggregator?.preferredOurCompanyId) {
+                    targetOc = active.find(c => c.id === selectedAggregator.preferredOurCompanyId);
+                    reasonHint = `назначено агрегатору ${selectedAggregator.name}`;
+                  }
+                  if (!targetOc) {
+                    targetOc = active.find(c => c.isPrimary);
+                    reasonHint = 'основное ИП по умолчанию';
+                  }
+                  if (!targetOc) return null;
+                  return (
+                    <p style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', margin: '8px 0' }}>
+                      <strong>От имени ИП:</strong>{' '}
+                      <span style={{ fontWeight: 700 }}>{targetOc.shortName}</span>
+                      {targetOc.isPrimary && <span style={{ marginLeft: 6 }}>⭐</span>}
+                      <span style={{ marginLeft: 8, fontSize: 12, color: '#6366f1' }}>({reasonHint})</span>
+                    </p>
+                  );
+                })()}
+
+                {/* Phase 51c / V2-#4: split-services карточка водителя */}
+                <SplitDriverCard
+                  washServices={washServices}
+                  counterAgent={foundCounterAgent}
+                  normalizedVehicleNumber={normalizedVehicleNumber}
+                  selectedDriver={selectedDriver}
+                  onPickDriver={() => setDriverPickerOpen(true)}
+                  onClearDriver={() => setSelectedDriver(null)}
+                />
+
+                {/* Phase 60a/b — ФИО водителя + цифровая роспись.
+                    Показывается ТОЛЬКО когда среди услуг есть split (мойка скотовоза и т.п.) —
+                    именно там нужен водитель/роспись для Ведомости. Обычные contract-мойки
+                    без split (например, легковая по договору) — не требуют. */}
+                {selectedPaymentMethod === 'counterAgentContract' &&
+                  washServices.some((s) => (s as any).split?.driverBonus > 0) && (
+                  <div className="space-y-3 pt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                    <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      🖊️ Водитель — ФИО и роспись
+                      <span className="text-xs font-normal text-slate-500 italic">(для Ведомости учёта)</span>
+                    </p>
+                    {(() => {
+                      const drivers = ((foundCounterAgent as any)?.drivers || []) as Array<{
+                        id?: string; name: string; phone?: string; position?: string; plates?: string[]; signature?: string;
+                      }>;
+                      // Phase 60e — найти водителя в списке CA по текущему ФИО (case-insensitive)
+                      // для auto-prefill подписи при ручном вводе совпадающего имени.
+                      const matchedDriver = drivers.find(d => d.name.trim().toLowerCase() === driverNameInput.trim().toLowerCase());
+                      return (
+                        <>
+                          {/* Phase 60d — умный селектор водителей: pills для ≤6, combobox с поиском для больших списков.
+                              Авто-выбор по plate если водитель закреплён за этим номером. */}
+                          {drivers.length > 0 && (
+                            <div className="space-y-1.5">
+                              <label className="zorin-form-label text-xs">Водители контрагента ({drivers.length})</label>
+                              <DriverComboBox
+                                drivers={drivers}
+                                selectedName={driverNameInput}
+                                vehiclePlate={normalizedVehicleNumber}
+                                onPick={(d) => {
+                                  setDriverNameInput(d.name);
+                                  if (d.signature) {
+                                    setDriverSignatureDataUrl(d.signature);
+                                    setDriverSignatureSource('cached');
+                                  } else {
+                                    setDriverSignatureDataUrl(null);
+                                    setDriverSignatureSource(null);
+                                  }
+                                }}
+                                onClear={() => {
+                                  setDriverNameInput('');
+                                  setDriverSignatureDataUrl(null);
+                                  setDriverSignatureSource(null);
+                                }}
+                              />
+                            </div>
+                          )}
+                          <div className="space-y-1.5">
+                            <label className="zorin-form-label text-xs">ФИО водителя</label>
+                            <input
+                              type="text"
+                              placeholder="Иванов И.И."
+                              value={driverNameInput}
+                              onChange={(e) => {
+                                const newName = e.target.value;
+                                setDriverNameInput(newName);
+                                // Phase 60e — авто-подгрузить роспись, если введённое ФИО совпадает с водителем CA
+                                const m = drivers.find(d => d.name.trim().toLowerCase() === newName.trim().toLowerCase());
+                                if (m?.signature) {
+                                  setDriverSignatureDataUrl(m.signature);
+                                  setDriverSignatureSource('cached');
+                                } else if (driverSignatureSource === 'cached') {
+                                  // если ушли с матчевого имени и роспись была подтянутая — снять (т.к. это не его подпись)
+                                  setDriverSignatureDataUrl(null);
+                                  setDriverSignatureSource(null);
+                                }
+                              }}
+                              className="zorin-input"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="zorin-form-label text-xs flex items-center justify-between">
+                              <span>
+                                Роспись водителя
+                                <span className="ml-2 text-[10px] text-slate-500 italic font-normal">
+                                  (можно отрывать — рисуй по частям)
+                                </span>
+                              </span>
+                            </label>
+                            {/* Phase 60e — плашка-подтверждение когда роспись из библиотеки */}
+                            {driverSignatureSource === 'cached' && driverSignatureDataUrl && (
+                              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 flex items-center justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-2 text-[12px] text-emerald-800">
+                                  <span className="text-base">✓</span>
+                                  <span>
+                                    <strong>Подпись водителя сохранена ранее</strong> — будет использована автоматически.
+                                    {' '}Водителю не нужно расписываться повторно.
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDriverSignatureDataUrl(null);
+                                    setDriverSignatureSource(null);
+                                  }}
+                                  className="px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100 rounded whitespace-nowrap"
+                                  title="Очистить и расписаться заново"
+                                >
+                                  Расписаться заново
+                                </button>
+                              </div>
+                            )}
+                            <SignaturePad
+                              value={driverSignatureDataUrl}
+                              onChange={(dataUrl) => {
+                                setDriverSignatureDataUrl(dataUrl);
+                                // если рисовал — это свежая роспись (а не sticky из CA)
+                                if (dataUrl) {
+                                  setDriverSignatureSource('fresh');
+                                } else {
+                                  setDriverSignatureSource(null);
+                                }
+                              }}
+                              height={130}
+                            />
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 <hr />
                 <p className="font-semibold">Оказанные услуги:</p>
                 <ul className="list-disc pl-5 space-y-1">
                   {washServices.map((s, i) => (
-                      <li key={`confirm-${s.id}`}>{s.serviceName}{showPrices && ` - ${s.price} руб.`}{i === 0 && ' (Основная)'}</li>
+                      <li key={`confirm-${s.id}`}>
+                        {s.serviceName}
+                        {showPrices && ` - ${s.price} руб.`}
+                        {i === 0 && ' (Основная)'}
+                        {(s as any).split?.driverBonus > 0 && (
+                          <span
+                            className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-violet-100 text-violet-700"
+                            title="Услуга с разделением расчёта водителю"
+                          >
+                            🔀 split
+                          </span>
+                        )}
+                      </li>
                   ))}
                 </ul>
 
@@ -2021,20 +2259,46 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
 
                 {/* Чаевые */}
                 {showPrices && (
-                  <div className="flex items-center gap-3 pt-2">
-                    <label className="zorin-form-label flex items-center gap-1 mb-0 whitespace-nowrap">
+                  <div className="pt-2">
+                    <label className="zorin-form-label flex items-center gap-1 mb-2">
                       <Coins size={16} className="text-amber-500" />
                       Чаевые
+                      <span className="ml-auto text-xs text-muted-foreground italic font-normal">опционально</span>
                     </label>
-                    <input
-                      type="number"
-                      placeholder="0"
-                      value={tipsInput}
-                      onChange={(e) => setTipsInput(e.target.value)}
-                      className="zorin-input w-32"
-                      min="0"
-                    />
-                    <span className="text-sm text-muted-foreground">руб.</span>
+                    {/* 🔥 ФИКС 2026-05-11: quick-buttons +50/+100/+200/+500 + ручной ввод
+                        для kiosk-режима — не нужно вводить с экранной клавиатуры мокрыми руками */}
+                    {isKioskMode && (
+                      <div className="grid grid-cols-4 gap-1.5 mb-2">
+                        {[50, 100, 200, 500].map((amt) => {
+                          const cur = parseInt(tipsInput || '0', 10) || 0;
+                          const isActive = cur === amt;
+                          return (
+                            <button
+                              key={amt}
+                              onClick={() => setTipsInput(isActive ? '' : String(amt))}
+                              className={`rounded-xl py-3 text-base font-bold transition active:scale-95 ${
+                                isActive
+                                  ? 'bg-amber-100 ring-2 ring-amber-400 text-amber-800 shadow-sm'
+                                  : 'bg-gray-50 ring-1 ring-gray-200 text-gray-700'
+                              }`}
+                            >
+                              +{amt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        placeholder={isKioskMode ? "Своя сумма..." : "0"}
+                        value={tipsInput}
+                        onChange={(e) => setTipsInput(e.target.value)}
+                        className="zorin-input flex-1"
+                        min="0"
+                      />
+                      <span className="text-sm text-muted-foreground">руб.</span>
+                    </div>
                   </div>
                 )}
 
@@ -2055,10 +2319,21 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 )}
 
                 <div className="flex space-x-3 pt-3">
-                  <button onClick={confirmWash} disabled={isLoading} className="zorin-button primary flex-1">
-                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Подтвердить и зарегистрировать
-                  </button>
+                  {(() => {
+                    const hasSplitConfirm = washServices.some((s) => (s as any).split?.driverBonus > 0);
+                    const splitBlockedNoDriver = hasSplitConfirm && !selectedDriver?.name;
+                    return (
+                      <button
+                        onClick={confirmWash}
+                        disabled={isLoading || splitBlockedNoDriver}
+                        className="zorin-button primary flex-1"
+                        title={splitBlockedNoDriver ? 'Выберите водителя для split-услуги' : ''}
+                      >
+                        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {splitBlockedNoDriver ? 'Выберите водителя →' : 'Подтвердить и зарегистрировать'}
+                      </button>
+                    );
+                  })()}
                   <button onClick={() => setCurrentStep("serviceSelection")} className="zorin-button secondary">
                     Назад к услугам
                   </button>
@@ -2074,6 +2349,19 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           )}
         </div>
       )}
+
+      {/* Phase 51c / V2-#4: Driver picker modal — открывается из SplitDriverCard */}
+      <DriverPickerModal
+        open={driverPickerOpen}
+        onOpenChange={setDriverPickerOpen}
+        counterAgent={foundCounterAgent}
+        normalizedVehicleNumber={normalizedVehicleNumber}
+        onPick={(driver) => setSelectedDriver(driver)}
+        newDriverName={newDriverName}
+        setNewDriverName={setNewDriverName}
+        newDriverPhone={newDriverPhone}
+        setNewDriverPhone={setNewDriverPhone}
+      />
 
       <PlateRecognitionDialog
         open={isPlateDialogOpen}

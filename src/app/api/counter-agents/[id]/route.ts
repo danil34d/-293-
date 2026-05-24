@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { CounterAgent } from '@/types';
-import { invalidateCounterAgentsCache } from '@/lib/data';
+import { invalidateCounterAgentsCache, getCounterAgentImpact } from '@/lib/data';
 import { requireAdmin } from '@/lib/server-auth';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
 
@@ -45,6 +45,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         updatedData.id = id;
     }
 
+    // Phase 25a / V2-#7 README: server-side audit enforcement для balance.
+    // Balance НЕ должен меняться через PUT — только через
+    // POST /api/client-transactions/[counterAgentId] (создаёт ClientTransaction
+    // с audit-меткой). Закрывает «обход audit» — UI мог отправить balance в Edit-форме.
     if (existingData) {
       if (updatedData.archived === undefined) {
         updatedData.archived = existingData.archived;
@@ -53,6 +57,29 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       if (updatedData.archivedAt === undefined) {
         updatedData.archivedAt = existingData.archivedAt;
       }
+
+      const incomingBalance = (updatedData as any).balance;
+      const existingBalance = (existingData as any).balance ?? 0;
+      if (incomingBalance !== undefined && Number(incomingBalance) !== Number(existingBalance)) {
+        console.warn(
+          `[counter-agents PUT] Попытка изменить balance ${existingBalance} → ${incomingBalance} ` +
+          `для ${id} (admin: ${auth.id}). Игнорирую — используйте POST /api/client-transactions/${id} для платежа.`
+        );
+      }
+      (updatedData as any).balance = existingBalance;
+    } else {
+      // Phase 26a: создание нового агента — balance НЕЛЬЗЯ задать сразу (audit-bypass).
+      // Если нужна стартовая предоплата — отдельный POST на /api/client-transactions/[newId]
+      // после создания. Это закрывает дыру: раньше POST с body.balance создавал агента
+      // с произвольным balance минуя ClientTransaction audit.
+      const incomingBalance = (updatedData as any).balance;
+      if (incomingBalance !== undefined && Number(incomingBalance) !== 0) {
+        console.warn(
+          `[counter-agents PUT create] Попытка создать ${id} c balance=${incomingBalance} ` +
+          `(admin: ${auth.id}). Forced to 0 — используйте POST /api/client-transactions/${id} для стартового платежа.`
+        );
+      }
+      (updatedData as any).balance = 0;
     }
 
     await saveEntity('counterAgent', updatedData);
@@ -126,9 +153,32 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       );
     }
 
+    // Phase 7 / Finding #25: pre-check на каскадные связи + rateSource.
+    // Без этого DELETE молча обнулит counterAgentId в WashEvent (SetNull),
+    // удалит ClientTransaction каскадом и сломает ZP по схемам с этим rateSource.
+    const impact = await getCounterAgentImpact(id);
+    const hasHistory =
+      impact.washEvents > 0 ||
+      impact.clientTransactions > 0 ||
+      impact.schemesUsingAsRateSource.length > 0;
+
+    const url = new URL(request.url);
+    const force = url.searchParams.get('force') === 'true';
+
+    if (hasHistory && !force) {
+      return NextResponse.json({
+        error: 'У контрагента есть история. Удаление каскадно затронет связанные записи.',
+        impact,
+        cascadeWarning: impact.clientTransactions > 0
+          ? `ClientTransaction × ${impact.clientTransactions} будет УДАЛЕНО каскадно`
+          : null,
+        suggestForce: true,
+      }, { status: 409 });
+    }
+
     await deleteEntity('counterAgent', id);
     invalidateCounterAgentsCache();
-    return NextResponse.json({ message: 'Counter agent deleted successfully' });
+    return NextResponse.json({ message: 'Counter agent deleted successfully', impact });
   } catch (error: any) {
     console.error(`Error deleting counter agent data for ID ${id}:`, error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

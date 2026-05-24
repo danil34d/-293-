@@ -17,6 +17,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DangerGate, SafetyBar } from "@/components/admin";
+import { ConfirmCriticalChangesModal, type CriticalChange } from "./ConfirmCriticalChangesModal";
+import { SchemeImpactPreview } from "./SchemeImpactPreview";
+import { useWatch } from "react-hook-form";
 
 
 const employeeFormSchema = z.object({
@@ -52,6 +56,37 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
   const { toast } = useToast();
   const [salarySchemes, setSalarySchemes] = useState<SalaryScheme[]>([]);
   const [isLoadingSchemes, setIsLoadingSchemes] = useState(true);
+
+  // UX-safety (Phase 4C2): три опасных поля под замком.
+  // По умолчанию locked, пока админ явно не нажмёт «Изменить».
+  // Для NEW (employeeId === undefined) — поля сразу unlocked (создаём с нуля).
+  const isExisting = !!employeeId;
+  const [schemeUnlocked, setSchemeUnlocked] = useState(!isExisting);
+  const [roleUnlocked, setRoleUnlocked] = useState(!isExisting);
+  const [usernameUnlocked, setUsernameUnlocked] = useState(!isExisting);
+
+  // Конфирм-модал для критичных изменений (только на edit)
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    changes: CriticalChange[];
+    data: EmployeeFormValues;
+  } | null>(null);
+
+  // Phase 4D-1: последняя выплата ЗП (для Live Impact Preview warning о расхождении).
+  // Источник: ищем последнюю EmployeeTransaction.type='payment' для этого сотрудника.
+  const [lastPaidPeriod, setLastPaidPeriod] = useState<string | null>(null);
+  useEffect(() => {
+    if (!employeeId) return;
+    fetch(`/api/employees/${employeeId}/transactions`)
+      .then(r => r.ok ? r.json() : [])
+      .then((txns: any[]) => {
+        const payments = (txns || []).filter(t => t.type === 'payment');
+        if (payments.length === 0) return;
+        // Берём самый поздний платёж
+        const latest = payments.reduce((max, t) => new Date(t.date) > new Date(max.date) ? t : max);
+        setLastPaidPeriod(new Date(latest.date).toISOString().slice(0, 7));
+      })
+      .catch(() => { /* silent */ });
+  }, [employeeId]);
 
   useEffect(() => {
     async function fetchSchemes() {
@@ -132,7 +167,71 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
   };
 
 
-  async function onSubmit(data: EmployeeFormValues) {
+  /** Detect critical changes vs initialData (для финального confirm-модала). */
+  function detectCriticalChanges(data: EmployeeFormValues): CriticalChange[] {
+    if (!initialData) return []; // NEW employee — нет diff
+
+    const changes: CriticalChange[] = [];
+
+    const oldScheme = initialData.salarySchemeId || "unassigned";
+    const newScheme = data.salarySchemeId || "unassigned";
+    if (oldScheme !== newScheme) {
+      const oldName = salarySchemes.find((s) => s.id === oldScheme)?.name ?? "Не назначена";
+      const newName = salarySchemes.find((s) => s.id === newScheme)?.name ?? "Не назначена";
+      changes.push({
+        id: "salaryScheme",
+        icon: "wallet-cards",
+        title: "Схема зарплаты",
+        description: (
+          <>
+            <b>{oldName}</b> → <b>{newName}</b>. ZP пересчитается за все будущие мойки.
+            История уже выплаченной ZP не меняется (запись в EmployeeSalarySchemeHistory).
+          </>
+        ),
+        level: "critical",
+      });
+    }
+
+    const oldRole = initialData.role || "employee";
+    const newRole = data.role || "employee";
+    if (oldRole !== newRole) {
+      changes.push({
+        id: "role",
+        icon: "shield-check",
+        title: "Роль в системе",
+        description: (
+          <>
+            <b>{ROLE_LABELS[oldRole as EmployeeRole] ?? oldRole}</b> →{" "}
+            <b>{ROLE_LABELS[newRole as EmployeeRole] ?? newRole}</b>. Меняет доступ;
+            сотрудник может остаться со старой cookie до relogin.
+          </>
+        ),
+        level: "critical",
+      });
+    }
+
+    const oldUsername = initialData.username || "";
+    const newUsername = data.username || "";
+    if (oldUsername !== newUsername) {
+      changes.push({
+        id: "username",
+        icon: "user",
+        title: "Логин (username)",
+        description: (
+          <>
+            <code className="bg-amber-50 px-1 rounded">{oldUsername || "пусто"}</code> →{" "}
+            <code className="bg-amber-50 px-1 rounded">{newUsername || "пусто"}</code>.
+            Старый логин больше не сработает; сотрудник должен использовать новый.
+          </>
+        ),
+        level: "warn",
+      });
+    }
+
+    return changes;
+  }
+
+  async function performSave(data: EmployeeFormValues) {
     const currentEmployeeId = employeeId || `emp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const enforcedRole: EmployeeRole = normalizeEmployeeFormRole(data.role);
 
@@ -149,7 +248,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
       password: data.password || "", // empty = keep old (API handles it)
       salarySchemeId: (data.salarySchemeId === 'unassigned' || !data.salarySchemeId) ? undefined : data.salarySchemeId,
     };
-    
+
     const isNew = !employeeId;
     const url = isNew ? '/api/employees' : `/api/employees/${currentEmployeeId}`;
     const method = isNew ? 'POST' : 'PUT';
@@ -157,9 +256,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
     try {
       const response = await fetch(url, {
         method: method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(employeeToSave),
       });
 
@@ -167,18 +264,25 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
         const errorData = await response.json();
         throw new Error(errorData.error || `Failed to save employee: ${response.statusText}`);
       }
-      
-      router.refresh(); 
+
+      router.refresh();
       toast({
         title: isNew ? "Сотрудник создан" : "Сотрудник обновлен",
         description: `Данные сотрудника ${employeeToSave.fullName} успешно ${isNew ? 'сохранены' : 'обновлены'}.`,
         variant: "default"
       });
-      
+
+      // Закрыть pending confirm
+      setPendingConfirm(null);
+
       if (isNew) {
         router.push('/employees');
+      } else {
+        // Re-lock dangerous fields после успешного сохранения
+        setSchemeUnlocked(false);
+        setRoleUnlocked(false);
+        setUsernameUnlocked(false);
       }
-
     } catch (error: any) {
       console.error("Error saving employee:", error);
       toast({
@@ -189,9 +293,65 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
     }
   }
 
+  async function onSubmit(data: EmployeeFormValues) {
+    // UX-safety: на edit — если есть критичные изменения, открываем confirm-modal
+    const critical = detectCriticalChanges(data);
+    if (critical.length > 0) {
+      setPendingConfirm({ changes: critical, data });
+      return; // submit будет вызван из onConfirm модала
+    }
+    // Безопасный путь — сразу save
+    await performSave(data);
+  }
+
+  // Phase 4D-2: SafetyBar сверху на edit-странице.
+  // Tracks current dirty/dangerous changes vs initialData в реальном времени.
+  // Используем useWatch для отслеживания изменений без re-render всей формы.
+  const watchedScheme = useWatch({ control: form.control, name: 'salarySchemeId' });
+  const watchedRole = useWatch({ control: form.control, name: 'role' });
+  const watchedUsername = useWatch({ control: form.control, name: 'username' });
+
+  const lockedCount = [
+    !schemeUnlocked,
+    !roleUnlocked,
+    !usernameUnlocked,
+  ].filter(Boolean).length;
+
+  const dangerousChangesCount = isExisting ? (
+    (watchedScheme !== (initialData?.salarySchemeId || 'unassigned') ? 1 : 0) +
+    (watchedRole !== normalizeEmployeeFormRole(initialData?.role) ? 1 : 0) +
+    ((watchedUsername || '') !== (initialData?.username || '') ? 1 : 0)
+  ) : 0;
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 md:space-y-8">
+        {/* Phase 4D-2: SafetyBar сверху (только на edit) */}
+        {isExisting && (
+          <SafetyBar
+            level={dangerousChangesCount > 0 ? 'critical' : 'info'}
+            items={[
+              {
+                icon: 'lock',
+                label: 'Опасных полей залочено',
+                value: `${lockedCount} из 3`,
+              },
+              {
+                icon: 'banknote',
+                label: 'Последняя выплата ЗП',
+                value: lastPaidPeriod || 'не было',
+              },
+              {
+                icon: 'edit-3',
+                label: 'Несохранённых изменений',
+                value: dangerousChangesCount > 0
+                  ? `${dangerousChangesCount} критичных`
+                  : 'нет',
+              },
+            ]}
+          />
+        )}
+
         <Card className="shadow-md">
           <CardHeader>
             <CardTitle className="font-headline text-xl flex items-center gap-2">
@@ -301,40 +461,56 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
           </CardContent>
         </Card>
 
-        <Card className="shadow-md">
-          <CardHeader>
-            <CardTitle className="font-headline text-xl flex items-center gap-2">
-              <WalletCards />
-              Настройки зарплаты
-            </CardTitle>
-            <CardDescription>Выберите схему расчета зарплаты для этого сотрудника. Схемы создаются в разделе "Схемы зарплат".</CardDescription>
-          </CardHeader>
-          <CardContent>
+        {/* UX-safety: схема зарплаты под замком (Phase 4C2).
+            Закрывает АРХ-НАХОДКИ #2: смена scheme затрагивает расчёт ZP. */}
+        {isExisting ? (
+          <DangerGate
+            label="Схема зарплаты"
+            level="critical"
+            locked={!schemeUnlocked}
+            currentValue={
+              (() => {
+                const sid = initialData?.salarySchemeId;
+                if (!sid) return "Не назначена";
+                const scheme = salarySchemes.find((s) => s.id === sid);
+                return scheme?.name ?? `(${sid})`;
+              })()
+            }
+            impact="Изменение пересчитает ZP за все будущие мойки. История ранее выплаченных ZP не меняется (фиксируется в EmployeeSalarySchemeHistory)."
+            onUnlock={() => setSchemeUnlocked(true)}
+            onRelock={() => {
+              setSchemeUnlocked(false);
+              form.setValue('salarySchemeId', initialData?.salarySchemeId || 'unassigned');
+            }}
+          >
             <FormField
               control={form.control}
               name="salarySchemeId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Схема зарплаты</FormLabel>
+                  <FormLabel className="text-[12px] text-amber-700">Новая схема</FormLabel>
                   {isLoadingSchemes ? (
                     <div className="flex items-center gap-2 text-muted-foreground">
-                       <Loader2 className="h-4 w-4 animate-spin"/>
-                       <span>Загрузка схем...</span>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Загрузка схем...</span>
                     </div>
                   ) : (
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className="border-amber-400 bg-amber-50/40">
                           <SelectValue placeholder="Выберите схему..." />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="unassigned">Не назначена</SelectItem>
-                        {salarySchemes.map((scheme) => (
-                          <SelectItem key={scheme.id} value={scheme.id}>
-                            {scheme.name}
-                          </SelectItem>
-                        ))}
+                        {salarySchemes
+                          .filter((s) => !s.archived || s.id === initialData?.salarySchemeId)
+                          .map((scheme) => (
+                            <SelectItem key={scheme.id} value={scheme.id}>
+                              {scheme.name}
+                              {scheme.archived && " (архивная)"}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   )}
@@ -342,8 +518,63 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
                 </FormItem>
               )}
             />
-          </CardContent>
-        </Card>
+
+            {/* Phase 4D-1 + Phase 7: Live Impact Preview с реальными данными
+                из /api/employees/[id]/scheme-impact (если employeeId есть). */}
+            <SchemeImpactPreview
+              employeeId={employeeId}
+              oldSchemeId={initialData?.salarySchemeId}
+              newSchemeId={watchedScheme || 'unassigned'}
+              schemes={salarySchemes}
+              lastPaidPeriod={lastPaidPeriod}
+            />
+          </DangerGate>
+        ) : (
+          /* NEW employee — без замка, обычная карточка */
+          <Card className="shadow-md">
+            <CardHeader>
+              <CardTitle className="font-headline text-xl flex items-center gap-2">
+                <WalletCards />
+                Настройки зарплаты
+              </CardTitle>
+              <CardDescription>Выберите схему расчета зарплаты для этого сотрудника. Схемы создаются в разделе "Схемы зарплат".</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FormField
+                control={form.control}
+                name="salarySchemeId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Схема зарплаты</FormLabel>
+                    {isLoadingSchemes ? (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Загрузка схем...</span>
+                      </div>
+                    ) : (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Выберите схему..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="unassigned">Не назначена</SelectItem>
+                          {salarySchemes.filter((s) => !s.archived).map((scheme) => (
+                            <SelectItem key={scheme.id} value={scheme.id}>
+                              {scheme.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="shadow-md">
           <CardHeader>
@@ -354,50 +585,136 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
             <CardDescription>Задайте логин и пароль для доступа сотрудника к рабочей станции. Это необязательные поля.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <FormField
-              control={form.control}
-              name="username"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Логин (Username)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="ivanov_i" {...field} value={field.value || ''} />
-                  </FormControl>
-                  <FormDescription>
-                    Рекомендуется использовать латинские буквы, цифры и нижнее подчеркивание.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" />Роль</FormLabel>
-                  <Select
-                    onValueChange={(value) => field.onChange(value as EmployeeRole)}
-                    value={field.value}
-                  >
+            {/* Username: warn-level DangerGate на edit */}
+            {isExisting ? (
+              <DangerGate
+                label="Логин (username)"
+                level="warn"
+                locked={!usernameUnlocked}
+                currentValue={initialData?.username || <span className="text-gray-400">не задан</span>}
+                impact="UNIQUE-поле. Старый логин больше не сработает; сотруднику нужно использовать новый при следующем входе."
+                onUnlock={() => setUsernameUnlocked(true)}
+                onRelock={() => {
+                  setUsernameUnlocked(false);
+                  form.setValue('username', initialData?.username || '');
+                }}
+              >
+                <FormField
+                  control={form.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Input
+                          placeholder="ivanov_i"
+                          className="border-amber-400 bg-amber-50/40"
+                          {...field}
+                          value={field.value || ''}
+                        />
+                      </FormControl>
+                      <FormDescription className="text-[11px]">
+                        Латинские буквы, цифры и нижнее подчёркивание. Должен быть уникальным.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </DangerGate>
+            ) : (
+              <FormField
+                control={form.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Логин (Username)</FormLabel>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите роль..." />
-                      </SelectTrigger>
+                      <Input placeholder="ivanov_i" {...field} value={field.value || ''} />
                     </FormControl>
-                    <SelectContent>
-                      {(Object.entries(ROLE_LABELS) as [EmployeeRole, string][]).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    Администратор — полный доступ. Сотрудник — заказы, график, зарплата. Киоск — общий терминал.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormDescription>
+                      Рекомендуется использовать латинские буквы, цифры и нижнее подчеркивание.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {/* Role: critical-level DangerGate на edit */}
+            {isExisting ? (
+              <DangerGate
+                label="Роль в системе"
+                level="critical"
+                locked={!roleUnlocked}
+                currentValue={ROLE_LABELS[(initialData?.role || 'employee') as EmployeeRole] ?? initialData?.role}
+                impact="Меняет уровень доступа. Cookie сотрудника со старой ролью продолжит работать до relogin (TTL 7 дней)."
+                onUnlock={() => setRoleUnlocked(true)}
+                onRelock={() => {
+                  setRoleUnlocked(false);
+                  form.setValue('role', normalizeEmployeeFormRole(initialData?.role));
+                }}
+              >
+                <FormField
+                  control={form.control}
+                  name="role"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2 text-[12px] text-rose-700">
+                        <ShieldCheck className="h-4 w-4" /> Новая роль
+                      </FormLabel>
+                      <Select
+                        onValueChange={(value) => field.onChange(value as EmployeeRole)}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="border-rose-400 bg-rose-50/40">
+                            <SelectValue placeholder="Выберите роль..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {(Object.entries(ROLE_LABELS) as [EmployeeRole, string][]).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>{label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription className="text-[11px]">
+                        Администратор — полный доступ. Сотрудник — заказы/график/зарплата. Киоск — общий терминал бокса.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </DangerGate>
+            ) : (
+              <FormField
+                control={form.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" />Роль</FormLabel>
+                    <Select
+                      onValueChange={(value) => field.onChange(value as EmployeeRole)}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Выберите роль..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {(Object.entries(ROLE_LABELS) as [EmployeeRole, string][]).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Администратор — полный доступ. Сотрудник — заказы, график, зарплата. Киоск — общий терминал.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <FormField
               control={form.control}
               name="telegramChatId"
@@ -443,6 +760,20 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
           </Button>
         </div>
       </form>
+
+      {/* UX-safety: confirm-modal для критичных изменений (Phase 4C2) */}
+      <ConfirmCriticalChangesModal
+        open={!!pendingConfirm}
+        changes={pendingConfirm?.changes ?? []}
+        employeeName={initialData?.fullName ?? ''}
+        isSubmitting={form.formState.isSubmitting}
+        onCancel={() => setPendingConfirm(null)}
+        onConfirm={() => {
+          if (pendingConfirm) {
+            performSave(pendingConfirm.data);
+          }
+        }}
+      />
     </Form>
   );
 }

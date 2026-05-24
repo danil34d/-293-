@@ -2,6 +2,8 @@
 'use server';
 
 import type { WashEvent, Employee, SalaryScheme, SalaryRate, SalaryReportData, SalaryBreakdownItem, Violation, SalaryPenaltyItem } from '@/types';
+import { isKiosk } from '@/lib/employee-role';
+import { isCompletedWashEvent } from '@/lib/wash-event-status';
 
 // Helper to determine the source type from a wash event
 function getWashSourceType(washEvent: WashEvent): 'retail' | 'aggregator' | 'counterAgent' | null {
@@ -41,34 +43,84 @@ function calculateIndividualShare(
 
   if (numEmployeesOnWash <= 0) return result;
 
+  // Phase 50g (2026-05-23): per-service split-pricing — индивидуальный override схемы.
+  // Если у конкретной услуги в прайсе стоит {driverBonus, employeePct}, эта услуга
+  // считается отдельно: бригаде (price - driverBonus) × employeePct / N, схема игнорируется
+  // для этой строки. Driver bonus отдельно учитывается через DriverKickback (Phase 50d).
+  const allServicesAny = [washEvent.services?.main, ...(washEvent.services?.additional || [])] as any[];
+  let splitEarnings = 0;
+  const splitFormulaParts: string[] = [];
+  const splitServiceNames = new Set<string>();
+  for (const svc of allServicesAny) {
+    if (!svc?.serviceName) continue;
+    const dB = svc.split?.driverBonus;
+    const eP = svc.split?.employeePct;
+    const price = svc.price ?? 0;
+    if (typeof dB === 'number' && dB > 0 && typeof eP === 'number' && eP > 0 && price > 0) {
+      const remaining = Math.max(0, price - dB);
+      const share = (remaining * (eP / 100)) / numEmployeesOnWash;
+      splitEarnings += share;
+      splitServiceNames.add(svc.serviceName);
+      splitFormulaParts.push(
+        `(${price}−${dB})×${eP}%${numEmployeesOnWash > 1 ? `/${numEmployeesOnWash}` : ''}`
+      );
+    }
+  }
+
   if (employeeScheme.type === 'percentage') {
     // For percentage-based schemes:
-    const totalBaseAmount = washEvent.netAmount !== undefined ? washEvent.netAmount : washEvent.totalAmount;
-    const totalAmountAfterDeduction = totalBaseAmount - (employeeScheme.fixedDeduction ?? 0);
-    const percentage = employeeScheme.percentage ?? 0;
-    const totalSalaryPool = totalAmountAfterDeduction * (percentage / 100);
-    const earning = totalSalaryPool / numEmployeesOnWash;
+    // Phase 50g: split-услуги уже посчитаны выше и НЕ должны входить в общую базу.
+    // Считаем сумму НЕ-split услуг и применяем к ней процент.
+    const nonSplitTotal = allServicesAny.reduce((sum, svc) => {
+      if (!svc?.serviceName) return sum;
+      if (splitServiceNames.has(svc.serviceName)) return sum;
+      return sum + (svc.price ?? 0);
+    }, 0);
 
-    result.earnings = earning > 0 ? Math.round(earning * 100) / 100 : 0;
+    // Если split услуг нет — сохраняем старое поведение (использовать netAmount/totalAmount).
+    // Это важно для розницы где totalAmount может включать дополнительные позиции.
+    const hasSplit = splitServiceNames.size > 0;
+    const baseForScheme = hasSplit
+      ? nonSplitTotal
+      : (washEvent.netAmount !== undefined ? washEvent.netAmount : washEvent.totalAmount);
+
+    const afterDeduction = Math.max(0, baseForScheme - (employeeScheme.fixedDeduction ?? 0));
+    const percentage = employeeScheme.percentage ?? 0;
+    const schemePool = afterDeduction * (percentage / 100);
+    const schemeShare = schemePool / numEmployeesOnWash;
+    const totalEarning = splitEarnings + schemeShare;
+
+    result.earnings = totalEarning > 0 ? Math.round(totalEarning * 100) / 100 : 0;
 
     // Build formula string
-    let formulaParts: string[] = [];
-    if (employeeScheme.fixedDeduction && employeeScheme.fixedDeduction > 0) {
-      formulaParts.push(`(${formatRubles(totalBaseAmount)} - ${formatRubles(employeeScheme.fixedDeduction)})`);
-    } else {
-      formulaParts.push(formatRubles(totalBaseAmount));
+    const formulaParts: string[] = [];
+    if (splitFormulaParts.length > 0) {
+      formulaParts.push(`split: ${splitFormulaParts.join(' + ')}`);
     }
-    formulaParts.push(`× ${percentage}%`);
-    if (numEmployeesOnWash > 1) {
-      formulaParts.push(`/ ${numEmployeesOnWash} чел.`);
+    if (baseForScheme > 0 && percentage > 0) {
+      let schemeFormula = '';
+      if (employeeScheme.fixedDeduction && employeeScheme.fixedDeduction > 0) {
+        schemeFormula = `(${formatRubles(baseForScheme)} - ${formatRubles(employeeScheme.fixedDeduction)}) × ${percentage}%`;
+      } else {
+        schemeFormula = `${formatRubles(baseForScheme)} × ${percentage}%`;
+      }
+      if (numEmployeesOnWash > 1) {
+        schemeFormula += ` / ${numEmployeesOnWash} чел.`;
+      }
+      formulaParts.push(schemeFormula);
     }
-    result.formula = formulaParts.join(' ');
+    result.formula = formulaParts.join(' + ');
 
     return result;
   }
 
   if (employeeScheme.type === 'rate') {
     // For rate-based schemes:
+    // Phase 50 / V2-#4 split-pricing note: если у rate.splitDriverBonus определён —
+    // услуга split. salary-calculator использует только `rate` (фикс мойщику),
+    // splitDriverBonus игнорируется (это отдельный DriverKickback workflow).
+    // Q5 пропорция: rate делится на numEmployeesOnWash ниже как обычно.
+    // Q4: split требует type='rate' scheme (percentage схемы не поддерживают).
     const schemeSource = employeeScheme.rateSource;
 
     // 1. If a source is defined, check if the scheme is applicable to this specific wash.
@@ -89,6 +141,7 @@ function calculateIndividualShare(
 
 
     // 2. Calculate the total rate for all services performed, applying per-service deductions.
+    // Phase 50g: split-услуги уже посчитаны выше — пропускаем их при подсчёте rate.
     const allServices = [washEvent.services.main, ...washEvent.services.additional];
     let totalRateForWash = 0;
     const rateMap = new Map<string, SalaryRate>(employeeScheme.rates?.map(r => [r.serviceName, r]) || []);
@@ -96,6 +149,7 @@ function calculateIndividualShare(
 
     for (const service of allServices) {
       if (!service?.serviceName) continue;
+      if (splitServiceNames.has(service.serviceName)) continue; // Phase 50g: split overrides rate
       const rateItem = rateMap.get(service.serviceName);
       if (rateItem && rateItem.rate > 0) {
         const earningForService = (rateItem.rate ?? 0) - (rateItem.deduction ?? 0);
@@ -115,18 +169,24 @@ function calculateIndividualShare(
       }
     }
 
-    // 3. The employee's earning is their share of the total calculated rate.
-    const earning = totalRateForWash / numEmployeesOnWash;
-    result.earnings = earning > 0 ? Math.round(earning * 100) / 100 : 0;
+    // 3. The employee's earning = split share (Phase 50g) + rate share / N
+    const rateEarning = totalRateForWash / numEmployeesOnWash;
+    const totalEarning = splitEarnings + (rateEarning > 0 ? rateEarning : 0);
+    result.earnings = totalEarning > 0 ? Math.round(totalEarning * 100) / 100 : 0;
 
-    // Build formula string for rate-based
-    if (rateDetails.length > 0) {
-      let formula = `(${rateDetails.join(' + ')}) руб.`;
-      if (numEmployeesOnWash > 1) {
-        formula += ` / ${numEmployeesOnWash} чел.`;
-      }
-      result.formula = formula;
+    // Build formula string
+    const formulaParts: string[] = [];
+    if (splitFormulaParts.length > 0) {
+      formulaParts.push(`split: ${splitFormulaParts.join(' + ')}`);
     }
+    if (rateDetails.length > 0) {
+      let rateFormula = `(${rateDetails.join(' + ')}) руб.`;
+      if (numEmployeesOnWash > 1) {
+        rateFormula += ` / ${numEmployeesOnWash} чел.`;
+      }
+      formulaParts.push(rateFormula);
+    }
+    result.formula = formulaParts.join(' + ');
 
     return result;
   }
@@ -139,10 +199,19 @@ export async function generateSalaryReport(
   washEvents: WashEvent[],
   employees: Employee[],
   salarySchemes: SalaryScheme[],
-  violations?: Violation[]
+  violations?: Violation[],
+  /**
+   * 🔥 ФИКС 2026-05-05: Полный список сотрудников для определения команды.
+   * Если caller передал только подмножество (например один emp для отчёта),
+   * без allEmployees мы не сможем правильно посчитать numEmployeesOnWash —
+   * остальные участники мойки будут считаться "не найденными" и отфильтруются.
+   * Если не передан — fallback на employees (legacy совместимость).
+   */
+  allEmployees?: Employee[],
 ): Promise<SalaryReportData[]> {
   const schemeMap = new Map(salarySchemes.map(s => [s.id, s]));
   const salaryData: Record<string, SalaryReportData> = {};
+  const teamLookup = allEmployees ?? employees;
 
   // Initialize data for all employees
   for (const emp of employees) {
@@ -157,12 +226,34 @@ export async function generateSalaryReport(
   }
 
   for (const event of washEvents) {
+    // 🔥 Phase 9 / finding #37: исключаем dismissed (отказанные клиентом) мойки
+    // из ZP-расчёта. Раньше сотрудник получал деньги за мойку, которая физически
+    // не была сделана (status='dismissed' = «уехал не помывшись»).
+    // restored — это снова валидная мойка, она пройдёт isCompletedWashEvent.
+    if (!isCompletedWashEvent(event)) continue;
+
     if (!event.employeeIds || event.employeeIds.length === 0) continue;
 
-    // Use event.employeeIds.length for total count (not filtered employees)
-    const numEmployeesOnWash = event.employeeIds.length;
+    // 🔥 ФИКС 2026-05-05: исключаем терминалы (kiosk/kiosk1) из расчёта зарплаты.
+    // Терминал — устройство (телефон на стене), не сотрудник.
+    //
+    // ВАЖНО: используем teamLookup (allEmployees), а не employees!
+    // Если caller передал только одного emp в employees, остальные участники мойки
+    // НЕ нашлись бы и считались "kiosk" по ошибке → numEmployeesOnWash = 1 → 810₽
+    // вместо правильных 405₽ при делении 1800 × 45% / 2.
+    const realEmployeeIds = event.employeeIds.filter((id) => {
+      const emp = teamLookup.find((e) => e.id === id);
+      // Если не нашли — это либо удалённый, либо kiosk (если teamLookup без kiosk).
+      // Чтобы делитель был корректным, caller ОБЯЗАН передать allEmployees
+      // (полный список включая kiosk) — тогда .find точно найдёт kiosk → isKiosk → отфильтруем.
+      if (!emp) return false;
+      return !isKiosk(emp);
+    });
+    if (realEmployeeIds.length === 0) continue;
 
-    const employeesOnWash = event.employeeIds.map(id => employees.find(e => e.id === id)).filter(Boolean) as Employee[];
+    const numEmployeesOnWash = realEmployeeIds.length;
+    // employeesOnWash оставляем по `employees` — это те, для кого считаем зарплату
+    const employeesOnWash = realEmployeeIds.map(id => employees.find(e => e.id === id)).filter(Boolean) as Employee[];
     if (employeesOnWash.length === 0) continue;
 
     for (const employee of employeesOnWash) {

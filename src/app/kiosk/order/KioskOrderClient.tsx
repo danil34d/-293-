@@ -23,6 +23,11 @@ function EventRow({ event, employees }: { event: WashEvent; employees: Employee[
     .map(id => employees.find(e => e.id === id)?.fullName?.split(' ')[0] || '')
     .filter(Boolean)
     .join(', ');
+  // Phase 60g — privacy: показываем сумму только для физ.оплаты, для безнала «по договору» вместо ₽
+  const isPhysical = event.paymentMethod === 'cash' || event.paymentMethod === 'card' || event.paymentMethod === 'transfer';
+  const amountLabel = isPhysical
+    ? (event.totalAmount ? `${event.totalAmount} ₽` : '')
+    : 'безнал';
 
   return (
     <div className="flex items-center justify-between py-2 px-4 border-b last:border-0">
@@ -34,7 +39,7 @@ function EventRow({ event, employees }: { event: WashEvent; employees: Employee[
         </div>
       </div>
       <div className="text-right flex-shrink-0">
-        <span className="text-sm font-medium">{event.totalAmount ? `${event.totalAmount} ₽` : ''}</span>
+        <span className={`text-sm font-medium ${isPhysical ? '' : 'text-slate-400 italic text-xs'}`}>{amountLabel}</span>
         <span className="text-xs text-muted-foreground ml-1.5">{time}</span>
       </div>
     </div>
@@ -44,6 +49,10 @@ function EventRow({ event, employees }: { event: WashEvent; employees: Employee[
 export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, allEmployees, initialPendingVehicles }: KioskOrderClientProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [pendingVehicles, setPendingVehicles] = useState(initialPendingVehicles);
+  // 🔥 ФИКС 2026-05-11: когда оператор перешёл в активный wizard (выбор оплаты/услуг/подтверждение),
+  // скрываем вспомогательные panels — иначе они перекрывают форму на маленьком экране.
+  // Источник правды: ZorinWorkstationConsole сообщает через onWizardStateChange.
+  const [isInWizard, setIsInWizard] = useState(false);
 
   const sortByTime = (events: WashEvent[]) => [...events].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
 
@@ -52,9 +61,13 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
   const box1PendingVehicles = pendingVehicles.filter((vehicle) => vehicle.boxNumber === 1);
   const box2PendingVehicles = pendingVehicles.filter((vehicle) => vehicle.boxNumber === 2);
 
-  const totalAmount = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
-  const box1Total = box1Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
-  const box2Total = box2Events.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  // Phase 60g — privacy: суммы только по физическим деньгам (касса/банк/перевод),
+  // безнал/агрегаторы/контрагенты НЕ включаем (это финансы владельца).
+  const isPhysicalPayment = (e: WashEvent) =>
+    e.paymentMethod === 'cash' || e.paymentMethod === 'card' || e.paymentMethod === 'transfer';
+  const totalAmount = todayEvents.filter(isPhysicalPayment).reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  const box1Total = box1Events.filter(isPhysicalPayment).reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+  const box2Total = box2Events.filter(isPhysicalPayment).reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
   useEffect(() => {
     let ignore = false;
@@ -92,15 +105,21 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
       <ZorinWorkstationConsole
         isKioskMode={true}
         scheduleByBox={{ box1: box1Employees, box2: box2Employees }}
+        onWizardStateChange={setIsInWizard}
       />
 
+      {/* 🔥 ФИКС 2026-05-11: Pending + History скрыты когда оператор в wizard
+          (выбор оплаты/услуг/подтверждение) — чтобы не наезжали на форму */}
+      {!isInWizard && (
+      <>
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            <Truck className="mr-1 inline h-4 w-4" />
-            Неоформленные машины из камер
+        <div className="flex items-center justify-between rounded-xl bg-amber-50 ring-1 ring-amber-200 px-3 py-2">
+          <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2">
+            <Truck className="h-4 w-4 text-amber-700" />
+            <span>Машины из камер</span>
+            <span className="text-xs font-normal text-amber-700/70">ждут оформления</span>
           </h3>
-          <span className="text-sm font-medium text-amber-700">
+          <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
             {pendingVehicles.length}
           </span>
         </div>
@@ -220,6 +239,8 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

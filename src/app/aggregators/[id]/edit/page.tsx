@@ -3,18 +3,22 @@ export const dynamic = 'force-dynamic';
 
 import PageHeader from '@/components/layout/PageHeader';
 import { AggregatorForm } from '../../components/AggregatorForm';
-import type { Aggregator } from '@/types';
+import type { Aggregator, OurCompany } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getAggregatorById } from '@/lib/data';
+import { getAggregatorById, getOurCompaniesData } from '@/lib/data';
 
 export default async function EditAggregatorPage({ params }: { params: { id: string } }) {
   const aggregatorId = params.id;
   let aggregator: Aggregator | null = null;
+  let ourCompanies: OurCompany[] = [];
   let fetchError: string | null = null;
 
   try {
-    aggregator = await getAggregatorById(aggregatorId);
+    [aggregator, ourCompanies] = await Promise.all([
+      getAggregatorById(aggregatorId),
+      getOurCompaniesData().catch(() => []),
+    ]);
     if (!aggregator) {
       fetchError = `Агрегатор с ID "${aggregatorId}" не найден.`;
     }
@@ -56,7 +60,7 @@ export default async function EditAggregatorPage({ params }: { params: { id: str
         title={`Редактировать агрегатора`}
         description={`Обновление данных для ${aggregator.name}.`}
       />
-      <AggregatorForm initialData={aggregator} aggregatorId={aggregatorId} />
+      <AggregatorForm initialData={aggregator} aggregatorId={aggregatorId} ourCompanies={ourCompanies} />
     </div>
   );
 }

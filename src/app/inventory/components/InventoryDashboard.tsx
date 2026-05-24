@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { calculateWashesPerCanister, calculateConcentratePerWash, type DilutionSettings } from '@/lib/utils';
 import { Car } from 'lucide-react';
+import { RecomputeStockSection } from './RecomputeStockSection';
 
 interface InventoryDashboardProps {
   inventory: Inventory;
@@ -486,6 +487,9 @@ export function InventoryDashboard({ inventory, allWashEvents, allExpenses, allE
                     </AlertDescription>
                 </Alert>
             )}
+
+            {/* Phase 6.3 / UX-safety: пересчёт остатков из StockMovement */}
+            <RecomputeStockSection />
 
             {/* Кнопки действий */}
             <div className="flex flex-wrap gap-3">

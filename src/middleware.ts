@@ -6,12 +6,15 @@ const DEFAULT_SECRET = 'zorin-carwash-dev-secret-change-in-production';
 const PUBLIC_PATHS = [
   '/login',
   '/wallboard',
+  '/k',                  // 🔥 короткий URL входа терминала (auto-login для LAN)
 ];
 
 const PUBLIC_API_PREFIXES = [
-  '/api/auth/',
+  '/api/auth/',          // включает /api/auth/kiosk-init
   '/api/wallboard',
   '/api/device-heartbeat',
+  '/api/app-version',    // UpdateChecker в APK (может вызывать без cookie на первом старте)
+  '/api/download',       // Скачивание APK (через apkUrl из app-version)
 ];
 
 function isStaticAsset(pathname: string): boolean {

@@ -2,8 +2,9 @@
 import "@/styles/settings.css";
 import Link from 'next/link';
 import { RetailPriceListForm } from './components/RetailPriceListForm';
-import { ResetDataButton } from './components/ResetDataButton';
-import { getWashEventsData, getEmployeesData } from '@/lib/data';
+import { DangerZone } from './components/DangerZone';
+import { OurCompanySection } from './components/OurCompanySection';
+import { getWashEventsData, getEmployeesData, getOurCompaniesData } from '@/lib/data';
 import type { WashEvent, Employee } from '@/types';
 import { AlertTriangle, ScanLine, ChevronRight } from 'lucide-react';
 
@@ -11,20 +12,21 @@ export const dynamic = 'force-dynamic';
 
 async function fetchData() {
     try {
-        const [washEvents, employees]: [WashEvent[], Employee[]] = await Promise.all([
+        const [washEvents, employees, ourCompanies]: [WashEvent[], Employee[], any[]] = await Promise.all([
             getWashEventsData(),
             getEmployeesData(),
+            getOurCompaniesData().catch(() => []),
         ]);
-        return { washEvents, employees, error: null };
+        return { washEvents, employees, ourCompanies, error: null };
     } catch (e: any) {
         console.error("Failed to fetch data for settings page:", e);
-        return { washEvents: [], employees: [], error: e.message || "Не удалось загрузить данные для анализа услуг." };
+        return { washEvents: [], employees: [], ourCompanies: [], error: e.message || "Не удалось загрузить данные для анализа услуг." };
     }
 }
 
 
 export default async function SettingsPage() {
-  const { washEvents, employees, error } = await fetchData();
+  const { washEvents, employees, ourCompanies, error } = await fetchData();
 
   return (
     <div className="settings">
@@ -52,7 +54,12 @@ export default async function SettingsPage() {
       </div>
 
       <div className="price-list-form-card" style={{ marginTop: '2rem' }}>
-        <ResetDataButton />
+        <DangerZone />
+      </div>
+
+      {/* Our Companies Section */}
+      <div className="price-list-form-card" style={{ marginTop: '2rem' }}>
+        <OurCompanySection companies={ourCompanies} />
       </div>
 
       {/* OCR Section */}

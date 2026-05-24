@@ -57,6 +57,16 @@ function washEventFromPrisma(row: any): WashEvent {
     cameraSession: parseJsonField(row.cameraSession, undefined),
     dismissal: parseJsonField(row.dismissal, undefined),
     restoration: parseJsonField(row.restoration, undefined),
+    // Phase 8 / finding #38
+    createdInClosedPeriod: row.createdInClosedPeriod ?? false,
+    closedPeriodAtCreate: row.closedPeriodAtCreate ?? undefined,
+    // Phase 10 / finding #40
+    createdByEmployeeId: row.createdByEmployeeId ?? undefined,
+    // Phase 57 / multi-company
+    ourCompanyId: row.ourCompanyId ?? undefined,
+    // Phase 60a/b — driver name + digital signature captured on kiosk
+    driverName: row.driverName ?? undefined,
+    driverSignature: row.driverSignature ?? undefined,
   };
 }
 
@@ -80,6 +90,8 @@ function employeeFromPrisma(row: any): Employee {
     weekendPreferredShiftType: row.weekendPreferredShiftType ?? undefined,
     targetShiftsPerMonth: row.targetShiftsPerMonth ?? undefined,
     wantsMoreShifts: row.wantsMoreShifts ?? undefined,
+    archived: row.archived ?? false,
+    archivedAt: row.archivedAt ?? undefined,
   };
 }
 
@@ -94,6 +106,8 @@ function aggregatorFromPrisma(row: any): Aggregator {
     cars: parseJsonField(row.cars, []),
     priceLists: parseJsonField(row.priceLists, []),
     activePriceListName: row.activePriceListName ?? undefined,
+    // Phase 57 / multi-company
+    preferredOurCompanyId: row.preferredOurCompanyId ?? undefined,
   };
 }
 
@@ -116,6 +130,10 @@ function counterAgentFromPrisma(row: any): CounterAgent {
     allowCustomServices: row.allowCustomServices,
     archived: row.archived,
     archivedAt: row.archivedAt ?? undefined,
+    // Phase 50 / V2-#4: drivers (Json) — split-pricing
+    drivers: parseJsonField(row.drivers, []),
+    // Phase 57 / multi-company
+    preferredOurCompanyId: row.preferredOurCompanyId ?? undefined,
   };
 }
 
@@ -129,6 +147,8 @@ function expenseFromPrisma(row: any): Expense {
     quantity: row.quantity ?? undefined,
     unit: row.unit ?? undefined,
     pricePerUnit: row.pricePerUnit ?? undefined,
+    // Phase 57 / multi-company
+    ourCompanyId: row.ourCompanyId ?? undefined,
   };
 }
 
@@ -151,6 +171,8 @@ function clientTransactionFromPrisma(row: any): ClientTransaction {
     type: row.type as any,
     amount: row.amount,
     description: row.description,
+    // Phase 57 / multi-company
+    ourCompanyId: row.ourCompanyId ?? undefined,
   };
 }
 
@@ -182,6 +204,8 @@ function salarySchemeFromPrisma(row: any): SalaryScheme {
     fixedDeduction: row.fixedDeduction ?? undefined,
     rateSource: parseJsonField(row.rateSource, undefined),
     rates: parseJsonField(row.rates, undefined),
+    archived: row.archived ?? false,
+    archivedAt: row.archivedAt ?? undefined,
   };
 }
 
@@ -211,6 +235,11 @@ function canisterFromPrisma(row: any): EmployeeChemicalCanister {
     priceRub: row.priceRub,
     status: row.status as any,
     transactionId: row.transactionId ?? undefined,
+    // Phase 52 / V2-NEW-1 канистры
+    mode: row.mode as any,
+    issuedBy: row.issuedBy ?? undefined,
+    notes: row.notes ?? '',
+    washPoint: row.washPoint ?? undefined,
   };
 }
 
@@ -632,6 +661,17 @@ export async function saveWashEvent(data: any): Promise<void> {
       cameraSession: data.cameraSession ?? undefined,
       dismissal: data.dismissal ?? undefined,
       restoration: data.restoration ?? undefined,
+      // Phase 8 / finding #38
+      createdInClosedPeriod: data.createdInClosedPeriod ?? false,
+      closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
+      // Phase 10 / finding #40 — НЕ перезаписываем при upsert update,
+      // чтобы не потерять оригинального автора при последующих edit'ах.
+      // (Update path — это PUT, у нас createdByEmployeeId фиксируется только на create.)
+      // Phase 57 / multi-company — admin может сменить ИП через UI (override)
+      ourCompanyId: data.ourCompanyId ?? null,
+      // Phase 60: водитель + цифровая роспись (для автозаполнения Ведомости учёта)
+      driverName: data.driverName ?? null,
+      driverSignature: data.driverSignature ?? null,
     },
     create: {
       id: data.id,
@@ -662,6 +702,16 @@ export async function saveWashEvent(data: any): Promise<void> {
       cameraSession: data.cameraSession ?? undefined,
       dismissal: data.dismissal ?? undefined,
       restoration: data.restoration ?? undefined,
+      // Phase 8 / finding #38
+      createdInClosedPeriod: data.createdInClosedPeriod ?? false,
+      closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
+      // Phase 10 / finding #40 — фиксируется только на create (PUT не трогает)
+      createdByEmployeeId: data.createdByEmployeeId ?? null,
+      // Phase 57 / multi-company — какое НАШЕ ИП оказало услугу
+      ourCompanyId: data.ourCompanyId ?? null,
+      // Phase 60: водитель + цифровая роспись
+      driverName: data.driverName ?? null,
+      driverSignature: data.driverSignature ?? null,
     },
   });
 
@@ -703,6 +753,8 @@ export async function saveEmployee(data: any): Promise<void> {
       weekendPreferredShiftType: data.weekendPreferredShiftType ?? null,
       targetShiftsPerMonth: data.targetShiftsPerMonth ?? null,
       wantsMoreShifts: data.wantsMoreShifts ?? null,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
     create: {
       id: data.id,
@@ -721,12 +773,924 @@ export async function saveEmployee(data: any): Promise<void> {
       weekendPreferredShiftType: data.weekendPreferredShiftType ?? null,
       targetShiftsPerMonth: data.targetShiftsPerMonth ?? null,
       wantsMoreShifts: data.wantsMoreShifts ?? null,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
   });
 }
 
 export async function deleteEmployee(id: string): Promise<void> {
   await prisma.employee.delete({ where: { id } });
+}
+
+/**
+ * UX-safety: soft-delete сотрудника (Phase 6.2).
+ * Архивные пропадают из активных списков и графиков, но история сохраняется.
+ * См. АДМИНКА-АРХИТЕКТУРНЫЕ-НАХОДКИ #1 (cascade 7 таблиц).
+ */
+export async function archiveEmployee(id: string): Promise<void> {
+  await prisma.employee.update({
+    where: { id },
+    data: { archived: true, archivedAt: new Date().toISOString() },
+  });
+}
+
+/** Возвращает сотрудника обратно из архива. */
+export async function unarchiveEmployee(id: string): Promise<void> {
+  await prisma.employee.update({
+    where: { id },
+    data: { archived: false, archivedAt: null },
+  });
+}
+
+/**
+ * Phase 24a / V2-#2 / finding #7 АРХ-НАХОДКИ: атомарный реверс StockMovement при DELETE Expense.
+ *
+ * Проблема: DELETE Expense (категория Закупка химии) оставляет
+ *   - StockMovement.purchase orphan (FK не cascade)
+ *   - Inventory.chemicalStockGrams (AppConfig JSON) не пересчитан
+ *   - История остаётся «бита» (Phase 20 orphan scanner это уже видит, но это репорт-only)
+ *
+ * Решение: при удалении Expense в транзакции
+ *   1. Найти все StockMovement где relatedEntityType='expense' AND relatedEntityId=expenseId
+ *   2. Для каждого — создать reverse-movement type='adjustment' с amount=-original
+ *      (это сохраняет audit trail — оригинал + реверс оба видны в журнале)
+ *   3. Декремент InventoryMaterial.currentStock на сумму реверсируемых amounts
+ *
+ * Возвращает summary: сколько реверсировано, на какую сумму kg.
+ */
+export async function reverseExpenseStockMovements(
+  expenseId: string,
+  employeeId?: string
+): Promise<{
+  reversed: number;
+  totalGramsReversed: number;
+  reverseMovementIds: string[];
+}> {
+  const movements = await prisma.stockMovement.findMany({
+    where: {
+      relatedEntityType: 'expense',
+      relatedEntityId: expenseId,
+    },
+    select: {
+      id: true,
+      materialId: true,
+      type: true,
+      amount: true,
+    },
+  });
+
+  if (movements.length === 0) {
+    return { reversed: 0, totalGramsReversed: 0, reverseMovementIds: [] };
+  }
+
+  const now = new Date();
+  const reverseMovementIds: string[] = [];
+  let totalGramsReversed = 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const m of movements) {
+      const reverseAmount = -m.amount;
+      const material = await tx.inventoryMaterial.findUnique({
+        where: { id: m.materialId },
+        select: { currentStock: true },
+      });
+      const newStock = (material?.currentStock ?? 0) + reverseAmount;
+
+      const reverseId = `sm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_rev`;
+      await tx.stockMovement.create({
+        data: {
+          id: reverseId,
+          // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
+          material: { connect: { id: m.materialId } },
+          type: 'adjustment',
+          amount: reverseAmount,
+          balanceAfter: newStock,
+          date: now,
+          description: `Авто-реверс при удалении Expense ${expenseId} (оригинал SM ${m.id}, ${m.type})`,
+          relatedEntityType: 'expense_reversal',
+          relatedEntityId: expenseId,
+          ...(employeeId ? { employee: { connect: { id: employeeId } } } : {}),
+          createdBy: employeeId ?? null,
+        },
+      });
+      await tx.inventoryMaterial.update({
+        where: { id: m.materialId },
+        data: { currentStock: newStock },
+      });
+      reverseMovementIds.push(reverseId);
+      totalGramsReversed += Math.abs(m.amount);
+    }
+  });
+
+  return {
+    reversed: movements.length,
+    totalGramsReversed: Math.round(totalGramsReversed * 100) / 100,
+    reverseMovementIds,
+  };
+}
+
+/**
+ * Phase 20 / finding #8 АРХ-НАХОДКИ: scan orphan StockMovement.
+ *
+ * `StockMovement.relatedEntityType` + `relatedEntityId` — soft FK без БД-констрейнта.
+ * DELETE WashEvent / Expense оставляет StockMovement с битой ссылкой.
+ *
+ * Функция сканирует все StockMovement с relatedEntityType='wash_event'/'expense'
+ * и проверяет существование связанной записи. Возвращает orphan'ы с метаданными.
+ *
+ * Не удаляет (история ценна) — только репортит. Endpoint /api/inventory/orphan-stock
+ * предоставляет результат, UI показывает badge «связь утеряна» рядом со строкой.
+ */
+export async function findOrphanedStockMovements(): Promise<{
+  total: number;
+  orphans: Array<{
+    id: string;
+    materialId: string;
+    type: string;
+    amount: number;
+    date: string;
+    description: string;
+    relatedEntityType: string;
+    relatedEntityId: string;
+    reason: string;
+  }>;
+  summary: {
+    totalMovements: number;
+    withSoftFK: number;
+    orphanCount: number;
+    byReason: Record<string, number>;
+  };
+}> {
+  // 1. Забираем все movements с soft FK (relatedEntityType + relatedEntityId)
+  const movements = await prisma.stockMovement.findMany({
+    where: {
+      relatedEntityType: { not: null },
+      relatedEntityId: { not: null },
+    },
+    select: {
+      id: true,
+      materialId: true,
+      type: true,
+      amount: true,
+      date: true,
+      description: true,
+      relatedEntityType: true,
+      relatedEntityId: true,
+    },
+  });
+
+  const totalAll = await prisma.stockMovement.count();
+  const withSoftFK = movements.length;
+
+  // 2. Группируем по relatedEntityType
+  const byType = new Map<string, Set<string>>();
+  for (const m of movements) {
+    const t = m.relatedEntityType!;
+    if (!byType.has(t)) byType.set(t, new Set());
+    byType.get(t)!.add(m.relatedEntityId!);
+  }
+
+  // 3. Проверяем существование связанных записей batch'ами
+  const existingIds = new Map<string, Set<string>>();
+
+  for (const [type, ids] of byType) {
+    const idsArray = Array.from(ids);
+    const existing = new Set<string>();
+
+    if (type === 'wash_event') {
+      const rows = await prisma.washEvent.findMany({
+        where: { id: { in: idsArray } },
+        select: { id: true },
+      });
+      for (const r of rows) existing.add(r.id);
+    } else if (type === 'expense') {
+      const rows = await prisma.expense.findMany({
+        where: { id: { in: idsArray } },
+        select: { id: true },
+      });
+      for (const r of rows) existing.add(r.id);
+    } else if (type === 'employee') {
+      const rows = await prisma.employee.findMany({
+        where: { id: { in: idsArray } },
+        select: { id: true },
+      });
+      for (const r of rows) existing.add(r.id);
+    } else if (type === 'canister') {
+      const rows = await prisma.employeeCanister.findMany({
+        where: { id: { in: idsArray } },
+        select: { id: true },
+      });
+      for (const r of rows) existing.add(r.id);
+    }
+    // Other types — без проверки, не считаем orphan'ом
+
+    existingIds.set(type, existing);
+  }
+
+  // 4. Собираем orphan'ы
+  const orphans: Array<{
+    id: string;
+    materialId: string;
+    type: string;
+    amount: number;
+    date: string;
+    description: string;
+    relatedEntityType: string;
+    relatedEntityId: string;
+    reason: string;
+  }> = [];
+  const byReason: Record<string, number> = {};
+
+  for (const m of movements) {
+    const type = m.relatedEntityType!;
+    const checkedTypes = new Set(['wash_event', 'expense', 'employee', 'canister']);
+    if (!checkedTypes.has(type)) continue; // unknown type — skip
+
+    const existing = existingIds.get(type) ?? new Set();
+    if (!existing.has(m.relatedEntityId!)) {
+      const reason = `${type} ${m.relatedEntityId} удалён`;
+      byReason[type] = (byReason[type] ?? 0) + 1;
+      orphans.push({
+        id: m.id,
+        materialId: m.materialId,
+        type: m.type,
+        amount: m.amount,
+        date: m.date.toISOString(),
+        description: m.description,
+        relatedEntityType: type,
+        relatedEntityId: m.relatedEntityId!,
+        reason,
+      });
+    }
+  }
+
+  return {
+    total: orphans.length,
+    orphans,
+    summary: {
+      totalMovements: totalAll,
+      withSoftFK,
+      orphanCount: orphans.length,
+      byReason,
+    },
+  };
+}
+
+// ─── Phase 22 / Invoice ─────────────────────────────────────────
+
+function invoiceFromPrisma(row: any): import('@/types').Invoice {
+  return {
+    id: row.id,
+    number: row.number,
+    counterAgentId: row.counterAgentId,
+    counterAgentName: row.counterAgent?.name,
+    periodStart: row.periodStart instanceof Date ? row.periodStart.toISOString() : row.periodStart,
+    periodEnd: row.periodEnd instanceof Date ? row.periodEnd.toISOString() : row.periodEnd,
+    status: (row.status ?? 'draft') as any,
+    subtotal: row.subtotal,
+    discountPercent: row.discountPercent ?? undefined,
+    discountAmount: row.discountAmount ?? undefined,
+    prepayments: row.prepayments ?? undefined,
+    totalAmount: row.totalAmount,
+    items: parseJsonField(row.items, { services: [], washes: [] }),
+    createdByEmployeeId: row.createdByEmployeeId ?? undefined,
+    sentAt: row.sentAt instanceof Date ? row.sentAt.toISOString() : (row.sentAt ?? undefined),
+    sentToEmail: row.sentToEmail ?? undefined,
+    paidAt: row.paidAt instanceof Date ? row.paidAt.toISOString() : (row.paidAt ?? undefined),
+    paidVia: row.paidVia ?? undefined,
+    paidTransactionId: row.paidTransactionId ?? undefined,
+    notes: row.notes ?? '',
+    // Phase 57b.1: multi-company FK
+    ourCompanyId: row.ourCompanyId ?? undefined,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
+  };
+}
+
+export async function getInvoicesData(filters?: {
+  counterAgentId?: string;
+  status?: string;
+  periodFrom?: string;
+  periodTo?: string;
+}): Promise<import('@/types').Invoice[]> {
+  const where: any = {};
+  if (filters?.counterAgentId) where.counterAgentId = filters.counterAgentId;
+  if (filters?.status) where.status = filters.status;
+  if (filters?.periodFrom || filters?.periodTo) {
+    where.periodStart = {};
+    if (filters.periodFrom) where.periodStart.gte = new Date(filters.periodFrom);
+    if (filters.periodTo) where.periodStart.lte = new Date(filters.periodTo);
+  }
+  const rows = await prisma.invoice.findMany({
+    where,
+    include: { counterAgent: { select: { name: true } } },
+    orderBy: [{ createdAt: 'desc' }],
+  });
+  return rows.map(invoiceFromPrisma);
+}
+
+export async function getInvoiceById(id: string): Promise<import('@/types').Invoice | null> {
+  const row = await prisma.invoice.findUnique({
+    where: { id },
+    include: { counterAgent: { select: { name: true } } },
+  });
+  return row ? invoiceFromPrisma(row) : null;
+}
+
+export async function getInvoicesByCounterAgent(counterAgentId: string): Promise<import('@/types').Invoice[]> {
+  return getInvoicesData({ counterAgentId });
+}
+
+/**
+ * Phase 22: генерация номера счёта вида "YYYY-MM-NNN".
+ * NNN — счётчик per-month, начиная с 001. Атомарно через max + 1.
+ */
+export async function generateInvoiceNumber(periodStart: Date): Promise<string> {
+  const year = periodStart.getFullYear();
+  const month = String(periodStart.getMonth() + 1).padStart(2, '0');
+  const prefix = `${year}-${month}-`;
+
+  const existing = await prisma.invoice.findMany({
+    where: { number: { startsWith: prefix } },
+    select: { number: true },
+  });
+  let maxN = 0;
+  for (const inv of existing) {
+    const tail = inv.number.slice(prefix.length);
+    const n = parseInt(tail, 10);
+    if (Number.isFinite(n) && n > maxN) maxN = n;
+  }
+  const next = String(maxN + 1).padStart(3, '0');
+  return `${prefix}${next}`;
+}
+
+/**
+ * Phase 22: основная функция — собрать WashEvent + ClientTransaction за период
+ * и сформировать items snapshot. НЕ создаёт запись в БД — только preview.
+ *
+ * services: агрегация по serviceName (для сводки)
+ * washes: детализация по WashEvent (для сворачиваемого блока)
+ */
+export async function buildInvoicePreview(
+  counterAgentId: string,
+  periodStart: Date,
+  periodEnd: Date,
+  discountPercent?: number
+): Promise<{
+  counterAgentId: string;
+  periodStart: string;
+  periodEnd: string;
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments: number;
+  totalAmount: number;
+  items: import('@/types').InvoiceItems;
+  washCount: number;
+}> {
+  // 1. Все completed WashEvent за период для этого counterAgent
+  const washEvents = await prisma.washEvent.findMany({
+    where: {
+      counterAgentId,
+      timestamp: { gte: periodStart, lte: periodEnd },
+      OR: [{ status: null }, { status: 'completed' }, { status: 'restored' }],
+    },
+    orderBy: { timestamp: 'asc' },
+  });
+
+  // 2. Все ClientTransaction (type='payment') за период для предоплат
+  const prepaymentsRows = await prisma.clientTransaction.findMany({
+    where: {
+      counterAgentId,
+      date: { gte: periodStart, lte: periodEnd },
+      type: 'payment',
+    },
+    select: { amount: true },
+  });
+  const prepayments = prepaymentsRows.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+  // 3. Aggregate by serviceName (для services array)
+  const serviceMap = new Map<string, { qty: number; pricePerUnit: number; total: number }>();
+  const washes: import('@/types').InvoiceWashItem[] = [];
+  let subtotal = 0;
+
+  for (const w of washEvents) {
+    const services = parseJsonField(w.services, { main: { serviceName: '', price: 0 }, additional: [] });
+    const allServices = [services.main, ...(services.additional || [])].filter((s: any) => s?.serviceName);
+
+    // Краткое описание услуг для wash item
+    const serviceShort = allServices.map((s: any) => s.serviceName).join(' + ') || '—';
+    const washTotal = w.totalAmount || 0;
+    subtotal += washTotal;
+
+    washes.push({
+      id: w.id,
+      date: w.timestamp.toISOString(),
+      plate: w.vehicleNumber,
+      vehicleType: undefined,
+      services: serviceShort,
+      total: washTotal,
+    });
+
+    // Aggregation: по каждой услуге отдельно (так клиент видит «Мойка тягача × 5»)
+    for (const s of allServices) {
+      const key = s.serviceName;
+      const price = s.price ?? 0;
+      const existing = serviceMap.get(key);
+      if (existing) {
+        existing.qty += 1;
+        existing.total += price;
+        // pricePerUnit оставляем как первое — если цены разные, average считаем в конце
+      } else {
+        serviceMap.set(key, { qty: 1, pricePerUnit: price, total: price });
+      }
+    }
+  }
+
+  // Финализируем services с average price если total/qty не равен pricePerUnit
+  const services: import('@/types').InvoiceServiceItem[] = [];
+  for (const [name, s] of serviceMap) {
+    const avgPrice = s.qty > 0 ? Math.round((s.total / s.qty) * 100) / 100 : 0;
+    services.push({ name, qty: s.qty, pricePerUnit: avgPrice, total: s.total });
+  }
+  services.sort((a, b) => b.total - a.total);
+
+  // Discount
+  const discountAmount = discountPercent ? Math.round((subtotal * discountPercent) / 100 * 100) / 100 : 0;
+  const totalAmount = Math.max(0, subtotal - discountAmount - prepayments);
+
+  return {
+    counterAgentId,
+    periodStart: periodStart.toISOString(),
+    periodEnd: periodEnd.toISOString(),
+    subtotal,
+    discountPercent,
+    discountAmount,
+    prepayments,
+    totalAmount,
+    items: { services, washes },
+    washCount: washes.length,
+  };
+}
+
+/**
+ * Phase 22: создать Invoice в БД из preview.
+ * Auto-number, status='draft' по умолчанию.
+ */
+export async function createInvoice(data: {
+  counterAgentId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  subtotal: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  prepayments?: number;
+  totalAmount: number;
+  items: import('@/types').InvoiceItems;
+  createdByEmployeeId?: string;
+  notes?: string;
+  // Phase 57b.1: multi-company FK. Если не указан — резолвится из counterAgent.preferredOurCompanyId или primary.
+  ourCompanyId?: string | null;
+}): Promise<import('@/types').Invoice> {
+  const number = await generateInvoiceNumber(data.periodStart);
+
+  // Auto-resolve ourCompanyId если не передали явно: counterAgent.preferredOurCompanyId → primary
+  let resolvedOurCompanyId: string | null = data.ourCompanyId ?? null;
+  if (!resolvedOurCompanyId) {
+    const agent = await prisma.counterAgent.findUnique({
+      where: { id: data.counterAgentId },
+      select: { preferredOurCompanyId: true },
+    });
+    if (agent?.preferredOurCompanyId) {
+      resolvedOurCompanyId = agent.preferredOurCompanyId;
+    } else {
+      const primary = await prisma.ourCompany.findFirst({
+        where: { isPrimary: true, archived: false },
+        select: { id: true },
+      });
+      resolvedOurCompanyId = primary?.id ?? null;
+    }
+  }
+
+  const created = await prisma.invoice.create({
+    data: {
+      number,
+      counterAgentId: data.counterAgentId,
+      periodStart: data.periodStart,
+      periodEnd: data.periodEnd,
+      status: 'draft',
+      subtotal: data.subtotal,
+      discountPercent: data.discountPercent ?? null,
+      discountAmount: data.discountAmount ?? 0,
+      prepayments: data.prepayments ?? 0,
+      totalAmount: data.totalAmount,
+      items: data.items as any,
+      createdByEmployeeId: data.createdByEmployeeId ?? null,
+      notes: data.notes ?? '',
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: resolvedOurCompanyId,
+    },
+    include: { counterAgent: { select: { name: true } } },
+  });
+  return invoiceFromPrisma(created);
+}
+
+export async function updateInvoice(id: string, data: Partial<{
+  status: string;
+  discountPercent: number | null;
+  discountAmount: number;
+  prepayments: number;
+  totalAmount: number;
+  sentAt: Date | null;
+  sentToEmail: string | null;
+  paidAt: Date | null;
+  paidVia: string | null;
+  paidTransactionId: string | null;
+  notes: string;
+}>): Promise<import('@/types').Invoice> {
+  const updated = await prisma.invoice.update({
+    where: { id },
+    data: data as any,
+    include: { counterAgent: { select: { name: true } } },
+  });
+  return invoiceFromPrisma(updated);
+}
+
+export async function deleteInvoice(id: string): Promise<void> {
+  await prisma.invoice.delete({ where: { id } });
+}
+
+// ─── Report (Phase 23 / finding #4 АРХ-НАХОДКИ / #21 ТЕХ-ДОЛГ) ─────
+
+function reportFromPrisma(row: any): import('@/types').Report {
+  return {
+    id: row.id,
+    title: row.title,
+    periodStart: row.periodStart instanceof Date ? row.periodStart.toISOString() : String(row.periodStart),
+    periodEnd: row.periodEnd instanceof Date ? row.periodEnd.toISOString() : String(row.periodEnd),
+    status: (row.status ?? 'draft') as import('@/types').ReportStatus,
+    reportMarkdown: row.reportMarkdown ?? '',
+    prompt: row.prompt ?? '',
+    usage: row.usage ?? undefined,
+    createdByEmployeeId: row.createdByEmployeeId ?? undefined,
+    notes: row.notes ?? '',
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
+  };
+}
+
+export async function getReportsData(filters?: {
+  status?: string;
+  periodFrom?: string; // ISO
+  periodTo?: string;   // ISO
+}): Promise<import('@/types').Report[]> {
+  const where: any = {};
+  if (filters?.status) where.status = filters.status;
+  if (filters?.periodFrom || filters?.periodTo) {
+    where.periodStart = {};
+    if (filters.periodFrom) where.periodStart.gte = new Date(filters.periodFrom);
+    if (filters.periodTo) where.periodStart.lte = new Date(filters.periodTo);
+  }
+  const rows = await prisma.report.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }],
+  });
+  return rows.map(reportFromPrisma);
+}
+
+export async function getReportById(id: string): Promise<import('@/types').Report | null> {
+  const row = await prisma.report.findUnique({ where: { id } });
+  return row ? reportFromPrisma(row) : null;
+}
+
+// generateReportTitle вынесен в @/lib/utils/report-title (sync utility),
+// чтобы избежать ошибки Next.js "Server actions must be async functions"
+// при цепочке импортов pg-adapter → data/index → ai/flows/* ('use server').
+import { generateReportTitle } from '@/lib/utils/report-title';
+
+export async function createReport(data: {
+  title?: string;
+  periodStart: Date;
+  periodEnd: Date;
+  reportMarkdown: string;
+  prompt?: string;
+  usage?: import('@/types').ReportUsage;
+  createdByEmployeeId?: string;
+  notes?: string;
+}): Promise<import('@/types').Report> {
+  const title = data.title?.trim() || generateReportTitle(data.periodStart, data.periodEnd);
+  const created = await prisma.report.create({
+    data: {
+      title,
+      periodStart: data.periodStart,
+      periodEnd: data.periodEnd,
+      reportMarkdown: data.reportMarkdown,
+      prompt: data.prompt ?? '',
+      status: 'draft',
+      usage: (data.usage as any) ?? undefined,
+      createdByEmployeeId: data.createdByEmployeeId ?? null,
+      notes: data.notes ?? '',
+    },
+  });
+  return reportFromPrisma(created);
+}
+
+export async function updateReport(id: string, data: {
+  title?: string;
+  status?: import('@/types').ReportStatus;
+  notes?: string;
+}): Promise<import('@/types').Report> {
+  const updated = await prisma.report.update({
+    where: { id },
+    data: data as any,
+  });
+  return reportFromPrisma(updated);
+}
+
+export async function deleteReport(id: string): Promise<void> {
+  await prisma.report.delete({ where: { id } });
+}
+
+/**
+ * Phase 16 / finding #35: backfill StockMovement.purchase из исторических Expense.
+ *
+ * Симптом: на проде 22 движения химии — все consumption, 0 purchase.
+ * Причина — operational: сотрудники не оформляли закупки через UI «Закупка химии»
+ * (которая корректно создавала бы StockMovement.purchase).
+ *
+ * Решение: пройти по Expense с category matching "хими" → создать соответствующий
+ * StockMovement.purchase. Дедупликация: пропускаем Expense у которых уже есть
+ * StockMovement с relatedEntityType='expense' + relatedEntityId=expense.id.
+ *
+ * Поддерживаемые единицы:
+ *  - 'кг' / 'kg' → grams = quantity * 1000
+ *  - 'г' / 'g' → grams = quantity
+ *  - 'л' / 'l' (для химии — приблизительно 1л ≈ 1000г) → grams = quantity * 1000
+ *  - other → skip + report
+ *
+ * apply=false → preview, apply=true → создание.
+ */
+export async function backfillChemicalPurchasesFromExpenses(apply: boolean): Promise<{
+  candidates: Array<{
+    expenseId: string;
+    date: string;
+    category: string;
+    description: string;
+    quantity: number;
+    unit: string;
+    grams: number;
+    skipReason?: string;
+  }>;
+  alreadyBackfilled: number;
+  willCreate: number;
+  skipped: number;
+  applied: boolean;
+}> {
+  // 1. Найти все Expense с категорией матчащей "хими"
+  const expenses = await prisma.expense.findMany({
+    where: {
+      OR: [
+        { category: { contains: 'хими', mode: 'insensitive' } },
+        { category: { contains: 'chem', mode: 'insensitive' } },
+      ],
+      quantity: { not: null },
+      unit: { not: null },
+    },
+    orderBy: { date: 'asc' },
+  });
+
+  // 2. Дедупликация — какие Expense уже зафиксированы в StockMovement
+  const existingMovements = await prisma.stockMovement.findMany({
+    where: { relatedEntityType: 'expense', type: 'purchase' },
+    select: { relatedEntityId: true },
+  });
+  const backfilled = new Set(existingMovements.map(m => m.relatedEntityId).filter(Boolean));
+
+  // 3. Анализ кандидатов
+  const candidates: Array<{
+    expenseId: string;
+    date: string;
+    category: string;
+    description: string;
+    quantity: number;
+    unit: string;
+    grams: number;
+    skipReason?: string;
+  }> = [];
+
+  let willCreate = 0;
+  let skipped = 0;
+
+  for (const exp of expenses) {
+    const unit = (exp.unit || '').toLowerCase().trim();
+    const quantity = exp.quantity ?? 0;
+    let grams = 0;
+    let skipReason: string | undefined;
+
+    if (backfilled.has(exp.id)) {
+      skipReason = 'уже backfilled';
+      skipped++;
+    } else if (quantity <= 0) {
+      skipReason = 'quantity ≤ 0';
+      skipped++;
+    } else if (unit === 'кг' || unit === 'kg') {
+      grams = quantity * 1000;
+      willCreate++;
+    } else if (unit === 'г' || unit === 'g') {
+      grams = quantity;
+      willCreate++;
+    } else if (unit === 'л' || unit === 'l') {
+      grams = quantity * 1000;
+      willCreate++;
+    } else {
+      skipReason = `unsupported unit "${exp.unit}"`;
+      skipped++;
+    }
+
+    candidates.push({
+      expenseId: exp.id,
+      date: exp.date.toISOString(),
+      category: exp.category,
+      description: exp.description,
+      quantity,
+      unit: exp.unit ?? '',
+      grams,
+      skipReason,
+    });
+  }
+
+  // 4. Apply — создаём StockMovement.purchase для валидных кандидатов
+  if (apply) {
+    const toCreate = candidates.filter(c => !c.skipReason && c.grams > 0);
+    if (toCreate.length > 0) {
+      // Убедимся что mat_chemical_main существует
+      await prisma.inventoryMaterial.upsert({
+        where: { id: 'mat_chemical_main' },
+        update: {},
+        create: {
+          id: 'mat_chemical_main',
+          name: 'Химия (основная)',
+          category: 'chemical',
+          unit: 'grams',
+          currentStock: 0,
+        },
+      });
+
+      // Создаём movements хронологически (важно для balanceAfter если будет recompute)
+      for (const c of toCreate) {
+        await prisma.stockMovement.create({
+          data: {
+            id: `mov_backfill_${c.expenseId}`,
+            materialId: 'mat_chemical_main',
+            type: 'purchase',
+            amount: c.grams,
+            balanceAfter: 0, // будет пересчитано при recomputeInventoryStock(apply:true)
+            date: new Date(c.date),
+            description: `[backfill #35] ${c.description || c.category}`,
+            relatedEntityType: 'expense',
+            relatedEntityId: c.expenseId,
+          },
+        });
+      }
+    }
+  }
+
+  return {
+    candidates,
+    alreadyBackfilled: backfilled.size,
+    willCreate,
+    skipped,
+    applied: apply,
+  };
+}
+
+/**
+ * Phase 14 / UX полировка: метрики для /employees таблицы (Моек/мес + Последняя активность).
+ *
+ * Возвращает Map<employeeId, {washesThisMonth, lastWashAt}> за один batch-запрос.
+ * Используется в /employees page чтобы показать колонки без отдельного fetch.
+ */
+export async function getEmployeesMetrics(): Promise<Map<string, {
+  washesThisMonth: number;
+  lastWashAt: string | null;
+}>> {
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  // Считаем completed мойки текущего месяца
+  const monthLinks = await prisma.washEventEmployee.findMany({
+    where: {
+      washEvent: {
+        timestamp: { gte: monthStart },
+        OR: [{ status: null }, { status: 'completed' }, { status: 'restored' }],
+      },
+    },
+    select: { employeeId: true },
+  });
+
+  // Последняя мойка (любая completed, любой период)
+  const lastByEmployee = await prisma.washEventEmployee.groupBy({
+    by: ['employeeId'],
+    _max: { washEventId: true },
+  });
+  // Через groupBy нельзя достать timestamp напрямую, нужен второй запрос:
+  // забираем last washEventId per employee, потом lookup timestamps.
+  const lastIds = lastByEmployee
+    .map(l => l._max.washEventId)
+    .filter((id): id is string => Boolean(id));
+  const lastEvents = lastIds.length > 0
+    ? await prisma.washEvent.findMany({
+        where: { id: { in: lastIds } },
+        select: { id: true, timestamp: true, employees: { select: { employeeId: true } } },
+      })
+    : [];
+
+  // Build map
+  const result = new Map<string, { washesThisMonth: number; lastWashAt: string | null }>();
+  for (const link of monthLinks) {
+    const cur = result.get(link.employeeId) ?? { washesThisMonth: 0, lastWashAt: null };
+    cur.washesThisMonth += 1;
+    result.set(link.employeeId, cur);
+  }
+  // Last wash: пройдёмся по всем ссылкам, найдём max timestamp per employee
+  for (const ev of lastEvents) {
+    for (const link of ev.employees) {
+      const cur = result.get(link.employeeId) ?? { washesThisMonth: 0, lastWashAt: null };
+      const ts = ev.timestamp.toISOString();
+      if (!cur.lastWashAt || ts > cur.lastWashAt) cur.lastWashAt = ts;
+      result.set(link.employeeId, cur);
+    }
+  }
+  return result;
+}
+
+/**
+ * Phase 11 / finding #39: lookup активной/завершённой смены по timestamp + бокс.
+ *
+ * Используется при retroactive POST WashEvent чтобы проставить ПРАВИЛЬНЫЙ shiftId
+ * (той смены, что была фактически на момент мойки), а не текущей смены бокса.
+ *
+ * Логика shiftType:
+ *  - hour 8-19 → 'day' (date = sameDay)
+ *  - hour 20-23 → 'night' (date = sameDay, ночная смена начинается)
+ *  - hour 0-7 → 'night' (date = previousDay, ночная смена ещё идёт)
+ *
+ * Ищет любую смену (status=any), даже completed — это исторический matching.
+ * Возвращает shift.id или null если не найден.
+ */
+export async function findShiftForTimestamp(
+  timestamp: Date | string,
+  boxNumber: 1 | 2
+): Promise<string | null> {
+  const ts = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+  if (!Number.isFinite(ts.getTime())) return null;
+
+  const hour = ts.getHours();
+  const isDay = hour >= 8 && hour < 20;
+
+  // Дата смены: для night-смены утренних часов (0-7) — это вчерашняя дата.
+  let dateForShift: Date;
+  if (!isDay && hour < 8) {
+    dateForShift = new Date(ts);
+    dateForShift.setDate(dateForShift.getDate() - 1);
+  } else {
+    dateForShift = ts;
+  }
+  const dateKey = dateForShift.toISOString().slice(0, 10);
+  const shiftType = isDay ? 'day' : 'night';
+  const washId = boxNumber === 2 ? 'wash_2' : 'wash_1';
+
+  const shift = await prisma.shift.findFirst({
+    where: { date: dateKey, boxNumber, shiftType, washId },
+    select: { id: true },
+    orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+  });
+  return shift?.id ?? null;
+}
+
+/**
+ * Подсчёт реальных связей сотрудника — для pre-check перед hard DELETE.
+ * Возвращает количество записей в каскадных таблицах.
+ */
+export async function getEmployeeImpact(id: string): Promise<{
+  washEvents: number;
+  transactions: number;
+  shifts: number;
+  violations: number;
+  canisters: number;
+  dayStatuses: number;
+}> {
+  const [washEvents, transactions, shifts, violations, canisters, dayStatuses] = await Promise.all([
+    prisma.washEventEmployee.count({ where: { employeeId: id } }),
+    prisma.employeeTransaction.count({ where: { employeeId: id } }),
+    prisma.shiftEmployee.count({ where: { employeeId: id } }),
+    prisma.violation.count({ where: { employeeId: id } }),
+    prisma.employeeCanister.count({ where: { employeeId: id } }),
+    prisma.employeeDayStatus.count({ where: { employeeId: id } }),
+  ]);
+  return { washEvents, transactions, shifts, violations, canisters, dayStatuses };
 }
 
 // --- Aggregators ---
@@ -741,6 +1705,11 @@ export async function saveAggregator(data: any): Promise<void> {
       cars: data.cars ?? [],
       priceLists: data.priceLists ?? [],
       activePriceListName: data.activePriceListName ?? null,
+      // Phase 7 / finding #26: archived поля раньше игнорировались, PATCH не работал.
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
     create: {
       id: data.id,
@@ -750,12 +1719,32 @@ export async function saveAggregator(data: any): Promise<void> {
       cars: data.cars ?? [],
       priceLists: data.priceLists ?? [],
       activePriceListName: data.activePriceListName ?? null,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
   });
 }
 
 export async function deleteAggregator(id: string): Promise<void> {
   await prisma.aggregator.delete({ where: { id } });
+}
+
+/** Phase 7: soft-delete aggregator. Используется в POST /api/aggregators/[id]/archive
+ *  и в saveAggregator (через PATCH archived). */
+export async function archiveAggregator(id: string): Promise<void> {
+  await prisma.aggregator.update({
+    where: { id },
+    data: { archived: true, archivedAt: new Date().toISOString() },
+  });
+}
+
+export async function unarchiveAggregator(id: string): Promise<void> {
+  await prisma.aggregator.update({
+    where: { id },
+    data: { archived: false, archivedAt: null },
+  });
 }
 
 // --- Counter Agents ---
@@ -773,6 +1762,8 @@ export async function saveCounterAgent(data: any): Promise<void> {
       allowCustomServices: data.allowCustomServices ?? false,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
     create: {
       id: data.id,
@@ -785,6 +1776,8 @@ export async function saveCounterAgent(data: any): Promise<void> {
       allowCustomServices: data.allowCustomServices ?? false,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
   });
 }
@@ -824,6 +1817,8 @@ export async function saveExpense(data: any): Promise<void> {
       quantity: data.quantity ?? null,
       unit: data.unit ?? null,
       pricePerUnit: data.pricePerUnit ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: data.ourCompanyId ?? null,
     },
     create: {
       id: data.id,
@@ -834,6 +1829,8 @@ export async function saveExpense(data: any): Promise<void> {
       quantity: data.quantity ?? null,
       unit: data.unit ?? null,
       pricePerUnit: data.pricePerUnit ?? null,
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: data.ourCompanyId ?? null,
     },
   });
 }
@@ -854,6 +1851,8 @@ export async function saveSalaryScheme(data: any): Promise<void> {
       fixedDeduction: data.fixedDeduction ?? null,
       rateSource: data.rateSource ?? undefined,
       rates: data.rates ?? undefined,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
     create: {
       id: data.id,
@@ -863,12 +1862,178 @@ export async function saveSalaryScheme(data: any): Promise<void> {
       fixedDeduction: data.fixedDeduction ?? null,
       rateSource: data.rateSource ?? undefined,
       rates: data.rates ?? undefined,
+      archived: data.archived ?? false,
+      archivedAt: data.archivedAt ?? null,
     },
   });
 }
 
 export async function deleteSalaryScheme(id: string): Promise<void> {
   await prisma.salaryScheme.delete({ where: { id } });
+}
+
+/**
+ * UX-safety: soft-delete схемы (archived=true, archivedAt=now).
+ * Используется в POST /api/salary-schemes/[id]/archive вместо hard DELETE.
+ * Сотрудники с archived schemeId сохраняют связь — история ZP не теряется.
+ */
+export async function archiveSalaryScheme(id: string): Promise<void> {
+  await prisma.salaryScheme.update({
+    where: { id },
+    data: { archived: true, archivedAt: new Date().toISOString() },
+  });
+}
+
+/** Возвращает схему обратно из архива (отмена archive). */
+export async function unarchiveSalaryScheme(id: string): Promise<void> {
+  await prisma.salaryScheme.update({
+    where: { id },
+    data: { archived: false, archivedAt: null },
+  });
+}
+
+// ─── SalaryPeriod (UX-safety: блокировка правок WashEvent) ───
+
+export async function getSalaryPeriod(month: string): Promise<any | null> {
+  return prisma.salaryPeriod.findUnique({ where: { month } });
+}
+
+export async function isSalaryPeriodClosed(month: string): Promise<boolean> {
+  const period = await prisma.salaryPeriod.findUnique({ where: { month } });
+  return !!period?.closed;
+}
+
+/**
+ * Закрыть период ЗП. После этого PUT/DELETE /api/wash-events/[id]
+ * с timestamp.slice(0,7) === month вернёт 423 Locked.
+ * Если период уже существует — обновляет closed/closedBy/closedAt.
+ */
+export async function closeSalaryPeriod(month: string, closedBy: string): Promise<void> {
+  const closedAt = new Date();
+  await prisma.salaryPeriod.upsert({
+    where: { month },
+    create: { month, closed: true, closedBy, closedAt },
+    update: { closed: true, closedBy, closedAt },
+  });
+}
+
+/** Открыть период обратно (для исключений). */
+export async function openSalaryPeriod(month: string): Promise<void> {
+  await prisma.salaryPeriod.upsert({
+    where: { month },
+    create: { month, closed: false },
+    update: { closed: false, closedAt: null },
+  });
+}
+
+// ─── EmployeeSalarySchemeHistory ────────────────────────────
+
+/**
+ * Закрыть текущую активную запись истории (effectiveTo=now) + создать новую
+ * с effectiveFrom=now и переданным schemeId.
+ * Используется в PUT /api/employees/[id] когда salarySchemeId меняется.
+ * Транзакционно, чтобы не было дубликатов "активных" записей.
+ */
+export async function appendEmployeeSchemeHistory(
+  employeeId: string,
+  schemeId: string | null,
+  changedBy: string
+): Promise<void> {
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.employeeSalarySchemeHistory.updateMany({
+      where: { employeeId, effectiveTo: null },
+      data: { effectiveTo: now },
+    }),
+    prisma.employeeSalarySchemeHistory.create({
+      data: { employeeId, schemeId, effectiveFrom: now, changedBy },
+    }),
+  ]);
+}
+
+// ─── EmployeeChangeLog (Phase 29 / V2-NEW-3) ────────────────────
+
+function changeLogFromPrisma(row: any): import('@/types').EmployeeChangeLogEntry {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    fieldName: row.fieldName,
+    oldValue: row.oldValue ?? null,
+    newValue: row.newValue ?? null,
+    changedBy: row.changedBy,
+    reason: row.reason ?? null,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+  };
+}
+
+/**
+ * Phase 29 / V2-NEW-3: запись одной строки audit-журнала для опасной правки Employee.
+ * Не throw'ит — best-effort: если БД упадёт, основная PUT-операция не должна
+ * остановиться. Только лог в console.error.
+ */
+export async function createEmployeeChangeLog(data: {
+  employeeId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  reason?: string | null;
+}): Promise<void> {
+  try {
+    await prisma.employeeChangeLog.create({
+      data: {
+        employeeId: data.employeeId,
+        fieldName: data.fieldName,
+        oldValue: data.oldValue,
+        newValue: data.newValue,
+        changedBy: data.changedBy,
+        reason: data.reason ?? null,
+      },
+    });
+  } catch (err) {
+    console.error('[createEmployeeChangeLog] best-effort failed:', err);
+  }
+}
+
+/** Batch-вариант для PUT'а с несколькими опасными изменениями за один запрос. */
+export async function createEmployeeChangeLogBatch(entries: Array<{
+  employeeId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  reason?: string | null;
+}>): Promise<void> {
+  if (entries.length === 0) return;
+  try {
+    await prisma.employeeChangeLog.createMany({
+      data: entries.map(e => ({
+        employeeId: e.employeeId,
+        fieldName: e.fieldName,
+        oldValue: e.oldValue,
+        newValue: e.newValue,
+        changedBy: e.changedBy,
+        reason: e.reason ?? null,
+      })),
+    });
+  } catch (err) {
+    console.error('[createEmployeeChangeLogBatch] best-effort failed:', err);
+  }
+}
+
+/**
+ * История изменений конкретного employee. Newest first. Лимит для UI tab.
+ */
+export async function getEmployeeChangeLog(
+  employeeId: string,
+  limit = 50
+): Promise<import('@/types').EmployeeChangeLogEntry[]> {
+  const rows = await prisma.employeeChangeLog.findMany({
+    where: { employeeId },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+  return rows.map(changeLogFromPrisma);
 }
 
 // --- Employee Transactions ---
@@ -936,6 +2101,8 @@ export async function saveClientTransaction(data: any): Promise<void> {
       type: data.type ?? 'payment',
       amount: data.amount,
       description: data.description ?? '',
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: data.ourCompanyId ?? null,
     },
     create: {
       id: data.id,
@@ -946,6 +2113,8 @@ export async function saveClientTransaction(data: any): Promise<void> {
       type: data.type ?? 'payment',
       amount: data.amount,
       description: data.description ?? '',
+      // Phase 57b.1: multi-company FK persistence
+      ourCompanyId: data.ourCompanyId ?? null,
     },
   });
 }
@@ -973,6 +2142,8 @@ export async function saveClientTransactions(clientId: string, transactions: any
           type: t.type ?? 'payment',
           amount: t.amount,
           description: t.description ?? '',
+          // Phase 57b.1: multi-company FK persistence
+          ourCompanyId: t.ourCompanyId ?? null,
         },
       })
     ),
@@ -1385,8 +2556,11 @@ export async function createWashEventWithSideEffects(
         vehicleNumber: washEvent.vehicleNumber,
         boxNumber: washEvent.boxNumber ?? null,
         paymentMethod: washEvent.paymentMethod,
-        aggregatorId,
-        counterAgentId,
+        // Prisma 5.22 Checked-create требует relation connect для FK
+        // (scalar aggregatorId/counterAgentId/ourCompanyId недоступны напрямую).
+        ...(aggregatorId ? { aggregator: { connect: { id: aggregatorId } } } : {}),
+        ...(counterAgentId ? { counterAgent: { connect: { id: counterAgentId } } } : {}),
+        ...(washEvent.ourCompanyId ? { ourCompany: { connect: { id: washEvent.ourCompanyId } } } : {}),
         sourceName: washEvent.sourceName ?? null,
         priceListName: washEvent.priceListName ?? null,
         totalAmount: washEvent.totalAmount,
@@ -1404,6 +2578,11 @@ export async function createWashEventWithSideEffects(
         cameraSession: washEvent.cameraSession ?? undefined,
         dismissal: washEvent.dismissal ?? undefined,
         restoration: washEvent.restoration ?? undefined,
+        // Phase 10 / finding #40 — author fixed only on create
+        createdByEmployeeId: washEvent.createdByEmployeeId ?? null,
+        // Phase 60: водитель + цифровая роспись (для Ведомости)
+        driverName: washEvent.driverName ?? null,
+        driverSignature: washEvent.driverSignature ?? null,
       },
     });
 
@@ -1433,7 +2612,8 @@ export async function createWashEventWithSideEffects(
       await tx.stockMovement.create({
         data: {
           id: stockMovement.id,
-          materialId: stockMovement.materialId,
+          // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
+          material: { connect: { id: stockMovement.materialId } },
           type: stockMovement.type,
           amount: stockMovement.amount,
           balanceAfter: stockMovement.balanceAfter,
@@ -1441,7 +2621,7 @@ export async function createWashEventWithSideEffects(
           description: stockMovement.description ?? '',
           relatedEntityType: stockMovement.relatedEntityType ?? null,
           relatedEntityId: stockMovement.relatedEntityId ?? null,
-          employeeId: stockMovement.employeeId ?? null,
+          ...(stockMovement.employeeId ? { employee: { connect: { id: stockMovement.employeeId } } } : {}),
         },
       });
     }
@@ -1596,4 +2776,723 @@ export async function getShiftReportsData(): Promise<any[]> {
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
     };
   });
+}
+
+// ─── Phase 7: Backend polish (real metrics) ────────────────────
+
+/**
+ * Считает реальные метрики работы сотрудника для Live Impact Preview
+ * (см. SchemeImpactPreview в EmployeeForm).
+ *
+ * Возвращает:
+ *  - monthsWorked: число календарных месяцев между первой и последней мойкой
+ *  - monthlyTurnover: средний netAmount (или totalAmount если netAmount=null) на мес
+ *  - washEventsCount: всего моек у сотрудника
+ *  - firstWashAt / lastWashAt: даты первой и последней мойки
+ *  - currentMonthTurnover: оборот текущего календарного месяца
+ *
+ * Если у сотрудника нет моек — возвращает нули (UI должен показать «нет данных»).
+ */
+export async function getEmployeeSchemeImpact(employeeId: string): Promise<{
+  monthsWorked: number;
+  monthlyTurnover: number;
+  washEventsCount: number;
+  firstWashAt: string | null;
+  lastWashAt: string | null;
+  currentMonthTurnover: number;
+}> {
+  // Забираем только метаданные (timestamp, totalAmount, netAmount) —
+  // не тянем всю мойку, выборка может быть большой.
+  const links = await prisma.washEventEmployee.findMany({
+    where: { employeeId },
+    select: {
+      washEvent: {
+        select: {
+          timestamp: true,
+          totalAmount: true,
+          netAmount: true,
+          status: true,
+        },
+      },
+    },
+  });
+
+  // Только успешно завершённые мойки (status null = legacy completed)
+  const valid = links
+    .map(l => l.washEvent)
+    .filter(w => w && (w.status == null || w.status === 'completed'));
+
+  if (valid.length === 0) {
+    return {
+      monthsWorked: 0,
+      monthlyTurnover: 0,
+      washEventsCount: 0,
+      firstWashAt: null,
+      lastWashAt: null,
+      currentMonthTurnover: 0,
+    };
+  }
+
+  const sorted = [...valid].sort((a, b) => a!.timestamp.getTime() - b!.timestamp.getTime());
+  const firstWash = sorted[0]!;
+  const lastWash = sorted[sorted.length - 1]!;
+
+  // Считаем «оборот» как netAmount (т.е. без acquiringFee), fallback на totalAmount.
+  // Это база ZP-расчёта по проценту в SalaryScheme type='percentage'.
+  const totalTurnover = valid.reduce(
+    (sum, w) => sum + (w!.netAmount ?? w!.totalAmount ?? 0),
+    0
+  );
+
+  // Месяцев работы (по месяцам, не по дням): YYYY-MM первой мойки vs текущий
+  const monthsSet = new Set<string>();
+  for (const w of valid) monthsSet.add(w!.timestamp.toISOString().slice(0, 7));
+  const monthsWorked = Math.max(1, monthsSet.size);
+
+  const monthlyTurnover = Math.round(totalTurnover / monthsWorked);
+
+  // Текущий месяц отдельно (для UI: «в этом месяце уже X ₽»)
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const currentMonthTurnover = valid
+    .filter(w => w!.timestamp.toISOString().slice(0, 7) === currentMonthKey)
+    .reduce((sum, w) => sum + (w!.netAmount ?? w!.totalAmount ?? 0), 0);
+
+  return {
+    monthsWorked,
+    monthlyTurnover,
+    washEventsCount: valid.length,
+    firstWashAt: firstWash.timestamp.toISOString(),
+    lastWashAt: lastWash.timestamp.toISOString(),
+    currentMonthTurnover: Math.round(currentMonthTurnover),
+  };
+}
+
+/**
+ * Пересчёт остатков склада из StockMovement (admin recovery tool).
+ *
+ * Для каждого InventoryMaterial:
+ *   newCurrentStock = SUM(StockMovement.amount WHERE materialId = X)
+ *   (amount уже хранится со знаком: purchase = +, consumption/issue = -)
+ *
+ * Возвращает diff (старое vs новое) для каждого материала.
+ * Если apply=true — записывает новые значения в БД, иначе только preview.
+ *
+ * Также синхронизирует Inventory.chemicalStockGrams с mat_chemical_main
+ * (legacy единое поле).
+ */
+export async function recomputeInventoryStock(apply: boolean): Promise<{
+  materials: Array<{
+    id: string;
+    name: string;
+    currentStock: number;
+    computedStock: number;
+    delta: number;
+    movementCount: number;
+  }>;
+  legacyChemicalStockGrams?: { current: number; computed: number; delta: number };
+  applied: boolean;
+}> {
+  const materials = await prisma.inventoryMaterial.findMany({
+    select: { id: true, name: true, currentStock: true },
+  });
+
+  const result: Array<{
+    id: string;
+    name: string;
+    currentStock: number;
+    computedStock: number;
+    delta: number;
+    movementCount: number;
+  }> = [];
+
+  for (const m of materials) {
+    const agg = await prisma.stockMovement.aggregate({
+      where: { materialId: m.id },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+    const computed = agg._sum.amount ?? 0;
+    const delta = computed - m.currentStock;
+    result.push({
+      id: m.id,
+      name: m.name,
+      currentStock: m.currentStock,
+      computedStock: Math.round(computed * 100) / 100,
+      delta: Math.round(delta * 100) / 100,
+      movementCount: agg._count._all,
+    });
+  }
+
+  // Legacy chemicalStockGrams хранится в JSON-инвентаре (Inventory модель в БД нет —
+  // это JSON-only field). Postgres-only пересчёт работает с InventoryMaterial напрямую.
+  // mat_chemical_main и есть SOT для химии в pg-режиме.
+
+  if (apply) {
+    await prisma.$transaction(async (tx) => {
+      for (const r of result) {
+        if (r.delta !== 0) {
+          await tx.inventoryMaterial.update({
+            where: { id: r.id },
+            data: { currentStock: r.computedStock },
+          });
+        }
+      }
+    });
+  }
+
+  return {
+    materials: result,
+    applied: apply,
+  };
+}
+
+/**
+ * Phase 7 / Finding #25: pre-check для удаления Aggregator/CounterAgent.
+ * Возвращает список SalaryScheme где rateSource.type === sourceType
+ * и rateSource.id === sourceId. Если этот список не пуст — удаление source
+ * сломает расчёт ZP по этим схемам.
+ */
+export async function findSchemesUsingRateSource(
+  sourceType: 'aggregator' | 'counterAgent' | 'retail',
+  sourceId: string
+): Promise<Array<{ id: string; name: string; type: string }>> {
+  // rateSource — это Json. Используем прямой SQL фильтр через JSONB операторы.
+  // Prisma не умеет нативно фильтровать по @> для произвольных JSON, поэтому
+  // забираем все схемы с непустым rateSource и фильтруем в JS.
+  // Объём небольшой (~10 схем) — приемлемо.
+  const all = await prisma.salaryScheme.findMany({
+    where: { rateSource: { not: undefined } as any },
+    select: { id: true, name: true, type: true, rateSource: true },
+  });
+  return all
+    .filter((s: any) => {
+      const rs = s.rateSource;
+      if (!rs || typeof rs !== 'object') return false;
+      return rs.type === sourceType && rs.id === sourceId;
+    })
+    .map((s: any) => ({ id: s.id, name: s.name, type: s.type }));
+}
+
+/**
+ * Pre-check для DELETE Aggregator. Считает связи в каскадных таблицах
+ * + находит схемы ZP с rateSource на этого aggregator (finding #25).
+ */
+export async function getAggregatorImpact(id: string): Promise<{
+  washEvents: number;
+  clientTransactions: number;
+  schemesUsingAsRateSource: Array<{ id: string; name: string; type: string }>;
+}> {
+  const [washEvents, clientTransactions, schemes] = await Promise.all([
+    prisma.washEvent.count({ where: { aggregatorId: id } }),
+    prisma.clientTransaction.count({ where: { aggregatorId: id } }),
+    findSchemesUsingRateSource('aggregator', id),
+  ]);
+  return { washEvents, clientTransactions, schemesUsingAsRateSource: schemes };
+}
+
+/** Pre-check для DELETE CounterAgent — аналогично getAggregatorImpact. */
+export async function getCounterAgentImpact(id: string): Promise<{
+  washEvents: number;
+  clientTransactions: number;
+  schemesUsingAsRateSource: Array<{ id: string; name: string; type: string }>;
+}> {
+  const [washEvents, clientTransactions, schemes] = await Promise.all([
+    prisma.washEvent.count({ where: { counterAgentId: id } }),
+    prisma.clientTransaction.count({ where: { counterAgentId: id } }),
+    findSchemesUsingRateSource('counterAgent', id),
+  ]);
+  return { washEvents, clientTransactions, schemesUsingAsRateSource: schemes };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Phase 52 (V2-NEW-1): канистры — atomic issue с 4 режимами выдачи
+// ────────────────────────────────────────────────────────────────────
+
+const CANISTER_DEFAULT_GRAMS = 22000;
+const CANISTER_DEFAULT_PRICE = 3000;
+
+export interface IssueCanisterInput {
+  employeeId: string;
+  mode: import('@/types').CanisterMode;
+  amountGrams?: number; // default 22000 (1 канистра 22 кг)
+  priceRub?: number;    // default 3000 ₽; для bonus игнорируется (всё равно 0 в EmployeeTransaction)
+  washPoint?: string;   // 'wash_1' | 'wash_2' (опционально)
+  notes?: string;       // reason для bonus, комментарий
+  issuedBy: string;     // admin employeeId
+  materialId?: string;  // default — первый chemical isActive
+}
+
+/**
+ * Phase 52a: atomic выдача канистры с 4 режимами.
+ *
+ * В одной $transaction:
+ *  1. EmployeeCanister(status='active', mode, issuedBy, notes, washPoint)
+ *  2. StockMovement (kind='issue', warehouse='main', amount=-grams)
+ *  3. По mode либо EmployeeTransaction либо Expense:
+ *     - purchase           → EmployeeTransaction(type='purchase', amount=-priceRub)
+ *     - bonus              → EmployeeTransaction(type='bonus', amount=0, description=notes)
+ *     - gift               → Expense(category='gift', amount=priceRub, description="Канистра ...")
+ *     - salary-deduction   → EmployeeTransaction(type='salary-deduction', amount=-priceRub)
+ *  4. canister.transactionId связывается с созданной транзакцией / Expense (audit).
+ *
+ * Note: списание со склада осуществляется через StockMovement (warehouse='main').
+ * InventoryMaterial.currentStock пересчитывается отдельно (см. recomputeInventoryStock).
+ */
+export async function issueCanisterAtomic(
+  input: IssueCanisterInput,
+): Promise<import('@/types').EmployeeChemicalCanister> {
+  const amountGrams = input.amountGrams ?? CANISTER_DEFAULT_GRAMS;
+  const priceRub = input.priceRub ?? CANISTER_DEFAULT_PRICE;
+  const now = new Date();
+  const canisterId = `ec_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  // Find primary chemical material if not specified
+  let materialId = input.materialId;
+  if (!materialId) {
+    const primary = await prisma.inventoryMaterial.findFirst({
+      where: { category: 'chemical', isActive: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    materialId = primary?.id;
+  }
+
+  const employee = await prisma.employee.findUnique({ where: { id: input.employeeId } });
+  if (!employee) {
+    throw new Error(`Employee ${input.employeeId} not found`);
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    // 1. EmployeeCanister
+    const canister = await tx.employeeCanister.create({
+      data: {
+        id: canisterId,
+        // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
+        employee: { connect: { id: input.employeeId } },
+        issuedAt: now,
+        initialAmountGrams: amountGrams,
+        remainingAmountGrams: amountGrams,
+        priceRub: input.mode === 'bonus' ? 0 : priceRub,
+        status: 'active',
+        mode: input.mode,
+        issuedBy: input.issuedBy,
+        notes: input.notes ?? '',
+        washPoint: input.washPoint,
+      },
+    });
+
+    // 2. StockMovement (списание со склада)
+    if (materialId) {
+      // Find current balance for materialId on main warehouse
+      const lastMov = await tx.stockMovement.findFirst({
+        where: { materialId, warehouse: 'main' },
+        orderBy: { date: 'desc' },
+      });
+      const prevBalance = lastMov?.balanceAfter ?? 0;
+      const newBalance = prevBalance - amountGrams;
+
+      await tx.stockMovement.create({
+        data: {
+          id: `sm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          // Phase 60 — relation connect для FK
+          material: { connect: { id: materialId } },
+          type: 'issue',
+          amount: -amountGrams,
+          balanceAfter: newBalance,
+          date: now,
+          description: `Канистра ${input.mode} → ${employee.fullName}`,
+          relatedEntityType: 'employee_canister',
+          relatedEntityId: canisterId,
+          employee: { connect: { id: input.employeeId } },
+          createdBy: input.issuedBy,
+          warehouse: 'main',
+        },
+      });
+
+      // Update material currentStock
+      await tx.inventoryMaterial.update({
+        where: { id: materialId },
+        data: { currentStock: newBalance },
+      });
+    }
+
+    // 3. EmployeeTransaction или Expense по mode
+    let txnId: string | null = null;
+    if (input.mode === 'purchase') {
+      const t = await tx.employeeTransaction.create({
+        data: {
+          id: `et_canister_${canisterId}`,
+          // Phase 60 — relation connect для FK
+          employee: { connect: { id: input.employeeId } },
+          date: now,
+          type: 'purchase',
+          amount: priceRub, // положительная сумма = долг (читается как удержание в salary-report)
+          description: `Канистра (покупка) · ${amountGrams / 1000}кг`,
+        },
+      });
+      txnId = t.id;
+    } else if (input.mode === 'bonus') {
+      const t = await tx.employeeTransaction.create({
+        data: {
+          id: `et_canister_${canisterId}`,
+          employee: { connect: { id: input.employeeId } },
+          date: now,
+          type: 'bonus',
+          amount: 0,
+          description: `Канистра (премия) · ${input.notes || 'без причины'}`,
+        },
+      });
+      txnId = t.id;
+    } else if (input.mode === 'salary-deduction') {
+      const t = await tx.employeeTransaction.create({
+        data: {
+          id: `et_canister_${canisterId}`,
+          employee: { connect: { id: input.employeeId } },
+          date: now,
+          type: 'salary-deduction',
+          amount: priceRub, // положительная сумма = удержание
+          description: `Канистра (в счёт ЗП) · ${amountGrams / 1000}кг`,
+        },
+      });
+      txnId = t.id;
+    } else if (input.mode === 'gift') {
+      const e = await tx.expense.create({
+        data: {
+          id: `exp_canister_${canisterId}`,
+          date: now,
+          category: 'gift',
+          description: `Канистра (подарок) · ${employee.fullName} · ${input.notes || ''}`.trim(),
+          amount: priceRub,
+        },
+      });
+      txnId = e.id;
+    }
+
+    // 4. Link canister to transaction/expense
+    if (txnId) {
+      await tx.employeeCanister.update({
+        where: { id: canisterId },
+        data: { transactionId: txnId },
+      });
+    }
+
+    return tx.employeeCanister.findUnique({ where: { id: canisterId } });
+  });
+
+  if (!created) throw new Error('Canister was not created');
+  return canisterFromPrisma(created);
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Phase 50 (V2-#4 split-pricing): DriverKickback
+// ────────────────────────────────────────────────────────────────────
+
+function driverKickbackFromPrisma(row: any): import('@/types').DriverKickback {
+  return {
+    id: row.id,
+    washEventId: row.washEventId,
+    counterAgentId: row.counterAgentId,
+    driverName: row.driverName,
+    driverPhone: row.driverPhone ?? '',
+    plate: row.plate ?? '',
+    amount: row.amount,
+    status: row.status as import('@/types').DriverKickbackStatus,
+    createdAt: row.createdAt.toISOString(),
+    readyAt: row.readyAt ? row.readyAt.toISOString() : undefined,
+    paidAt: row.paidAt ? row.paidAt.toISOString() : undefined,
+    paidBy: row.paidBy ?? undefined,
+  };
+}
+
+export async function getDriverKickbacks(filters?: {
+  counterAgentId?: string;
+  status?: import('@/types').DriverKickbackStatus;
+  washEventId?: string;
+}): Promise<import('@/types').DriverKickback[]> {
+  const where: any = {};
+  if (filters?.counterAgentId) where.counterAgentId = filters.counterAgentId;
+  if (filters?.status) where.status = filters.status;
+  if (filters?.washEventId) where.washEventId = filters.washEventId;
+  const rows = await prisma.driverKickback.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }],
+  });
+  return rows.map(driverKickbackFromPrisma);
+}
+
+export async function getDriverKickbackById(id: string): Promise<import('@/types').DriverKickback | null> {
+  const row = await prisma.driverKickback.findUnique({ where: { id } });
+  return row ? driverKickbackFromPrisma(row) : null;
+}
+
+export async function getDriverKickbacksByWashEvent(washEventId: string): Promise<import('@/types').DriverKickback[]> {
+  const rows = await prisma.driverKickback.findMany({
+    where: { washEventId },
+    orderBy: [{ createdAt: 'asc' }],
+  });
+  return rows.map(driverKickbackFromPrisma);
+}
+
+/**
+ * Phase 50d: создать DriverKickback при оформлении WashEvent со split-услугой.
+ * Используется ВНУТРИ $transaction вместе с созданием WashEvent.
+ */
+export async function createDriverKickback(data: {
+  washEventId: string;
+  counterAgentId: string;
+  driverName: string;
+  driverPhone?: string;
+  plate?: string;
+  amount: number;
+}): Promise<import('@/types').DriverKickback> {
+  const created = await prisma.driverKickback.create({
+    data: {
+      washEventId: data.washEventId,
+      counterAgentId: data.counterAgentId,
+      driverName: data.driverName.trim(),
+      driverPhone: (data.driverPhone ?? '').trim(),
+      plate: (data.plate ?? '').trim(),
+      amount: data.amount,
+      status: 'pending',
+    },
+  });
+  return driverKickbackFromPrisma(created);
+}
+
+/**
+ * Phase 50c: bulk pending → ready (Q2 рекомендация: manual select через UI).
+ * Менеджер отмечает галками после получения оплаты от контрагента.
+ */
+export async function markDriverKickbacksReady(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const now = new Date();
+  const result = await prisma.driverKickback.updateMany({
+    where: { id: { in: ids }, status: 'pending' },
+    data: { status: 'ready', readyAt: now },
+  });
+  return result.count;
+}
+
+/**
+ * Phase 50c: ready → paid в одной транзакции.
+ *  1. DriverKickback.status='paid', paidAt, paidBy
+ *  2. Expense(category='driver-kickback', amount, description, date)
+ * Если статус НЕ ready — кидаем ошибку (нельзя пропустить ready stage).
+ */
+export async function payDriverKickback(
+  id: string,
+  paidByEmployeeId: string,
+): Promise<{ kickback: import('@/types').DriverKickback; expenseId: string }> {
+  const now = new Date();
+  const existing = await prisma.driverKickback.findUnique({ where: { id } });
+  if (!existing) throw new Error('DriverKickback not found');
+  if (existing.status !== 'ready') {
+    throw new Error(`DriverKickback ${id} status=${existing.status}, ожидался 'ready'`);
+  }
+
+  const expenseId = `kickback_${id}_${Date.now()}`;
+  const result = await prisma.$transaction(async (tx) => {
+    const kickback = await tx.driverKickback.update({
+      where: { id },
+      data: { status: 'paid', paidAt: now, paidBy: paidByEmployeeId },
+    });
+    await tx.expense.create({
+      data: {
+        id: expenseId,
+        date: now,
+        category: 'driver-kickback',
+        description: `Бонус водителю ${existing.driverName}${existing.plate ? ` (${existing.plate})` : ''}`,
+        amount: existing.amount,
+      },
+    });
+    return kickback;
+  });
+
+  return { kickback: driverKickbackFromPrisma(result), expenseId };
+}
+
+/**
+ * Phase 50f: получить блокеры для DELETE WashEvent.
+ * paid → 423 Locked (бухгалтерия не должна разойтись)
+ * ready → 409 (предложить отменить через UI)
+ * pending → cascade OK через Prisma onDelete
+ */
+export async function getWashEventKickbackBlockers(washEventId: string): Promise<{
+  paid: number;
+  ready: number;
+  pending: number;
+}> {
+  const grouped = await prisma.driverKickback.groupBy({
+    by: ['status'],
+    where: { washEventId },
+    _count: { _all: true },
+  });
+  const counts = { paid: 0, ready: 0, pending: 0 };
+  for (const g of grouped) {
+    const s = g.status as keyof typeof counts;
+    if (s in counts) counts[s] = g._count._all;
+  }
+  return counts;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Phase 57 (multi-company / ЭкоФуд кейс): OurCompany CRUD + primary helper
+// ────────────────────────────────────────────────────────────────────
+
+function ourCompanyFromPrisma(row: any): import('@/types').OurCompany {
+  return {
+    id: row.id,
+    shortName: row.shortName,
+    fullName: row.fullName ?? '',
+    inn: row.inn ?? undefined,
+    kpp: row.kpp ?? undefined,
+    ogrn: row.ogrn ?? undefined,
+    ownerName: row.ownerName ?? undefined,
+    legalAddress: row.legalAddress ?? undefined,
+    bankName: row.bankName ?? undefined,
+    settlementAccount: row.settlementAccount ?? undefined,
+    correspondentAccount: row.correspondentAccount ?? undefined,
+    bik: row.bik ?? undefined,
+    taxRegime: row.taxRegime ?? undefined,
+    cardAcquiringPercentage: row.cardAcquiringPercentage ?? undefined,
+    isPrimary: row.isPrimary,
+    archived: row.archived,
+    archivedAt: row.archivedAt ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export async function getOurCompaniesData(): Promise<import('@/types').OurCompany[]> {
+  const rows = await prisma.ourCompany.findMany({
+    orderBy: [{ isPrimary: 'desc' }, { archived: 'asc' }, { shortName: 'asc' }],
+  });
+  return rows.map(ourCompanyFromPrisma);
+}
+
+export async function getOurCompanyById(id: string): Promise<import('@/types').OurCompany | null> {
+  const row = await prisma.ourCompany.findUnique({ where: { id } });
+  return row ? ourCompanyFromPrisma(row) : null;
+}
+
+export async function getPrimaryOurCompany(): Promise<import('@/types').OurCompany | null> {
+  const row = await prisma.ourCompany.findFirst({
+    where: { isPrimary: true, archived: false },
+    orderBy: { createdAt: 'asc' },
+  });
+  return row ? ourCompanyFromPrisma(row) : null;
+}
+
+/**
+ * Phase 57a: Upsert OurCompany. При isPrimary=true автоматически снимает primary
+ * со всех других компаний (одно primary в системе).
+ */
+export async function saveOurCompany(data: Partial<import('@/types').OurCompany> & { id: string }): Promise<import('@/types').OurCompany> {
+  const willBePrimary = !!data.isPrimary;
+
+  const result = await prisma.$transaction(async (tx) => {
+    if (willBePrimary) {
+      // Снять primary со всех других
+      await tx.ourCompany.updateMany({
+        where: { id: { not: data.id }, isPrimary: true },
+        data: { isPrimary: false },
+      });
+    }
+
+    const existing = await tx.ourCompany.findUnique({ where: { id: data.id } });
+    // Хелпер: если поле явно передано в data — использует его значение (включая null),
+    // иначе — берёт из existing. Нужен чтобы `archivedAt: null` при unarchive
+    // корректно записывал null, а не откатывался к старому значению через `??`.
+    function pick<T>(key: string, fallback: T): T {
+      if (key in data) {
+        const v = (data as any)[key];
+        return v !== undefined ? v : fallback;
+      }
+      const v = (existing as any)?.[key];
+      return v !== undefined ? v : fallback;
+    }
+
+    const payload = {
+      shortName: data.shortName ?? existing?.shortName ?? '',
+      fullName: data.fullName ?? existing?.fullName ?? '',
+      inn: pick('inn', null),
+      kpp: pick('kpp', null),
+      ogrn: pick('ogrn', null),
+      ownerName: pick('ownerName', null),
+      legalAddress: pick('legalAddress', null),
+      bankName: pick('bankName', null),
+      settlementAccount: pick('settlementAccount', null),
+      correspondentAccount: pick('correspondentAccount', null),
+      bik: pick('bik', null),
+      taxRegime: pick('taxRegime', null),
+      cardAcquiringPercentage: data.cardAcquiringPercentage ?? existing?.cardAcquiringPercentage ?? null,
+      isPrimary: willBePrimary,
+      archived: data.archived ?? existing?.archived ?? false,
+      // Явный null при unarchive корректно стирает archivedAt (pick учитывает `null in data`)
+      archivedAt: pick('archivedAt', null),
+    };
+
+    if (existing) {
+      return tx.ourCompany.update({ where: { id: data.id }, data: payload });
+    }
+    return tx.ourCompany.create({ data: { id: data.id, ...payload } });
+  });
+
+  return ourCompanyFromPrisma(result);
+}
+
+export async function archiveOurCompany(id: string): Promise<void> {
+  await prisma.ourCompany.update({
+    where: { id },
+    data: { archived: true, archivedAt: new Date().toISOString() },
+  });
+}
+
+export async function unarchiveOurCompany(id: string): Promise<void> {
+  await prisma.ourCompany.update({
+    where: { id },
+    data: { archived: false, archivedAt: null },
+  });
+}
+
+/**
+ * Phase 57a: «Под каким нашим ИП оформить эту мойку?» — server-side helper.
+ * Используется в wash-event-create-service для авто-определения ourCompanyId.
+ *
+ * Логика:
+ *   1. Если paymentMethod='counterAgentContract' и contractor.preferredOurCompanyId — использовать его
+ *   2. Если paymentMethod='aggregator' и aggregator.preferredOurCompanyId — использовать его
+ *   3. Иначе (розница cash/card/transfer) — primary OurCompany
+ *
+ * Override через UI поле washEvent.ourCompanyId (admin может сменить вручную).
+ */
+export async function resolveOurCompanyIdForWashEvent(washEvent: {
+  paymentMethod: string;
+  sourceId?: string;
+  ourCompanyId?: string | null;
+}): Promise<string | null> {
+  // Если ourCompanyId явно установлен (override) — используем его
+  if (washEvent.ourCompanyId) return washEvent.ourCompanyId;
+
+  if (washEvent.paymentMethod === 'counterAgentContract' && washEvent.sourceId) {
+    const ca = await prisma.counterAgent.findUnique({
+      where: { id: washEvent.sourceId },
+      select: { preferredOurCompanyId: true },
+    });
+    if (ca?.preferredOurCompanyId) return ca.preferredOurCompanyId;
+  }
+
+  if (washEvent.paymentMethod === 'aggregator' && washEvent.sourceId) {
+    const agg = await prisma.aggregator.findUnique({
+      where: { id: washEvent.sourceId },
+      select: { preferredOurCompanyId: true },
+    });
+    if (agg?.preferredOurCompanyId) return agg.preferredOurCompanyId;
+  }
+
+  // Розница или нет preferred — primary
+  const primary = await prisma.ourCompany.findFirst({
+    where: { isPrimary: true, archived: false },
+    select: { id: true },
+  });
+  return primary?.id ?? null;
 }

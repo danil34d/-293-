@@ -1,10 +1,20 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Search, X, PlusCircle, Edit, Users, ListChecks, Cog, Scale, WalletCards, AlertTriangle, Archive, RotateCcw } from 'lucide-react';
+import { Search, X, PlusCircle, Edit, Users, ListChecks, Cog, Scale, WalletCards, AlertTriangle, Archive, RotateCcw, HandCoins, Building2, Car as CarIcon, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 import type { CounterAgent } from '@/types';
 import { DeleteConfirmationButton } from '@/components/common/DeleteConfirmationButton';
+import { SafetyBar } from '@/components/admin';
+import { PaymentModal } from './PaymentModal';
+import { ExpandedCounterAgent } from './ExpandedCounterAgent';
+import { type AgentSignal, SIGNAL_COLORS } from '@/lib/counter-agent-signals';
+
+type BalanceFilter = 'all' | 'prepaid' | 'debt';
+
+function formatMoney(n: number): string {
+  return n.toLocaleString('ru-RU');
+}
 
 type CounterAgentsView = 'active' | 'archived' | 'all';
 
@@ -62,11 +72,17 @@ interface CounterAgentsSearchProps {
   allAgents: CounterAgent[];
   initialView: CounterAgentsView;
   fetchError: string | null;
+  /** Phase 42 / V2-#7: precomputed derived signals per agent. */
+  signalsByAgentId?: Record<string, AgentSignal[]>;
 }
 
-export default function CounterAgentsSearch({ allAgents, initialView, fetchError }: CounterAgentsSearchProps) {
+export default function CounterAgentsSearch({ allAgents, initialView, fetchError, signalsByAgentId = {} }: CounterAgentsSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentView, setCurrentView] = useState<CounterAgentsView>(initialView);
+  const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>('all');
+  const [paymentTarget, setPaymentTarget] = useState<CounterAgent | null>(null);
+  // Phase 34: inline-expand state — id раскрытого контрагента (null = ничего не раскрыто)
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const sortedAgents = useMemo(() =>
     [...allAgents].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
@@ -82,12 +98,17 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
       ? sortedAgents
       : activeAgents;
 
-  const visibleAgents = useMemo(() =>
-    viewAgents.filter(agent => agentMatchesSearch(agent, searchQuery)),
-    [viewAgents, searchQuery]
-  );
+  const visibleAgents = useMemo(() => {
+    return viewAgents.filter(agent => {
+      if (!agentMatchesSearch(agent, searchQuery)) return false;
+      const bal = Number(agent.balance ?? 0);
+      if (balanceFilter === 'prepaid' && bal <= 0) return false;
+      if (balanceFilter === 'debt' && bal >= 0) return false;
+      return true;
+    });
+  }, [viewAgents, searchQuery, balanceFilter]);
 
-  // Count matched agents per view for tabs
+  // Count matched agents per view for tabs (без balance фильтра — таб всегда показывает фактический total)
   const activeCount = searchQuery
     ? activeAgents.filter(a => agentMatchesSearch(a, searchQuery)).length
     : activeAgents.length;
@@ -98,12 +119,39 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
     ? sortedAgents.filter(a => agentMatchesSearch(a, searchQuery)).length
     : sortedAgents.length;
 
+  // Phase 25b: aggregate KPI tiles from active agents (Predoplate / Debt / Cars)
+  const kpi = useMemo(() => {
+    const prepaid = activeAgents.filter(a => Number(a.balance ?? 0) > 0);
+    const debt    = activeAgents.filter(a => Number(a.balance ?? 0) < 0);
+    const totalPrepaid = prepaid.reduce((s, a) => s + Number(a.balance ?? 0), 0);
+    const totalDebt    = debt.reduce((s, a) => s + Number(a.balance ?? 0), 0); // отрицательное
+    const totalCars    = activeAgents.reduce((s, a) => s + (a.cars?.length ?? 0), 0);
+    return {
+      activeCount: activeAgents.length,
+      prepaidCount: prepaid.length,
+      debtCount: debt.length,
+      totalPrepaid,
+      totalDebt,
+      totalCars,
+    };
+  }, [activeAgents]);
+
+  // Counts по balance-фильтрам — для пилов
+  const filterCounts = useMemo(() => ({
+    all: viewAgents.filter(a => agentMatchesSearch(a, searchQuery)).length,
+    prepaid: viewAgents.filter(a => agentMatchesSearch(a, searchQuery) && Number(a.balance ?? 0) > 0).length,
+    debt: viewAgents.filter(a => agentMatchesSearch(a, searchQuery) && Number(a.balance ?? 0) < 0).length,
+  }), [viewAgents, searchQuery]);
+
   return (
     <div className="counter-agents">
       {/* Page Header */}
       <div className="page-header-section">
         <div className="page-header-content">
           <div className="page-title-section">
+            <div className="text-[10px] uppercase tracking-wider font-bold text-amber-600 flex items-center gap-1.5 mb-1">
+              <AlertTriangle className="w-3 h-3" /> Правка баланса только через «Добавить платёж» (audit-trail)
+            </div>
             <h1>Контрагенты</h1>
             <p>Управляйте вашими корпоративными клиентами, их автопарками и индивидуальными прайс-листами.</p>
           </div>
@@ -111,6 +159,36 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
             <PlusCircle className="h-4 w-4" />
             Добавить нового агента
           </Link>
+        </div>
+
+        {/* Phase 25b: SafetyBar — overview state */}
+        <div className="mt-4">
+          <SafetyBar
+            level={kpi.debtCount > 0 ? 'warn' : 'info'}
+            items={[
+              { icon: 'building-2', label: 'Активных', value: `${kpi.activeCount}` },
+              { icon: 'hand-coins', label: 'Предоплата',
+                value: kpi.prepaidCount > 0 ? `${kpi.prepaidCount} · +${formatMoney(kpi.totalPrepaid)} ₽` : '—' },
+              { icon: 'alert-triangle', label: 'Долги',
+                value: kpi.debtCount > 0 ? `${kpi.debtCount} · ${formatMoney(kpi.totalDebt)} ₽` : '—' },
+            ]}
+          />
+        </div>
+
+        {/* Phase 25b: 4 KPI tiles */}
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiTile label="Всего активных" value={`${kpi.activeCount}`}
+            sub={archivedAgents.length > 0 ? `+${archivedAgents.length} в архиве` : 'архив пуст'}
+            Icon={Building2} color="#0088CC" />
+          <KpiTile label="С предоплатой" value={`${kpi.prepaidCount}`}
+            sub={`+${formatMoney(kpi.totalPrepaid)} ₽`}
+            Icon={HandCoins} color="#10b981" />
+          <KpiTile label="С долгом" value={`${kpi.debtCount}`}
+            sub={`${formatMoney(kpi.totalDebt)} ₽`}
+            Icon={AlertTriangle} color={kpi.debtCount > 0 ? "#f59e0b" : "#94a3b8"} />
+          <KpiTile label="Машин в автопарках" value={`${kpi.totalCars}`}
+            sub={kpi.activeCount > 0 ? `~${Math.round(kpi.totalCars / kpi.activeCount)} на агента` : '—'}
+            Icon={CarIcon} color="#8b5cf6" />
         </div>
 
         {/* Search */}
@@ -158,6 +236,35 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
             Все ({allCount})
           </button>
         </div>
+
+        {/* Phase 25b: Balance filter row */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500">Баланс:</span>
+          {(['all', 'prepaid', 'debt'] as const).map(id => {
+            const labels: Record<typeof id, string> = {
+              all: 'Все балансы',
+              prepaid: 'С предоплатой',
+              debt: 'С долгом',
+            };
+            const counts: Record<typeof id, number> = filterCounts;
+            const isActive = balanceFilter === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setBalanceFilter(id)}
+                className={`rounded-md border px-2.5 py-1.5 text-[12px] font-semibold transition-colors flex items-center gap-1.5 ${
+                  isActive
+                    ? 'bg-[#0088CC] text-white border-[#0088CC]'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {labels[id]}
+                <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-60'}`}>{counts[id]}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Error Alert */}
@@ -186,10 +293,60 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
               </tr>
             </thead>
             <tbody>
-              {!fetchError && visibleAgents.map((agent) => (
-                <tr key={agent.id} className="agents-table-row">
+              {!fetchError && visibleAgents.map((agent) => {
+                const bal = Number(agent.balance ?? 0);
+                const isDebt = bal < 0;
+                const isExpanded = expandedId === agent.id;
+                return (
+                <React.Fragment key={agent.id}>
+                <tr
+                  className="agents-table-row cursor-pointer"
+                  style={
+                    isExpanded
+                      ? { background: 'rgba(239, 246, 255, 0.85)' }
+                      : isDebt && !agent.archived
+                      ? { background: 'rgba(254, 242, 242, 0.5)' }
+                      : undefined
+                  }
+                  onClick={(e) => {
+                    // Не раскрывать при клике на actions ячейку (кнопки внутри)
+                    const target = e.target as HTMLElement;
+                    if (target.closest('.action-buttons') || target.closest('a') || target.closest('button')) return;
+                    setExpandedId(isExpanded ? null : agent.id);
+                  }}>
                   <td className="agents-table-cell align-top">
                     <div className="agent-name">{highlightMatch(agent.name, searchQuery)}</div>
+                    {/* Phase 42 / V2-#7 deferred: derived signals — top 3 наиболее важных */}
+                    {(() => {
+                      const signals = signalsByAgentId[agent.id] || [];
+                      const topSignals = signals.slice(0, 3);
+                      if (topSignals.length === 0) return null;
+                      return (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {topSignals.map((s) => {
+                            const c = SIGNAL_COLORS[s.level];
+                            return (
+                              <span
+                                key={s.id}
+                                title={s.description}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border"
+                                style={{ background: c.bg, color: c.text, borderColor: c.border }}
+                              >
+                                {s.label}
+                              </span>
+                            );
+                          })}
+                          {signals.length > 3 && (
+                            <span
+                              title={`Ещё ${signals.length - 3} сигналов — раскройте карточку`}
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 bg-slate-100"
+                            >
+                              +{signals.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {agent.archived && (
                       <div className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
                         Архив
@@ -272,6 +429,29 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
                   </td>
                   <td className="agents-table-cell text-right align-top">
                     <div className="action-buttons">
+                      {/* Phase 34: chevron toggle */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : agent.id); }}
+                        className="action-btn"
+                        style={{ color: '#64748b' }}
+                        aria-label={isExpanded ? 'Свернуть карточку' : 'Раскрыть карточку'}
+                        title={isExpanded ? 'Свернуть' : 'Раскрыть карточку'}
+                      >
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </button>
+                      {!agent.archived && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentTarget(agent)}
+                          className="action-btn"
+                          style={{ color: '#10b981' }}
+                          aria-label={`Добавить платёж для ${agent.name}`}
+                          title="Добавить платёж (audit-trail)"
+                        >
+                          <HandCoins className="h-4 w-4" />
+                        </button>
+                      )}
                       <Link href={`/counter-agents/${agent.id}/finance`} className="action-btn" aria-label={`Финансы ${agent.name}`}>
                         <WalletCards className="h-4 w-4" />
                       </Link>
@@ -341,7 +521,20 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
                     </div>
                   </td>
                 </tr>
-              ))}
+                {isExpanded && (
+                  <tr>
+                    <td colSpan={6} className="agents-table-cell" style={{ background: 'rgba(248, 250, 252, 0.8)', padding: '12px 16px' }}>
+                      <ExpandedCounterAgent
+                        agent={agent}
+                        onPay={() => setPaymentTarget(agent)}
+                        signals={signalsByAgentId[agent.id] || []}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
+                );
+              })}
               {!fetchError && visibleAgents.length === 0 && (
                 <tr>
                   <td colSpan={6}>
@@ -384,6 +577,42 @@ export default function CounterAgentsSearch({ allAgents, initialView, fetchError
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Phase 25b: PaymentModal — записывает ClientTransaction(type='payment') с audit-меткой */}
+      <PaymentModal
+        agent={paymentTarget}
+        open={!!paymentTarget}
+        onOpenChange={(o) => { if (!o) setPaymentTarget(null); }}
+        onPaymentRecorded={() => {
+          // soft refresh — обновим страницу чтобы balance актуализировался из БД
+          if (typeof window !== 'undefined') window.location.reload();
+        }}
+      />
+    </div>
+  );
+}
+
+// Phase 25b: KPI tile с иконкой
+function KpiTile({ label, value, sub, Icon, color }: {
+  label: string;
+  value: string;
+  sub: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  color: string;
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">{label}</div>
+          <div className="text-[22px] font-extrabold tabular-nums mt-1" style={{ color }}>{value}</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>
+        </div>
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ background: color + '15', color }}>
+          <Icon className="h-4 w-4" />
         </div>
       </div>
     </div>

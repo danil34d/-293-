@@ -532,6 +532,28 @@ export async function getActiveSession(): Promise<any> {
     }
 }
 
+// ─── App version (AppConfig['appVersion']) ──────────────────
+// Хранит { kiosk: {versionCode, versionName, apkUrl, ...}, personal: {...} }
+// На проде используется pg-adapter (см. saveAppVersion / getAppVersion в pg-adapter.ts).
+// JSON-fallback ниже — для dev без Postgres.
+
+export async function getAppVersion(): Promise<any> {
+    const pg = pgIfPostgres(); if (pg) return pg.getAppVersion();
+    const dataFile = path.join(process.cwd(), 'data', 'app-version.json');
+    try {
+        const content = await fs.readFile(dataFile, 'utf-8');
+        return JSON.parse(content);
+    } catch {
+        return null;
+    }
+}
+
+export async function saveAppVersion(data: any): Promise<void> {
+    const pg = pgIfPostgres(); if (pg) { await pg.saveAppVersion(data); return; }
+    const dataFile = path.join(process.cwd(), 'data', 'app-version.json');
+    await fs.writeFile(dataFile, JSON.stringify(data, null, 2));
+}
+
 export async function saveActiveSession(session: any): Promise<void> {
     const dataFile = path.join(process.cwd(), 'data', 'active-session.json');
     await fs.writeFile(dataFile, JSON.stringify(session, null, 2));

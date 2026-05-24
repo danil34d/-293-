@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -24,7 +24,8 @@ import {
   WashingMachine,
   CalendarDays,
   Calculator,
-  Bot
+  Bot,
+  ListChecks,
 } from 'lucide-react';
 import type { Employee } from '@/types';
 import { isEmployeeAdmin } from '@/lib/employee-role';
@@ -43,6 +44,25 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   notificationKey?: 'newServices';
   adminOnly?: boolean;
+  /**
+   * Phase 54 / по карте handoff: danger-индикатор (красная точка) для пунктов
+   * с потенциально опасными действиями. Только визуальный hint — без блокировки.
+   */
+  danger?: 'critical' | 'warn';
+  /**
+   * Phase 54: ключ для динамического count badge.
+   * Sidebar лениво фетчит /api/sidebar-counts при mount и подставляет число.
+   */
+  countKey?: 'employees' | 'counterAgents' | 'aggregators' | 'canisters' | 'driverKickbacksPending';
+}
+
+/** Phase 54: shape ответа /api/sidebar-counts */
+interface SidebarCounts {
+  employees?: number;
+  counterAgents?: number;
+  aggregators?: number;
+  canisters?: number;
+  driverKickbacksPending?: number;
 }
 
 interface NavGroup {
@@ -62,22 +82,26 @@ const navGroups: NavGroup[] = [
   {
     title: 'Управление',
     items: [
-      { href: '/employees', label: 'Сотрудники', icon: UserCog },
+      { href: '/employees', label: 'Сотрудники', icon: UserCog, countKey: 'employees' },
       { href: '/schedule', label: 'Смены', icon: CalendarDays },
-      { href: '/counter-agents', label: 'Контрагенты', icon: Users },
-      { href: '/aggregators', label: 'Агрегаторы', icon: Briefcase },
-      { href: '/salary-schemes', label: 'Схемы зарплат', icon: Wallet },
+      { href: '/counter-agents', label: 'Контрагенты', icon: Users, countKey: 'counterAgents' },
+      { href: '/aggregators', label: 'Агрегаторы', icon: Briefcase, countKey: 'aggregators' },
+      // Phase 54: danger — DELETE → onDelete:SetNull cascade на всех сотрудников схемы
+      { href: '/salary-schemes', label: 'Схемы зарплат', icon: Wallet, danger: 'critical' },
       { href: '/expenses', label: 'Расходы', icon: ShoppingCart },
-      { href: '/inventory', label: 'Склад', icon: Warehouse },
+      { href: '/inventory', label: 'Склад', icon: Warehouse, countKey: 'canisters' },
       { href: '/calculator', label: 'Калькулятор мойки', icon: Calculator, adminOnly: true },
-      { href: '/settings', label: 'Прайс-лист "Наличка"', icon: Settings, notificationKey: 'newServices' },
+      { href: '/price-lists', label: 'Прайс-листы', icon: ListChecks, adminOnly: true },
+      // Phase 54: danger — 4-уровневая DANGER zone (cache-clear, inventory-reset, reset-data, db-wipe)
+      { href: '/settings', label: 'Прайс-лист "Наличка"', icon: Settings, notificationKey: 'newServices', danger: 'warn' },
     ],
   },
   {
     title: 'Финансы и отчеты',
     items: [
       { href: '/transactions', label: 'Розничные транзакции', icon: DollarSign },
-      { href: '/salary-report', label: 'Отчет по зарплате', icon: FilePieChart },
+      // Phase 54: danger — закрытие периода ZP блокирует PUT/DELETE wash-events (423 Locked)
+      { href: '/salary-report', label: 'Отчет по зарплате', icon: FilePieChart, danger: 'warn' },
       { href: '/client-analytics', label: 'Анализ клиентов', icon: LineChart },
       { href: '/invoices', label: 'Счета', icon: FileText },
       { href: '/reports', label: 'AI-Аналитика', icon: BrainCircuit },
@@ -95,11 +119,29 @@ export function ZorinSidebar({ onLogout, newServicesCount, isOpen = true, onTogg
 
   const isAdmin = isEmployeeAdmin(employee);
 
+  // Phase 54 / по карте: lazy-fetch counts при mount для bage отображения.
+  // Endpoint /api/sidebar-counts возвращает {employees, counterAgents, aggregators, canisters, driverKickbacksPending}.
+  // Не блокирующий, если упадёт — counts не показываются (graceful degradation).
+  const [counts, setCounts] = useState<SidebarCounts>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/sidebar-counts', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data && typeof data === 'object') {
+          setCounts(data as SidebarCounts);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className={cn(
       "zorin-sidebar",
       "flex flex-col h-full",
-      isOpen ? "w-[280px]" : "w-[80px]"
+      isOpen ? "w-[220px]" : "w-[64px]"
     )} data-state={isOpen ? "open" : "collapsed"}>
 
       {/* Sidebar Header */}
@@ -148,6 +190,12 @@ export function ZorinSidebar({ onLogout, newServicesCount, isOpen = true, onTogg
               <ul className="space-y-1">
                 {filteredItems.map((item) => {
                   const showNotification = item.notificationKey === 'newServices' && newServicesCount > 0 && !isActive(item.href);
+                  // Phase 54 / по карте: count badge для пунктов с countKey
+                  const countValue = item.countKey ? counts[item.countKey] : undefined;
+                  const showCountBadge = typeof countValue === 'number' && countValue > 0 && !showNotification;
+                  // Phase 54: danger-индикатор (🔴 critical / 🟠 warn) — только если не active
+                  const showDanger = item.danger && !isActive(item.href);
+                  const dangerColor = item.danger === 'critical' ? '#ef4444' : '#f59e0b';
 
                   return (
                     <li key={item.href} className="zorin-nav-item">
@@ -157,12 +205,36 @@ export function ZorinSidebar({ onLogout, newServicesCount, isOpen = true, onTogg
                           "zorin-nav-link",
                           isActive(item.href) && "active"
                         )}
+                        title={
+                          item.danger === 'critical' ? 'Опасные действия — DELETE с каскадом' :
+                          item.danger === 'warn' ? 'Содержит блокирующие действия' :
+                          undefined
+                        }
                       >
-                        <item.icon className="zorin-nav-icon" />
+                        <span className="relative inline-flex">
+                          <item.icon className="zorin-nav-icon" />
+                          {/* Phase 54: danger-точка в правом верхнем углу иконки */}
+                          {showDanger && (
+                            <span
+                              className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-1 ring-white"
+                              style={{ background: dangerColor }}
+                              aria-label={item.danger === 'critical' ? 'опасные действия' : 'требует внимания'}
+                            />
+                          )}
+                        </span>
                         <span className="zorin-nav-text">{item.label}</span>
                         {showNotification && (
                           <span className="zorin-nav-badge">
                             {newServicesCount}
+                          </span>
+                        )}
+                        {showCountBadge && (
+                          <span
+                            className="zorin-nav-badge"
+                            style={{ background: '#e0e7ff', color: '#3730a3' }}
+                            title={`${countValue} активных`}
+                          >
+                            {countValue}
                           </span>
                         )}
                       </Link>

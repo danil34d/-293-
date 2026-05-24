@@ -3,8 +3,9 @@ export const dynamic = 'force-dynamic';
 
 import "@/styles/inventory.css";
 import { AlertTriangle } from 'lucide-react';
-import { getWashEventsData, getExpensesData, getInventory, getAllEmployeeTransactions, getEmployeesData } from '@/lib/data';
+import { getWashEventsData, getExpensesData, getInventory, getAllEmployeeTransactions, getEmployeesData, getEmployeeCanistersData } from '@/lib/data';
 import { InventoryDashboard } from './components/InventoryDashboard';
+import { EmployeeCanistersSection } from './components/EmployeeCanistersSection';
 
 async function fetchData() {
     try {
@@ -13,27 +14,29 @@ async function fetchData() {
             expenses,
             inventory,
             employeeTransactions,
-            employees
+            employees,
+            canisters,
         ] = await Promise.all([
             getWashEventsData(),
             getExpensesData(),
             getInventory(),
             getAllEmployeeTransactions(),
             getEmployeesData(),
+            getEmployeeCanistersData(),
         ]);
-        
-        return { washEvents, expenses, inventory, employeeTransactions, employees, error: null };
+
+        return { washEvents, expenses, inventory, employeeTransactions, employees, canisters, error: null };
     } catch (e: any) {
         console.error("Failed to fetch inventory data:", e);
-        return { 
+        return {
             error: e.message || "Не удалось загрузить данные для раздела склада.",
-            washEvents: [], expenses: [], inventory: { chemicalStockGrams: 0 }, employeeTransactions: [], employees: []
+            washEvents: [], expenses: [], inventory: { chemicalStockGrams: 0 }, employeeTransactions: [], employees: [], canisters: []
         };
     }
 }
 
 export default async function InventoryPage() {
-    const { washEvents, expenses, inventory, employeeTransactions, employees, error } = await fetchData();
+    const { washEvents, expenses, inventory, employeeTransactions, employees, canisters, error } = await fetchData();
 
     if (error) {
         return (
@@ -76,6 +79,14 @@ export default async function InventoryPage() {
                     employees={employees}
                 />
             </div>
+
+            {/* Phase 52b / V2-NEW-1: Канистры у сотрудников секция */}
+            <EmployeeCanistersSection
+                canisters={canisters}
+                employees={employees}
+                washEvents={washEvents}
+                transactions={employeeTransactions}
+            />
         </div>
     );
 }

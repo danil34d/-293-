@@ -3,10 +3,11 @@ export const dynamic = 'force-dynamic';
 
 import PageHeader from '@/components/layout/PageHeader';
 import { EmployeeForm } from '../../components/EmployeeForm';
+import { EmployeeChangeLogView } from '../../components/EmployeeChangeLogView';
 import type { Employee } from '@/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getEmployeeById } from '@/lib/data';
+import { getEmployeeById, getEmployeesData } from '@/lib/data';
 
 export default async function EditEmployeePage({ params }: { params: { id: string } }) {
   const employeeId = params.id;
@@ -50,13 +51,23 @@ export default async function EditEmployeePage({ params }: { params: { id: strin
     );
   }
 
+  // Phase 29b: получаем список сотрудников для маппинга changedBy → ФИО админа.
+  // Best-effort — не блокируем основную страницу если упадёт.
+  let allEmployees: Employee[] = [];
+  try {
+    allEmployees = await getEmployeesData();
+  } catch { /* ignore */ }
+
   return (
-    <div className="container mx-auto py-4 md:py-8">
+    <div className="container mx-auto py-4 md:py-8 space-y-4">
       <PageHeader
         title={`Редактировать сотрудника`}
         description={`Обновление данных для ${employee.fullName}.`}
       />
       <EmployeeForm initialData={employee} employeeId={employeeId} />
+
+      {/* Phase 29b: Audit-журнал опасных правок (раскрывается аккордеоном) */}
+      <EmployeeChangeLogView employeeId={employeeId} employees={allEmployees} />
     </div>
   );
 }

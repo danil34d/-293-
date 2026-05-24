@@ -93,8 +93,15 @@ export async function fetchCameraSessionsRange(
   const url = `${CAMERA_DASHBOARD_BASE_URL}/api/sessions/range?from_date=${encodeURIComponent(
     fromDate
   )}&to_date=${encodeURIComponent(toDate)}&grouped=1`;
+  // 🔥 ФИКС 1.6.1: жёсткий 2-секундный таймаут.
+  // Раньше при падении dashboard.py каждый рендер /kiosk ждал OS TCP timeout
+  // (~10 секунд), и приложение становилось «нелетающим». Теперь — fail fast,
+  // страница рисуется без камеры (бейдж «не оформлено» пропадает, но UI работает).
   try {
-    const response = await fetch(url, { cache: 'no-store' });
+    const response = await fetch(url, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(2000),
+    });
     if (!response.ok) {
       console.error(`fetchCameraSessionsRange ${url} -> ${response.status}`);
       return [];
@@ -102,7 +109,13 @@ export async function fetchCameraSessionsRange(
     const data = (await response.json()) as unknown;
     return Array.isArray(data) ? (data as CameraSessionRaw[]) : [];
   } catch (error) {
-    console.error('fetchCameraSessionsRange failed:', error);
+    // Дашборд может быть недоступен — это не критично, рисуем без камер
+    const msg = (error as Error)?.message || String(error);
+    if (msg.includes('aborted') || msg.includes('timeout')) {
+      console.warn(`fetchCameraSessionsRange ${url} -> timeout 2s (камера-дашборд тормозит/мёртв)`);
+    } else {
+      console.error('fetchCameraSessionsRange failed:', error);
+    }
     return [];
   }
 }

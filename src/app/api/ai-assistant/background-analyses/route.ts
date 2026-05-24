@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBackgroundAnalyses } from '@/lib/db/ai-database';
 import { triggerAnalysis } from '@/lib/ai/cron-scheduler';
 import { requireAuth } from '@/lib/server-auth';
+import { checkAndIncrementAIQuota } from '@/lib/ai/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +48,27 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = requireAuth();
   if (auth instanceof NextResponse) return auth;
+
+  // Phase 18 / finding #22: rate-limit для manual trigger background analysis
+  // (тоже дорогой GLM-вызов).
+  const quota = checkAndIncrementAIQuota(auth.id);
+  if (!quota.allowed) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'AI rate-limit exceeded',
+        reason: quota.reason,
+        retryAfter: quota.retryAfter,
+        message: quota.reason === 'per-employee-hour'
+          ? `Достигнут личный лимит AI-запросов. Подождите ~${Math.ceil((quota.retryAfter ?? 60) / 60)} мин.`
+          : `Достигнут глобальный дневной лимит AI-запросов.`,
+      },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(quota.retryAfter ?? 60) },
+      }
+    );
+  }
 
   try {
     const body = await request.json();

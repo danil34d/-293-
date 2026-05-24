@@ -8,11 +8,14 @@ import type { BackgroundAnalysis } from '@/types/ai-assistant';
 import ReactMarkdown from 'react-markdown';
 import { CheckCircle2, Download, KeyRound, Save, Trash2, X } from 'lucide-react';
 import PlanimumImportCard from './PlanimumImportCard';
+import { RateLimitBar, SecurityBanner, HeaderPill } from './AIChatV2Extras';
 
 export default function AIAssistantPageClient() {
   const [selectedAnalysis, setSelectedAnalysis] = useState<BackgroundAnalysis | null>(null);
   const [glmApiKey, setGlmApiKey] = useState('');
   const [glmApiKeySet, setGlmApiKeySet] = useState(false);
+  const [keySource, setKeySource] = useState<'env' | 'db' | 'none'>('none');
+  const [keySourceWarning, setKeySourceWarning] = useState<string | null>(null);
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [keyMessage, setKeyMessage] = useState<string | null>(null);
 
@@ -22,6 +25,8 @@ export default function AIAssistantPageClient() {
         const response = await fetch('/api/ai-assistant/settings');
         const data = await response.json();
         setGlmApiKeySet(!!data.glmApiKeySet);
+        setKeySource(data.keySource ?? 'none');
+        setKeySourceWarning(data.keySourceWarning ?? null);
       } catch (error) {
         setKeyMessage('Не удалось загрузить статус API ключа.');
       }
@@ -50,7 +55,17 @@ export default function AIAssistantPageClient() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Ошибка сохранения');
       setGlmApiKeySet(!!data.glmApiKeySet);
-      setKeyMessage(data.glmApiKeySet ? 'Ключ сохранен' : 'Ключ удален');
+      setKeySource(data.keySource ?? 'none');
+      // Phase 19: показываем warnings из backend если есть
+      const warnText = Array.isArray(data.warnings) && data.warnings.length > 0
+        ? data.warnings.join(' · ')
+        : null;
+      if (warnText) {
+        setKeyMessage(warnText);
+        setKeySourceWarning(warnText);
+      } else {
+        setKeyMessage(data.glmApiKeySet ? 'Ключ сохранен' : 'Ключ удален');
+      }
       if (data.glmApiKeySet) setGlmApiKey('');
     } catch (error: any) {
       setKeyMessage(error.message || 'Ошибка сохранения');
@@ -156,12 +171,22 @@ export default function AIAssistantPageClient() {
 
   return (
     <div className="ai-assistant-page">
-      <div className="page-header-section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Phase 37 / V2-#24: V2 header pill + rate-limit bar */}
+      <div className="page-header-section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
         <div>
-          <h1>AI Помощник</h1>
+          <HeaderPill />
+          <h1 style={{ marginTop: 4 }}>AI Помощник</h1>
           <p>Интеллектуальный анализ и прогнозирование для вашей автомойки</p>
         </div>
-        <BackgroundAnalysisPanel onAnalysisClick={handleAnalysisClick} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <RateLimitBar />
+          <BackgroundAnalysisPanel onAnalysisClick={handleAnalysisClick} />
+        </div>
+      </div>
+
+      {/* Phase 37 / V2-#24: Security banner */}
+      <div style={{ marginTop: 12 }}>
+        <SecurityBanner />
       </div>
 
       <div className="ai-keys-card">
@@ -174,22 +199,52 @@ export default function AIAssistantPageClient() {
             <div className="ai-keys-status">
               <CheckCircle2 className="w-4 h-4" />
               Ключ установлен
+              {keySource === 'env' && (
+                <span style={{ marginLeft: 8, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#15803d', fontSize: 10, fontWeight: 700 }}>
+                  ENV (защищён)
+                </span>
+              )}
+              {keySource === 'db' && (
+                <span style={{ marginLeft: 8, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 700 }}>
+                  SQLite (plain text)
+                </span>
+              )}
             </div>
           )}
         </div>
+        {/* Phase 19 / finding #5: warning о хранении ключа */}
+        {keySourceWarning && (
+          <div style={{
+            marginTop: 8, marginBottom: 8, padding: '8px 12px',
+            background: keySource === 'db' ? '#fffbeb' : '#fef2f2',
+            border: `1px solid ${keySource === 'db' ? '#fde68a' : '#fecaca'}`,
+            borderRadius: 6, fontSize: 12, color: keySource === 'db' ? '#92400e' : '#991b1b'
+          }}>
+            ⚠ {keySourceWarning}
+          </div>
+        )}
         <div className="ai-keys-body">
           <input
             className="ai-keys-input"
             type="password"
-            placeholder="Вставьте API ключ с proxyapi.ru"
+            placeholder={keySource === 'env' ? 'env GLM_API_KEY активен — ввод заблокирован' : 'Вставьте API ключ с proxyapi.ru'}
             value={glmApiKey}
             onChange={(e) => setGlmApiKey(e.target.value)}
+            disabled={keySource === 'env'}
           />
-          <button className="ai-keys-btn" onClick={saveApiKey} disabled={isSavingKey || !glmApiKey.trim()}>
+          <button
+            className="ai-keys-btn"
+            onClick={saveApiKey}
+            disabled={isSavingKey || !glmApiKey.trim() || keySource === 'env'}
+          >
             <Save className="w-4 h-4" />
             Сохранить
           </button>
-          <button className="ai-keys-btn danger" onClick={() => { setGlmApiKey(''); saveApiKey(); }} disabled={isSavingKey}>
+          <button
+            className="ai-keys-btn danger"
+            onClick={() => { setGlmApiKey(''); saveApiKey(); }}
+            disabled={isSavingKey || keySource === 'env'}
+          >
             <Trash2 className="w-4 h-4" />
             Удалить
           </button>

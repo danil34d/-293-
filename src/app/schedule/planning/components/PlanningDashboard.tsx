@@ -12,12 +12,15 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ToastAction } from '@/components/ui/toast';
-import { Plus, Copy, CheckCircle, Calendar, Users, Trash2, Sparkles, Settings } from 'lucide-react';
+import { Plus, Copy, CheckCircle, Calendar, Users, Trash2, Sparkles, Settings, ShieldAlert, AlertTriangle, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import type { DailyRequirement, SchedulePlan, Employee, WashId } from '@/types';
 import { DEFAULT_WASH_ID, normalizeWashId } from '@/lib/wash';
+import { CheckItem, HazardPill, SafetyBar } from '@/components/admin';
+
+const AUTOFILL_MAGIC = 'ПЕРЕЗАПИСАТЬ';
 
 interface PlanningDashboardProps {
   initialPlans: SchedulePlan[];
@@ -64,6 +67,24 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
   const [autoFillClearExisting, setAutoFillClearExisting] = useState(false);
   const [autoFillSyncEmployeeConfigs, setAutoFillSyncEmployeeConfigs] = useState(true);
   const [autoFillSubmitting, setAutoFillSubmitting] = useState(false);
+
+  // Phase 6.4: UX-safety для autofill clearExisting + activate + delete
+  const [autoFillCheck1, setAutoFillCheck1] = useState(false);
+  const [autoFillCheck2, setAutoFillCheck2] = useState(false);
+  const [autoFillCheck3, setAutoFillCheck3] = useState(false);
+  const [autoFillMagic, setAutoFillMagic] = useState('');
+
+  // Phase 40 / V2-#18: preview-режим — какие дни ИСКЛЮЧИТЬ из автозаполнения
+  const [autoFillShowPreview, setAutoFillShowPreview] = useState(false);
+  const [autoFillExcludeDates, setAutoFillExcludeDates] = useState<Set<string>>(new Set());
+
+  const [activatePlanModal, setActivatePlanModal] = useState<SchedulePlan | null>(null);
+  const [activateCheck, setActivateCheck] = useState(false);
+  const [activateSubmitting, setActivateSubmitting] = useState(false);
+
+  const [deletePlanModal, setDeletePlanModal] = useState<SchedulePlan | null>(null);
+  const [deleteCheck, setDeleteCheck] = useState(false);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   // Filter plans by selected wash, then group by month
   const filteredPlans = plans.filter(p => normalizeWashId(p.washId) === selectedWashId);
@@ -270,7 +291,16 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
     }
   };
 
-  const handleActivatePlan = async (plan: SchedulePlan) => {
+  // Phase 6.4: handleActivatePlan теперь открывает confirm-modal с CheckItem
+  const openActivateModal = (plan: SchedulePlan) => {
+    setActivatePlanModal(plan);
+    setActivateCheck(false);
+  };
+
+  const submitActivatePlan = async () => {
+    const plan = activatePlanModal;
+    if (!plan || !activateCheck) return;
+    setActivateSubmitting(true);
     try {
       const response = await fetch(`/api/schedule-plans/${plan.id}`, {
         method: 'PUT',
@@ -282,54 +312,46 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
 
       const { plan: updatedPlan } = await response.json();
 
-      // Update local state - deactivate other plans in the same month and wash
       setPlans(plans.map(p =>
         p.month === updatedPlan.month && normalizeWashId(p.washId) === normalizeWashId(updatedPlan.washId)
           ? (p.id === updatedPlan.id ? { ...p, isActive: true } : { ...p, isActive: false })
           : p
       ));
 
-      toast({
-        title: 'План активирован',
-        description: `План "${plan.name}" теперь активен`
-      });
-
+      toast({ title: 'План активирован', description: `План "${plan.name}" теперь активен` });
+      setActivatePlanModal(null);
       router.refresh();
     } catch (error) {
       console.error('Error activating plan:', error);
-      toast({
-        title: 'Ошибка активации',
-        description: 'Не удалось активировать план',
-        variant: 'destructive'
-      });
+      toast({ title: 'Ошибка активации', description: 'Не удалось активировать план', variant: 'destructive' });
+    } finally {
+      setActivateSubmitting(false);
     }
   };
 
-  const handleDeletePlan = async (plan: SchedulePlan) => {
-    if (!confirm(`Удалить план "${plan.name}"?`)) return;
+  // Phase 6.4: handleDeletePlan теперь открывает confirm-modal вместо native confirm
+  const openDeleteModal = (plan: SchedulePlan) => {
+    setDeletePlanModal(plan);
+    setDeleteCheck(false);
+  };
 
+  const submitDeletePlan = async () => {
+    const plan = deletePlanModal;
+    if (!plan || !deleteCheck) return;
+    setDeleteSubmitting(true);
     try {
-      const response = await fetch(`/api/schedule-plans/${plan.id}`, {
-        method: 'DELETE'
-      });
-
+      const response = await fetch(`/api/schedule-plans/${plan.id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete plan');
 
       setPlans(plans.filter(p => p.id !== plan.id));
-
-      toast({
-        title: 'План удалён',
-        description: `План "${plan.name}" План успешно удалён`
-      });
-
+      toast({ title: 'План удалён', description: `План "${plan.name}" успешно удалён` });
+      setDeletePlanModal(null);
       router.refresh();
     } catch (error) {
       console.error('Error deleting plan:', error);
-      toast({
-        title: 'Ошибка удаления',
-        description: 'Не удалось удалить план',
-        variant: 'destructive'
-      });
+      toast({ title: 'Ошибка удаления', description: 'Не удалось удалить план', variant: 'destructive' });
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
@@ -353,7 +375,12 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
       const response = await fetch(`/api/schedule-plans/${autoFillPlan.id}/auto-fill`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clearExisting: autoFillClearExisting, syncEmployeeConfigs: autoFillSyncEmployeeConfigs })
+        body: JSON.stringify({
+          clearExisting: autoFillClearExisting,
+          syncEmployeeConfigs: autoFillSyncEmployeeConfigs,
+          // Phase 40 / V2-#18: список yyyy-MM-dd, которые надо пропустить
+          excludeDates: Array.from(autoFillExcludeDates),
+        })
       });
 
       if (!response.ok) throw new Error('Failed to auto-fill shifts');
@@ -373,6 +400,14 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
       setAutoFillDialogOpen(false);
       setAutoFillPlan(null);
       setAutoFillClearExisting(false);
+      // Phase 6.4: reset safety state
+      setAutoFillCheck1(false);
+      setAutoFillCheck2(false);
+      setAutoFillCheck3(false);
+      setAutoFillMagic('');
+      // Phase 40: reset preview state
+      setAutoFillShowPreview(false);
+      setAutoFillExcludeDates(new Set());
       router.refresh();
     } catch (error) {
       console.error('Error auto-filling shifts:', error);
@@ -478,7 +513,7 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleActivatePlan(plan)}
+                            onClick={() => openActivateModal(plan)}
                             className="flex-1"
                           >
                             Активировать
@@ -522,7 +557,7 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleDeletePlan(plan)}
+                          onClick={() => openDeleteModal(plan)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -711,18 +746,148 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
       </Dialog>
 
       {/* Auto-Fill Dialog */}
-      <Dialog open={autoFillDialogOpen} onOpenChange={setAutoFillDialogOpen}>
-        <DialogContent>
+      {/* Phase 6.4: Autofill dialog с UX-safety paragraphs (CheckItem + magic word
+          для clearExisting). */}
+      <Dialog open={autoFillDialogOpen} onOpenChange={(o) => {
+        setAutoFillDialogOpen(o);
+        if (!o) {
+          setAutoFillCheck1(false); setAutoFillCheck2(false); setAutoFillCheck3(false);
+          setAutoFillMagic('');
+          // Phase 40: reset preview state on close
+          setAutoFillShowPreview(false);
+          setAutoFillExcludeDates(new Set());
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Автозаполнение смен</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Автозаполнение смен
+              {autoFillClearExisting && <HazardPill level="critical">CRITICAL</HazardPill>}
+            </DialogTitle>
             <DialogDescription>
               {autoFillPlan
-                ? `План: "${autoFillPlan.name}" (${format(new Date(autoFillPlan.month + '-01'), 'LLLL yyyy', { locale: ru })})`
+                ? `План: "${autoFillPlan.name}" (${format(new Date(autoFillPlan.month + '-01'), 'LLLL yyyy', { locale: ru })}, ${getWashLabel(autoFillPlan.washId)})`
                 : 'Выберите план для автозаполнения.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
+            {autoFillClearExisting && !autoFillShowPreview && (
+              <SafetyBar
+                level="critical"
+                items={[
+                  { icon: 'shield-alert', label: 'Уровень', value: 'CRITICAL' },
+                  { icon: 'trash-2', label: 'Действие', value: 'DELETE+CREATE 30+ Shift' },
+                  { icon: 'lock', label: 'Защита', value: 'magic word' },
+                ]}
+              />
+            )}
+
+            {/* Phase 40 / V2-#18: Preview panel — галки по дням */}
+            {autoFillShowPreview && autoFillPlan && (() => {
+              const monthStart = new Date(autoFillPlan.month + '-01');
+              const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+              const daysInMonth: Date[] = [];
+              for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
+                daysInMonth.push(new Date(d));
+              }
+              const dailyReqMap = new Map<string, any>();
+              (autoFillPlan.dailyRequirements || []).forEach((r: any) => {
+                if (r?.date) dailyReqMap.set(r.date, r);
+              });
+              const includedCount = daysInMonth.filter(d => !autoFillExcludeDates.has(format(d, 'yyyy-MM-dd'))).length;
+              return (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-[13px] font-bold text-slate-900 flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-violet-600" />
+                        Превью {includedCount} из {daysInMonth.length} дней будет заполнено
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        Снимите галку с дня, который НЕ нужно автозаполнять
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setAutoFillExcludeDates(new Set())}
+                        className="text-[11px] font-semibold text-blue-700 hover:underline px-2 py-1"
+                      >
+                        Все
+                      </button>
+                      <span className="text-[10px] text-slate-300">·</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const all = new Set<string>();
+                          daysInMonth.forEach(d => all.add(format(d, 'yyyy-MM-dd')));
+                          setAutoFillExcludeDates(all);
+                        }}
+                        className="text-[11px] font-semibold text-rose-700 hover:underline px-2 py-1"
+                      >
+                        Никого
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1.5 max-h-[280px] overflow-y-auto">
+                    {daysInMonth.map(day => {
+                      const dateStr = format(day, 'yyyy-MM-dd');
+                      const isExcluded = autoFillExcludeDates.has(dateStr);
+                      const dailyReq = dailyReqMap.get(dateStr);
+                      const required = dailyReq
+                        ? (Number(dailyReq.box1DayRequired || 0) + Number(dailyReq.box1NightRequired || 0) +
+                           Number(dailyReq.box2DayRequired || 0) + Number(dailyReq.box2NightRequired || 0))
+                        : 0;
+                      const dow = day.getDay();
+                      const isWeekend = dow === 0 || dow === 6;
+                      return (
+                        <button
+                          key={dateStr}
+                          type="button"
+                          onClick={() => {
+                            const next = new Set(autoFillExcludeDates);
+                            if (next.has(dateStr)) next.delete(dateStr);
+                            else next.add(dateStr);
+                            setAutoFillExcludeDates(next);
+                          }}
+                          className="rounded-md p-1.5 text-left transition-colors"
+                          style={{
+                            background: isExcluded ? '#f1f5f9' : (isWeekend ? '#eff6ff' : '#fff'),
+                            border: `1px solid ${isExcluded ? '#cbd5e1' : (isWeekend ? '#bfdbfe' : '#e5e7eb')}`,
+                            opacity: isExcluded ? 0.45 : 1,
+                          }}
+                          title={isExcluded ? 'Пропущен' : `${required} слот${required === 1 ? '' : 'ов'}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className={`text-[10px] uppercase font-bold ${isWeekend ? 'text-blue-700' : 'text-slate-500'}`}>
+                              {format(day, 'EEEEEE', { locale: ru })}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {isExcluded ? '☐' : '☑'}
+                            </span>
+                          </div>
+                          <div className={`text-[14px] font-bold tabular-nums ${isExcluded ? 'text-slate-400' : 'text-slate-900'}`}>
+                            {format(day, 'd')}
+                          </div>
+                          <div className="text-[9px] text-slate-400 tabular-nums">
+                            {required > 0 ? `${required} слот.` : '—'}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 text-[11px] text-slate-600 rounded-md bg-white px-3 py-2 border border-slate-200">
+                    Будет создано смен примерно на {includedCount} дней.
+                    Дни с галкой будут обработаны AI-планировщиком, дни без — пропущены целиком.
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Опции (показываются только когда не в preview-режиме) */}
+            {!autoFillShowPreview && (
             <div className="text-sm text-gray-600">
               По умолчанию автозаполнение:
               <ul className="list-disc pl-5 mt-1 space-y-1">
@@ -731,25 +896,36 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                 <li>не удаляет лишние смены автоматически.</li>
               </ul>
             </div>
+            )}
 
+            {!autoFillShowPreview && (
             <div className={`rounded-md border p-3 ${autoFillClearExisting ? 'border-red-300 bg-red-50' : ''}`}>
               <div className="flex items-start gap-2">
                 <Checkbox
                   id="autoFillClearExisting"
                   checked={autoFillClearExisting}
-                  onCheckedChange={(v) => setAutoFillClearExisting(Boolean(v))}
+                  onCheckedChange={(v) => {
+                    setAutoFillClearExisting(Boolean(v));
+                    // Reset safety state когда снимаем галку
+                    if (!v) {
+                      setAutoFillCheck1(false); setAutoFillCheck2(false); setAutoFillCheck3(false);
+                      setAutoFillMagic('');
+                    }
+                  }}
                 />
                 <div className="space-y-1">
                   <Label htmlFor="autoFillClearExisting" className="text-sm font-medium">
                     Удалить существующие смены этого месяца и создать заново
                   </Label>
                   <div className="text-xs text-gray-600">
-                    Опция опасная: удалит все смены за выбранный месяц только для {autoFillPlan ? getWashLabel(autoFillPlan.washId) : 'Мойка 1'} в <code>data/shifts</code>.
+                    <b>Опция опасная:</b> удалит ВСЕ смены за выбранный месяц только для {autoFillPlan ? getWashLabel(autoFillPlan.washId) : 'Мойка 1'}. Сотрудники потеряют свой подтверждённый график, swap-запросы, привязку к WashEvent (через shiftId).
                   </div>
                 </div>
               </div>
             </div>
+            )}
 
+            {!autoFillShowPreview && (
             <div className="rounded-md border p-3">
               <div className="flex items-start gap-2">
                 <Checkbox
@@ -768,31 +944,252 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
                 </div>
               </div>
             </div>
+            )}
+
+            {/* UX-safety чек-лист (только для clearExisting) */}
+            {!autoFillShowPreview && autoFillClearExisting && (
+              <div className="space-y-2 pt-2 border-t border-red-200">
+                <CheckItem
+                  checked={autoFillCheck1}
+                  onCheck={setAutoFillCheck1}
+                  icon="users"
+                  title="Сотрудники предупреждены об удалении графика"
+                  desc="Их подтверждённые смены и swap-запросы исчезнут — нужно сообщить."
+                  level="critical"
+                />
+                <CheckItem
+                  checked={autoFillCheck2}
+                  onCheck={setAutoFillCheck2}
+                  icon="link"
+                  title="Понимаю что WashEvent.shiftId станет orphan"
+                  desc="Существующие мойки потеряют связь со сменой. Отчёты по сменам станут неполными."
+                  level="warn"
+                />
+                <CheckItem
+                  checked={autoFillCheck3}
+                  onCheck={setAutoFillCheck3}
+                  icon="check"
+                  title="Готов перезаписать план"
+                  desc="После apply откатить можно только восстановлением через /schedule вручную."
+                  level="critical"
+                />
+
+                <div className="pt-2 space-y-2">
+                  <label className="text-sm font-medium text-red-700 flex items-center gap-2">
+                    <Lock className="h-4 w-4" />
+                    Введите слово{' '}
+                    <code className="bg-red-100 px-1.5 py-0.5 rounded font-mono">
+                      {AUTOFILL_MAGIC}
+                    </code>
+                    {' '}для подтверждения:
+                  </label>
+                  <Input
+                    value={autoFillMagic}
+                    onChange={(e) => setAutoFillMagic(e.target.value)}
+                    placeholder={AUTOFILL_MAGIC}
+                    className={
+                      autoFillMagic && autoFillMagic.trim() !== AUTOFILL_MAGIC
+                        ? 'border-red-500 bg-red-50'
+                        : autoFillMagic.trim() === AUTOFILL_MAGIC
+                        ? 'border-emerald-500 bg-emerald-50'
+                        : ''
+                    }
+                    autoComplete="off"
+                    disabled={!(autoFillCheck1 && autoFillCheck2 && autoFillCheck3)}
+                  />
+                  {!(autoFillCheck1 && autoFillCheck2 && autoFillCheck3) && (
+                    <p className="text-[11px] text-amber-700">
+                      Сначала отметьте 3 чек-листа выше — поле ввода активируется.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            {autoFillShowPreview ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setAutoFillShowPreview(false)}
+                  disabled={autoFillSubmitting}
+                >
+                  ← Назад к опциям
+                </Button>
+                <Button
+                  onClick={submitAutoFill}
+                  disabled={
+                    !autoFillPlan
+                    || autoFillSubmitting
+                    || (autoFillClearExisting && !(autoFillCheck1 && autoFillCheck2 && autoFillCheck3 && autoFillMagic.trim() === AUTOFILL_MAGIC))
+                  }
+                  className={autoFillClearExisting ? 'bg-red-600 hover:bg-red-700' : ''}
+                >
+                  {autoFillSubmitting
+                    ? 'Заполняем...'
+                    : `Применить (${autoFillPlan ? (() => {
+                        const ms = new Date(autoFillPlan.month + '-01');
+                        const me = new Date(ms.getFullYear(), ms.getMonth() + 1, 0);
+                        const total = Math.round((me.getTime() - ms.getTime()) / (24 * 3600 * 1000)) + 1;
+                        return total - autoFillExcludeDates.size;
+                      })() : '?'} дн)`}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setAutoFillDialogOpen(false);
+                    setAutoFillPlan(null);
+                    setAutoFillClearExisting(false);
+                  }}
+                  disabled={autoFillSubmitting}
+                >
+                  Отмена
+                </Button>
+                {/* Phase 40 / V2-#18: Preview button */}
+                <Button
+                  variant="outline"
+                  onClick={() => setAutoFillShowPreview(true)}
+                  disabled={!autoFillPlan || autoFillSubmitting}
+                >
+                  <Sparkles className="h-4 w-4 mr-1.5 text-violet-500" />
+                  Превью дней →
+                </Button>
+                <Button
+                  onClick={submitAutoFill}
+                  disabled={
+                    !autoFillPlan
+                    || autoFillSubmitting
+                    || (autoFillClearExisting && !(autoFillCheck1 && autoFillCheck2 && autoFillCheck3 && autoFillMagic.trim() === AUTOFILL_MAGIC))
+                  }
+                  className={autoFillClearExisting ? 'bg-red-600 hover:bg-red-700' : ''}
+                >
+                  {autoFillSubmitting ? 'Заполняем...' : autoFillClearExisting ? 'Удалить и заполнить' : 'Заполнить'}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Phase 6.4: Activate plan confirm-modal с CheckItem */}
+      <Dialog
+        open={!!activatePlanModal}
+        onOpenChange={(o) => { if (!o) { setActivatePlanModal(null); setActivateCheck(false); } }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-emerald-600" />
+              Активировать план
+              <HazardPill level="warn">WARN</HazardPill>
+            </DialogTitle>
+            <DialogDescription>
+              {activatePlanModal && (
+                <>План: <b>"{activatePlanModal.name}"</b> ({format(new Date(activatePlanModal.month + '-01'), 'LLLL yyyy', { locale: ru })}, {getWashLabel(activatePlanModal.washId)})</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div>
+                <b>Активация автоматически деактивирует другие планы</b> того же месяца и мойки.
+                Только один план может быть активным одновременно.
+              </div>
+            </div>
+
+            <CheckItem
+              checked={activateCheck}
+              onCheck={setActivateCheck}
+              icon="check"
+              title="Понимаю последствия активации"
+              desc="Все остальные планы за этот же месяц/мойку перестанут быть активными. Шаблон для смен возьмётся из этого плана."
+              level="warn"
+            />
           </div>
 
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => {
-                setAutoFillDialogOpen(false);
-                setAutoFillPlan(null);
-                setAutoFillClearExisting(false);
-              }}
-              disabled={autoFillSubmitting}
+              onClick={() => setActivatePlanModal(null)}
+              disabled={activateSubmitting}
             >
               Отмена
             </Button>
             <Button
-              onClick={() => {
-                if (autoFillClearExisting) {
-                  if (!confirm('ВНИМАНИЕ: Все существующие смены за этот месяц будут удалены и созданы заново. Продолжить?')) return;
-                }
-                submitAutoFill();
-              }}
-              disabled={!autoFillPlan || autoFillSubmitting}
-              className={autoFillClearExisting ? 'bg-red-600 hover:bg-red-700' : ''}
+              onClick={submitActivatePlan}
+              disabled={!activateCheck || activateSubmitting}
             >
-              {autoFillSubmitting ? 'Заполняем...' : autoFillClearExisting ? 'Удалить и заполнить' : 'Заполнить'}
+              {activateSubmitting ? 'Активация...' : 'Активировать'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Phase 6.4: Delete plan confirm-modal с CheckItem (вместо native confirm) */}
+      <Dialog
+        open={!!deletePlanModal}
+        onOpenChange={(o) => { if (!o) { setDeletePlanModal(null); setDeleteCheck(false); } }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700">
+              <ShieldAlert className="h-5 w-5" />
+              Удалить план
+              <HazardPill level={deletePlanModal?.isActive ? 'critical' : 'warn'}>
+                {deletePlanModal?.isActive ? 'CRITICAL (активный план!)' : 'WARN'}
+              </HazardPill>
+            </DialogTitle>
+            <DialogDescription>
+              {deletePlanModal && (
+                <>План: <b>"{deletePlanModal.name}"</b> ({format(new Date(deletePlanModal.month + '-01'), 'LLLL yyyy', { locale: ru })}, {getWashLabel(deletePlanModal.washId)})</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {deletePlanModal?.isActive && (
+              <div className="rounded-md border-2 border-rose-300 bg-rose-50 p-3 text-sm text-rose-900 flex items-start gap-2">
+                <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+                <div>
+                  <b>Этот план активен!</b> После удаления у месяца не останется активного плана. Создание/редактирование смен будет работать как раньше — но шаблон для AI-автозаполнения исчезнет.
+                </div>
+              </div>
+            )}
+
+            <div className="text-sm text-gray-700">
+              План — это <b>шаблон требований</b> (сколько людей в день, в каком слоте). Удаление шаблона <b>не удаляет существующие Shift</b> в графике. Удалятся только настройки employeeConfigs и dailyRequirements.
+            </div>
+
+            <CheckItem
+              checked={deleteCheck}
+              onCheck={setDeleteCheck}
+              icon="trash-2"
+              title="Понимаю что удаляется только шаблон"
+              desc="Существующие смены в /schedule останутся. Удалить шаблон безопасно если месяц закончился или план не использовался."
+              level={deletePlanModal?.isActive ? 'critical' : 'warn'}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeletePlanModal(null)}
+              disabled={deleteSubmitting}
+            >
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={submitDeletePlan}
+              disabled={!deleteCheck || deleteSubmitting}
+            >
+              {deleteSubmitting ? 'Удаление...' : 'Удалить план'}
             </Button>
           </DialogFooter>
         </DialogContent>
