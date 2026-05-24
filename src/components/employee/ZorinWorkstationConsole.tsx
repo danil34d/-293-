@@ -226,6 +226,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   //   водителя на этом номере (см. effect ниже). Можно править вручную.
   const [driverNameInput, setDriverNameInput] = useState('');
   const [driverSignatureDataUrl, setDriverSignatureDataUrl] = useState<string | null>(null);
+  // Phase 60e — источник росписи:
+  //   'cached'  — подтянута из CounterAgent.drivers[*].signature (водителю не нужно расписываться)
+  //   'fresh'   — нарисована сейчас (новый образец, пойдёт в save-signature)
+  //   null      — росписи нет
+  const [driverSignatureSource, setDriverSignatureSource] = useState<'cached' | 'fresh' | null>(null);
 
   const lastConsumptionRef = useRef<Record<string, Record<string, number>>>({});
 
@@ -1240,15 +1245,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
             throw new Error(errorData.error || 'Не удалось сохранить мойку.');
         }
 
-        // Phase 60c — fire-and-forget: сохранить роспись на CounterAgent.drivers[*].signature
-        //   если есть и водитель оформлен по split-договору. Не блокируем UI — даже если упадёт,
-        //   мойка уже сохранена и роспись лежит в WashEvent.driverSignature.
+        // Phase 60c/e — fire-and-forget: сохранить роспись на CounterAgent.drivers[*].signature
+        //   только если это СВЕЖАЯ роспись (cached уже лежит у водителя). Не блокируем UI.
         if (
           selectedPaymentMethod === 'counterAgentContract' &&
           hasSplitServiceLocal &&
           foundCounterAgent?.id &&
           driverNameInput.trim() &&
-          driverSignatureDataUrl
+          driverSignatureDataUrl &&
+          driverSignatureSource === 'fresh'
         ) {
           fetch(`/api/counter-agents/${foundCounterAgent.id}/drivers/save-signature`, {
             method: 'POST',
@@ -1305,6 +1310,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
     // Phase 60a/b — reset driver name + signature
     setDriverNameInput('');
     setDriverSignatureDataUrl(null);
+    setDriverSignatureSource(null);
     setWashServices([]);
     setCustomExtraServiceName('');
     setCustomExtraServicePrice('');
@@ -2107,57 +2113,114 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                       🖊️ Водитель — ФИО и роспись
                       <span className="text-xs font-normal text-slate-500 italic">(для Ведомости учёта)</span>
                     </p>
-                    {/* Phase 60d — умный селектор водителей: pills для ≤6, combobox с поиском для больших списков.
-                        Авто-выбор по plate если водитель закреплён за этим номером. */}
                     {(() => {
-                      const drivers = (foundCounterAgent as any)?.drivers as Array<{
+                      const drivers = ((foundCounterAgent as any)?.drivers || []) as Array<{
                         id?: string; name: string; phone?: string; position?: string; plates?: string[]; signature?: string;
-                      }> | undefined;
-                      if (!drivers || drivers.length === 0) return null;
+                      }>;
+                      // Phase 60e — найти водителя в списке CA по текущему ФИО (case-insensitive)
+                      // для auto-prefill подписи при ручном вводе совпадающего имени.
+                      const matchedDriver = drivers.find(d => d.name.trim().toLowerCase() === driverNameInput.trim().toLowerCase());
                       return (
-                        <div className="space-y-1.5">
-                          <label className="zorin-form-label text-xs">Водители контрагента ({drivers.length})</label>
-                          <DriverComboBox
-                            drivers={drivers}
-                            selectedName={driverNameInput}
-                            vehiclePlate={normalizedVehicleNumber}
-                            onPick={(d) => {
-                              setDriverNameInput(d.name);
-                              if (d.signature) {
-                                setDriverSignatureDataUrl(d.signature);
-                              }
-                            }}
-                            onClear={() => {
-                              setDriverNameInput('');
-                              setDriverSignatureDataUrl(null);
-                            }}
-                          />
-                        </div>
+                        <>
+                          {/* Phase 60d — умный селектор водителей: pills для ≤6, combobox с поиском для больших списков.
+                              Авто-выбор по plate если водитель закреплён за этим номером. */}
+                          {drivers.length > 0 && (
+                            <div className="space-y-1.5">
+                              <label className="zorin-form-label text-xs">Водители контрагента ({drivers.length})</label>
+                              <DriverComboBox
+                                drivers={drivers}
+                                selectedName={driverNameInput}
+                                vehiclePlate={normalizedVehicleNumber}
+                                onPick={(d) => {
+                                  setDriverNameInput(d.name);
+                                  if (d.signature) {
+                                    setDriverSignatureDataUrl(d.signature);
+                                    setDriverSignatureSource('cached');
+                                  } else {
+                                    setDriverSignatureDataUrl(null);
+                                    setDriverSignatureSource(null);
+                                  }
+                                }}
+                                onClear={() => {
+                                  setDriverNameInput('');
+                                  setDriverSignatureDataUrl(null);
+                                  setDriverSignatureSource(null);
+                                }}
+                              />
+                            </div>
+                          )}
+                          <div className="space-y-1.5">
+                            <label className="zorin-form-label text-xs">ФИО водителя</label>
+                            <input
+                              type="text"
+                              placeholder="Иванов И.И."
+                              value={driverNameInput}
+                              onChange={(e) => {
+                                const newName = e.target.value;
+                                setDriverNameInput(newName);
+                                // Phase 60e — авто-подгрузить роспись, если введённое ФИО совпадает с водителем CA
+                                const m = drivers.find(d => d.name.trim().toLowerCase() === newName.trim().toLowerCase());
+                                if (m?.signature) {
+                                  setDriverSignatureDataUrl(m.signature);
+                                  setDriverSignatureSource('cached');
+                                } else if (driverSignatureSource === 'cached') {
+                                  // если ушли с матчевого имени и роспись была подтянутая — снять (т.к. это не его подпись)
+                                  setDriverSignatureDataUrl(null);
+                                  setDriverSignatureSource(null);
+                                }
+                              }}
+                              className="zorin-input"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="zorin-form-label text-xs flex items-center justify-between">
+                              <span>
+                                Роспись водителя
+                                <span className="ml-2 text-[10px] text-slate-500 italic font-normal">
+                                  (можно отрывать — рисуй по частям)
+                                </span>
+                              </span>
+                            </label>
+                            {/* Phase 60e — плашка-подтверждение когда роспись из библиотеки */}
+                            {driverSignatureSource === 'cached' && driverSignatureDataUrl && (
+                              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 flex items-center justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-2 text-[12px] text-emerald-800">
+                                  <span className="text-base">✓</span>
+                                  <span>
+                                    <strong>Подпись водителя сохранена ранее</strong> — будет использована автоматически.
+                                    {' '}Водителю не нужно расписываться повторно.
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDriverSignatureDataUrl(null);
+                                    setDriverSignatureSource(null);
+                                  }}
+                                  className="px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100 rounded whitespace-nowrap"
+                                  title="Очистить и расписаться заново"
+                                >
+                                  Расписаться заново
+                                </button>
+                              </div>
+                            )}
+                            <SignaturePad
+                              value={driverSignatureDataUrl}
+                              onChange={(dataUrl) => {
+                                setDriverSignatureDataUrl(dataUrl);
+                                // если рисовал — это свежая роспись (а не sticky из CA)
+                                if (dataUrl) {
+                                  setDriverSignatureSource('fresh');
+                                } else {
+                                  setDriverSignatureSource(null);
+                                }
+                              }}
+                              height={130}
+                            />
+                          </div>
+                        </>
                       );
                     })()}
-                    <div className="space-y-1.5">
-                      <label className="zorin-form-label text-xs">ФИО водителя</label>
-                      <input
-                        type="text"
-                        placeholder="Иванов И.И."
-                        value={driverNameInput}
-                        onChange={(e) => setDriverNameInput(e.target.value)}
-                        className="zorin-input"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="zorin-form-label text-xs">
-                        Роспись водителя
-                        <span className="ml-2 text-[10px] text-slate-500 italic font-normal">
-                          (рисуй по частям, можно отрывать)
-                        </span>
-                      </label>
-                      <SignaturePad
-                        value={driverSignatureDataUrl}
-                        onChange={setDriverSignatureDataUrl}
-                        height={130}
-                      />
-                    </div>
                   </div>
                 )}
 
