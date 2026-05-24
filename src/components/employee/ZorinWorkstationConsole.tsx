@@ -1219,9 +1219,12 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         // Phase 51c: метаданные водителя для backend Phase 50d
         // (создаст DriverKickback после atomic POST)
         ...(driverKickbackPayload ? { driverKickback: driverKickbackPayload } : {}),
-        // Phase 60a/b — ФИО водителя + цифровая роспись (если заполнены)
-        ...(driverNameInput.trim() ? { driverName: driverNameInput.trim() } : {}),
-        ...(driverSignatureDataUrl ? { driverSignature: driverSignatureDataUrl } : {}),
+        // Phase 60a/b — ФИО водителя + цифровая роспись (только для contract-моек).
+        // Поле UI скрыто для разовых клиентов, поэтому даже если в state что-то осталось — не отправляем.
+        ...(selectedPaymentMethod === 'counterAgentContract' && driverNameInput.trim()
+          ? { driverName: driverNameInput.trim() } : {}),
+        ...(selectedPaymentMethod === 'counterAgentContract' && driverSignatureDataUrl
+          ? { driverSignature: driverSignatureDataUrl } : {}),
     };
 
     try {
@@ -2071,32 +2074,34 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                 />
 
                 {/* Phase 60a/b — ФИО водителя + цифровая роспись.
-                    Заполняется один раз водителем на терминале, потом подтягивается в Ведомость.
-                    Для split-услуг авто-синхронизируется с SplitDriverCard. */}
-                <div className="space-y-3 pt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                  <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                    🖊️ Водитель — ФИО и роспись
-                    <span className="text-xs font-normal text-slate-500 italic">(для Ведомости учёта)</span>
-                  </p>
-                  <div className="space-y-1.5">
-                    <label className="zorin-form-label text-xs">ФИО водителя</label>
-                    <input
-                      type="text"
-                      placeholder="Иванов И.И."
-                      value={driverNameInput}
-                      onChange={(e) => setDriverNameInput(e.target.value)}
-                      className="zorin-input"
-                    />
+                    Показывается ТОЛЬКО для моек по договору с контр-агентом (для Ведомости).
+                    Для разовых клиентов (нал/карта/перевод) — скрыто, чтобы не тормозить. */}
+                {selectedPaymentMethod === 'counterAgentContract' && (
+                  <div className="space-y-3 pt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                    <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      🖊️ Водитель — ФИО и роспись
+                      <span className="text-xs font-normal text-slate-500 italic">(для Ведомости учёта)</span>
+                    </p>
+                    <div className="space-y-1.5">
+                      <label className="zorin-form-label text-xs">ФИО водителя</label>
+                      <input
+                        type="text"
+                        placeholder="Иванов И.И."
+                        value={driverNameInput}
+                        onChange={(e) => setDriverNameInput(e.target.value)}
+                        className="zorin-input"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="zorin-form-label text-xs">Роспись водителя</label>
+                      <SignaturePad
+                        value={driverSignatureDataUrl}
+                        onChange={setDriverSignatureDataUrl}
+                        height={130}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="zorin-form-label text-xs">Роспись водителя</label>
-                    <SignaturePad
-                      value={driverSignatureDataUrl}
-                      onChange={setDriverSignatureDataUrl}
-                      height={130}
-                    />
-                  </div>
-                </div>
+                )}
 
                 <hr />
                 <p className="font-semibold">Оказанные услуги:</p>
