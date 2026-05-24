@@ -2555,8 +2555,11 @@ export async function createWashEventWithSideEffects(
         vehicleNumber: washEvent.vehicleNumber,
         boxNumber: washEvent.boxNumber ?? null,
         paymentMethod: washEvent.paymentMethod,
-        aggregatorId,
-        counterAgentId,
+        // Prisma 5.22 Checked-create требует relation connect для FK
+        // (scalar aggregatorId/counterAgentId/ourCompanyId недоступны напрямую).
+        ...(aggregatorId ? { aggregator: { connect: { id: aggregatorId } } } : {}),
+        ...(counterAgentId ? { counterAgent: { connect: { id: counterAgentId } } } : {}),
+        ...(washEvent.ourCompanyId ? { ourCompany: { connect: { id: washEvent.ourCompanyId } } } : {}),
         sourceName: washEvent.sourceName ?? null,
         priceListName: washEvent.priceListName ?? null,
         totalAmount: washEvent.totalAmount,
@@ -2574,8 +2577,6 @@ export async function createWashEventWithSideEffects(
         cameraSession: washEvent.cameraSession ?? undefined,
         dismissal: washEvent.dismissal ?? undefined,
         restoration: washEvent.restoration ?? undefined,
-        // Phase 57b.1: multi-company FK — resolved upstream by resolveOurCompanyIdForWashEvent
-        ourCompanyId: washEvent.ourCompanyId ?? null,
         // Phase 10 / finding #40 — author fixed only on create
         createdByEmployeeId: washEvent.createdByEmployeeId ?? null,
         // Phase 60: водитель + цифровая роспись (для Ведомости)

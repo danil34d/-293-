@@ -2082,6 +2082,47 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                       🖊️ Водитель — ФИО и роспись
                       <span className="text-xs font-normal text-slate-500 italic">(для Ведомости учёта)</span>
                     </p>
+                    {/* Phase 60c — селектор водителей из CounterAgent.drivers
+                        (если у контр-агента уже есть зарегистрированные водители) */}
+                    {(() => {
+                      const drivers = (foundCounterAgent as any)?.drivers as Array<{ id: string; name: string; phone?: string }> | undefined;
+                      if (!drivers || drivers.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5">
+                          <label className="zorin-form-label text-xs">Выбрать из водителей контрагента</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {drivers.map((d) => {
+                              const active = driverNameInput.trim() === d.name.trim();
+                              return (
+                                <button
+                                  key={d.id}
+                                  type="button"
+                                  onClick={() => setDriverNameInput(d.name)}
+                                  className={`px-3 py-1.5 rounded text-xs font-semibold transition active:scale-95 ${
+                                    active
+                                      ? 'bg-indigo-100 ring-2 ring-indigo-400 text-indigo-800 shadow-sm'
+                                      : 'bg-white ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                  title={d.phone || ''}
+                                >
+                                  {d.name}
+                                </button>
+                              );
+                            })}
+                            {driverNameInput && (
+                              <button
+                                type="button"
+                                onClick={() => setDriverNameInput('')}
+                                className="px-2 py-1.5 rounded text-xs text-slate-500 hover:bg-slate-100"
+                                title="Сбросить выбор"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div className="space-y-1.5">
                       <label className="zorin-form-label text-xs">ФИО водителя</label>
                       <input
@@ -2093,7 +2134,12 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="zorin-form-label text-xs">Роспись водителя</label>
+                      <label className="zorin-form-label text-xs">
+                        Роспись водителя
+                        <span className="ml-2 text-[10px] text-slate-500 italic font-normal">
+                          (рисуй по частям, можно отрывать)
+                        </span>
+                      </label>
                       <SignaturePad
                         value={driverSignatureDataUrl}
                         onChange={setDriverSignatureDataUrl}

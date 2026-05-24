@@ -33,12 +33,22 @@ export default function SignaturePad({ value, onChange, height = 140 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [editing, setEditing] = useState(!value);
-  const [hasInk, setHasInk] = useState(false);
+  const [hasInk, setHasInk] = useState(!!value); // если value уже есть — считаем что чернила нанесены
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  // Phase 60b — отслеживаем «внешние» изменения value (auto-prefill из последней мойки).
+  //   Внутренние изменения через onChange НЕ должны схлопывать канву — иначе
+  //   роспись прерывается на каждом mouseup и нельзя продолжить.
+  const lastInternalValueRef = useRef<string | null>(value);
 
-  // Если value поменялся внешне (например, авто-подтянуло из последней мойки) — показываем превью
+  // Если value поменялся ВНЕШНЕ (auto-prefill из последней мойки) — показываем превью.
+  // Если поменялся изнутри (mouseup → onChange) — оставляем editing=true чтобы можно было
+  // продолжать рисовать, пока юзер сам не нажмёт «Готово» / закроет шаг.
   useEffect(() => {
-    setEditing(!value);
+    if (value !== lastInternalValueRef.current) {
+      // Внешнее изменение — показываем превью
+      setEditing(!value);
+      lastInternalValueRef.current = value;
+    }
   }, [value]);
 
   // Подгон размеров канвы под devicePixelRatio для чёткой росписи
@@ -132,6 +142,8 @@ export default function SignaturePad({ value, onChange, height = 140 }: Props) {
     if (!canvas) return;
     if (hasInk) {
       const dataUrl = canvas.toDataURL('image/png');
+      // помечаем как внутреннее изменение чтобы useEffect не схлопнул канву
+      lastInternalValueRef.current = dataUrl;
       onChange(dataUrl);
     }
   }
