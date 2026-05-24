@@ -292,14 +292,77 @@ async function downloadDocx(filename: string, doc: Document) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// ─── Phase 59-doc: shared FSA helpers (mirror DocumentsTab) ─────────────────
+
+const ROOT_HANDLE_KEY = 'carwash:reportsRootDirHandle';
+
+function openHandleDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('carwash-fsa', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function loadRootHandle(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const db = await openHandleDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction('handles', 'readonly');
+      const req = tx.objectStore('handles').get(ROOT_HANDLE_KEY);
+      req.onsuccess = () => resolve((req.result as FileSystemDirectoryHandle) ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function ensurePermission(handle: FileSystemDirectoryHandle): Promise<boolean> {
+  try {
+    // @ts-expect-error
+    const current = await handle.queryPermission?.({ mode: 'readwrite' });
+    if (current === 'granted') return true;
+    // @ts-expect-error
+    const requested = await handle.requestPermission?.({ mode: 'readwrite' });
+    return requested === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+async function saveToFolder(
+  rootHandle: FileSystemDirectoryHandle,
+  ipFolder: string,
+  agentName: string,
+  monthSubfolder: string,
+  filename: string,
+  blob: Blob,
+): Promise<string> {
+  const ip = await rootHandle.getDirectoryHandle(ipFolder, { create: true });
+  const ag = await ip.getDirectoryHandle(agentName, { create: true });
+  const mo = await ag.getDirectoryHandle(monthSubfolder, { create: true });
+  const fh = await mo.getFileHandle(filename, { create: true });
+  const writable = await (fh as any).createWritable();
+  await writable.write(blob);
+  await writable.close();
+  return `${ipFolder}/${agentName}/${monthSubfolder}/${filename}`;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function MonthlyReportButton({ agent, washEvents, transactions, ourCompany, driverKickbacks }: Props) {
   const [open, setOpen] = React.useState(false);
   const [generating, setGenerating] = React.useState(false);
+  const [rootHandle, setRootHandle] = React.useState<FileSystemDirectoryHandle | null>(null);
   const now = new Date();
   const [year, setYear] = React.useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = React.useState(now.getMonth());
+
+  React.useEffect(() => {
+    loadRootHandle().then(h => setRootHandle(h));
+  }, []);
 
   const yearOptions = React.useMemo(() => {
     const years = new Set<number>();
@@ -321,13 +384,36 @@ export function MonthlyReportButton({ agent, washEvents, transactions, ourCompan
   const monthTotal = monthWashes.reduce((s, w) => s + (w.totalAmount ?? 0), 0);
   const monthName = MONTHS[monthIdx];
 
+  const ipFolderName = ourCompany?.shortName?.replace(/[.,]+$/, '').trim() || 'ИП';
+  const monthSubfolder = `${year}-${String(monthIdx + 1).padStart(2, '0')} ${monthName}`;
+  const safeAgentName = agent.name.replace(/[^\wа-яА-ЯёЁ\- ]/g, '_').trim();
+
   async function handleDownload() {
     setGenerating(true);
     try {
       const doc = buildReportDocx(agent, ourCompany, year, monthIdx, monthName, monthWashes, transactions, driverKickbacks ?? null);
-      const safeAgentName = agent.name.replace(/[^\wа-яА-ЯёЁ\- ]/g, '_').trim();
       const filename = `Отчёт ${safeAgentName} ${monthName} ${year}.docx`;
-      await downloadDocx(filename, doc);
+      const blob = await Packer.toBlob(doc);
+      // Если папка подключена — пишем туда, иначе скачиваем обычно
+      if (rootHandle && await ensurePermission(rootHandle)) {
+        try {
+          const path = await saveToFolder(rootHandle, ipFolderName, agent.name, monthSubfolder, filename, blob);
+          alert(`✓ Сохранено в папку: ${path}`);
+          setOpen(false);
+          return;
+        } catch (err) {
+          console.warn('[MonthlyReport] FSA write failed, falling back to download', err);
+        }
+      }
+      // Fallback — обычный download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       setOpen(false);
     } catch (err) {
       console.error('[MonthlyReport] generation failed:', err);
@@ -336,8 +422,6 @@ export function MonthlyReportButton({ agent, washEvents, transactions, ourCompan
       setGenerating(false);
     }
   }
-
-  const ipFolderName = ourCompany?.shortName?.replace(/[.,]+$/, '').trim() || 'ИП';
 
   return (
     <>
@@ -398,8 +482,15 @@ export function MonthlyReportButton({ agent, washEvents, transactions, ourCompan
             </div>
 
             <div className="text-[11px] text-slate-500 leading-relaxed">
-              Скачается <code className="bg-slate-100 px-1 rounded">Отчёт {agent.name} {monthName} {year}.docx</code> (Microsoft Word).
-              <br/>Целевая папка: <code className="bg-slate-100 px-1 rounded">C:\Users\S\Desktop\Данил\контр агенты отчеты\{ipFolderName}\{agent.name}\{year}-{String(monthIdx + 1).padStart(2, '0')} {monthName}\</code>
+              {rootHandle ? (
+                <>
+                  ✓ Сохранится в <code className="bg-slate-100 px-1 rounded">{(rootHandle as any).name}\{ipFolderName}\{agent.name}\{monthSubfolder}\Отчёт {safeAgentName} {monthName} {year}.docx</code> с авто-созданием подпапок.
+                </>
+              ) : (
+                <>
+                  Скачается <code className="bg-slate-100 px-1 rounded">Отчёт {safeAgentName} {monthName} {year}.docx</code> через браузер (Downloads). Чтобы сохранять прямо в папку — подключи её в табе «Документы».
+                </>
+              )}
             </div>
           </div>
           <DialogFooter>

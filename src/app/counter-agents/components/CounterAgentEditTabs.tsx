@@ -9,6 +9,7 @@ import { DriversTab } from './DriversTab';
 import { CounterAgentHeaderCard } from './CounterAgentHeaderCard';
 import { CounterAgentWashesTab } from './CounterAgentWashesTab';
 import { ClientFinanceDashboard } from '@/components/common/ClientFinanceDashboard';
+import { DocumentsTab } from './DocumentsTab';
 
 /**
  * Phase 51a / V2-#4 split-pricing: Tabs обёртка для /counter-agents/[id]/edit.
@@ -123,7 +124,14 @@ export function CounterAgentEditTabs({ agent, agentId, referenceAgents, washEven
         />
       )}
       {activeTab === 'documents' && (
-        <DocumentsTabStub agentName={agent.name} />
+        <DocumentsTab
+          agent={agent}
+          ourCompany={resolvedOurCompany}
+          washEvents={washEvents.filter(w => {
+            const linked = (w as any).counterAgentId ?? (w as any).sourceId;
+            return linked === agentId;
+          })}
+        />
       )}
     </div>
   );
@@ -186,26 +194,3 @@ function FinanceTabEmbedded({
   );
 }
 
-function DocumentsTabStub({ agentName }: { agentName: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-gradient-to-br from-white to-slate-50 p-8 text-center space-y-3">
-      <FolderOpen className="w-12 h-12 text-indigo-400 mx-auto" />
-      <div>
-        <h3 className="text-base font-bold text-slate-900">Документы — скоро</h3>
-        <p className="text-sm text-slate-600 mt-1 max-w-md mx-auto">
-          Здесь будет автогенерация .docx документов на основе реквизитов контрагента:
-        </p>
-      </div>
-      <div className="text-sm text-slate-700 max-w-md mx-auto space-y-1.5 text-left bg-white rounded-lg p-3 border border-slate-200">
-        <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-indigo-500" /> Договор № __ от ДД.ММ.ГГГГ</div>
-        <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-indigo-500" /> Приложение №1 «Список автотранспорта»</div>
-        <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-indigo-500" /> Приложение №2 «Ведомость учёта»</div>
-        <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-indigo-500" /> Приложение №3 «Прейскурант цен»</div>
-        <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-indigo-500" /> Ежемесячный «Акт оказанных услуг»</div>
-      </div>
-      <p className="text-[11px] text-slate-500 pt-2">
-        Phase 59-doc — backend (docxtemplater + storage) + UI кнопок «Сформировать».
-      </p>
-    </div>
-  );
-}
