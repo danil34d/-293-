@@ -1239,6 +1239,27 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
             throw new Error(errorData.error || 'Не удалось сохранить мойку.');
         }
 
+        // Phase 60c — fire-and-forget: сохранить роспись на CounterAgent.drivers[*].signature
+        //   если есть и водитель оформлен по договору. Не блокируем UI — даже если упадёт,
+        //   мойка уже сохранена и роспись лежит в WashEvent.driverSignature.
+        if (
+          selectedPaymentMethod === 'counterAgentContract' &&
+          foundCounterAgent?.id &&
+          driverNameInput.trim() &&
+          driverSignatureDataUrl
+        ) {
+          fetch(`/api/counter-agents/${foundCounterAgent.id}/drivers/save-signature`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              driverName: driverNameInput.trim(),
+              signature: driverSignatureDataUrl,
+              // overwrite=false — не перетираем существующий образец
+              overwrite: false,
+            }),
+          }).catch(err => console.warn('[Phase 60c] save driver signature failed (non-blocking):', err));
+        }
+
         toast({
             title: "Мойка зарегистрирована!",
             description: `Данные о мойке для ${normalizedVehicleNumber} успешно сохранены в журнале.`,
@@ -2083,36 +2104,50 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                       <span className="text-xs font-normal text-slate-500 italic">(для Ведомости учёта)</span>
                     </p>
                     {/* Phase 60c — селектор водителей из CounterAgent.drivers
-                        (если у контр-агента уже есть зарегистрированные водители) */}
+                        (если у контр-агента уже есть зарегистрированные водители).
+                        Клик: подставляет ФИО + телефон-подсказку + авто-подгружает образец росписи (если есть). */}
                     {(() => {
-                      const drivers = (foundCounterAgent as any)?.drivers as Array<{ id: string; name: string; phone?: string }> | undefined;
+                      const drivers = (foundCounterAgent as any)?.drivers as Array<{
+                        id?: string; name: string; phone?: string; position?: string; signature?: string;
+                      }> | undefined;
                       if (!drivers || drivers.length === 0) return null;
                       return (
                         <div className="space-y-1.5">
-                          <label className="zorin-form-label text-xs">Выбрать из водителей контрагента</label>
+                          <label className="zorin-form-label text-xs">Водители контрагента</label>
                           <div className="flex flex-wrap gap-1.5">
-                            {drivers.map((d) => {
+                            {drivers.map((d, i) => {
                               const active = driverNameInput.trim() === d.name.trim();
+                              const hasSignature = !!d.signature;
                               return (
                                 <button
-                                  key={d.id}
+                                  key={d.id ?? `${d.name}-${i}`}
                                   type="button"
-                                  onClick={() => setDriverNameInput(d.name)}
-                                  className={`px-3 py-1.5 rounded text-xs font-semibold transition active:scale-95 ${
+                                  onClick={() => {
+                                    setDriverNameInput(d.name);
+                                    // если у водителя сохранена роспись — подтягиваем
+                                    if (d.signature) {
+                                      setDriverSignatureDataUrl(d.signature);
+                                    }
+                                  }}
+                                  className={`px-3 py-1.5 rounded text-xs font-semibold transition active:scale-95 flex items-center gap-1 ${
                                     active
                                       ? 'bg-indigo-100 ring-2 ring-indigo-400 text-indigo-800 shadow-sm'
                                       : 'bg-white ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50'
                                   }`}
-                                  title={d.phone || ''}
+                                  title={[d.phone, d.position, hasSignature ? '✓ есть образец росписи' : 'роспись не сохранена'].filter(Boolean).join(' · ')}
                                 >
                                   {d.name}
+                                  {hasSignature && <span className="text-[10px] text-emerald-600" title="есть сохранённая роспись">✓</span>}
                                 </button>
                               );
                             })}
                             {driverNameInput && (
                               <button
                                 type="button"
-                                onClick={() => setDriverNameInput('')}
+                                onClick={() => {
+                                  setDriverNameInput('');
+                                  setDriverSignatureDataUrl(null);
+                                }}
                                 className="px-2 py-1.5 rounded text-xs text-slate-500 hover:bg-slate-100"
                                 title="Сбросить выбор"
                               >
@@ -2120,6 +2155,9 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                               </button>
                             )}
                           </div>
+                          <p className="text-[10px] text-slate-500 italic">
+                            ✓ — образец росписи сохранён · клик подставляет ФИО и роспись автоматически
+                          </p>
                         </div>
                       );
                     })()}

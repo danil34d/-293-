@@ -1,13 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { useFieldArray, Control } from 'react-hook-form';
-import { Plus, Trash2, UserCircle2, Phone, Truck, Info } from 'lucide-react';
+import { useFieldArray, Control, useController } from 'react-hook-form';
+import { Plus, Trash2, UserCircle2, Phone, Truck, Info, Briefcase, PenLine } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import SignaturePad from '@/components/employee/SignaturePad';
 
 /**
  * Phase 51b / V2-#4 split-pricing: CRUD-редактор водителей контрагента.
@@ -61,7 +62,7 @@ export function DriversEditor({ control }: Props) {
             key={field.id}
             className="rounded-lg border border-slate-200 p-3 space-y-3 bg-slate-50/40"
           >
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_180px_auto] gap-3 items-start">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_180px_180px_auto] gap-3 items-start">
               <div>
                 <Label htmlFor={`drivers.${idx}.name`} className="text-[12px] font-semibold inline-flex items-center gap-1">
                   <UserCircle2 className="w-3 h-3" />
@@ -75,6 +76,13 @@ export function DriversEditor({ control }: Props) {
                   Телефон
                 </Label>
                 <DriverPhoneInput control={control} idx={idx} />
+              </div>
+              <div>
+                <Label htmlFor={`drivers.${idx}.position`} className="text-[12px] font-semibold inline-flex items-center gap-1">
+                  <Briefcase className="w-3 h-3" />
+                  Должность
+                </Label>
+                <DriverPositionInput control={control} idx={idx} />
               </div>
               <Button
                 type="button"
@@ -97,13 +105,25 @@ export function DriversEditor({ control }: Props) {
                 Терминал авто-предложит этого водителя если введут совпадающий номер при оформлении split-услуги.
               </div>
             </div>
+            {/* Phase 60c — образец цифровой росписи водителя для авто-подстановки в Ведомость */}
+            <div>
+              <Label className="text-[12px] font-semibold inline-flex items-center gap-1">
+                <PenLine className="w-3 h-3" />
+                Образец росписи (для Ведомости)
+              </Label>
+              <DriverSignatureInput control={control} idx={idx} />
+              <div className="text-[10px] text-slate-500 mt-1">
+                Сохраняется один раз. При оформлении мойки с этим водителем — автоматически подставляется в Ведомость учёта.
+                Можно перерисовать в любой момент.
+              </div>
+            </div>
           </div>
         ))}
 
         <Button
           type="button"
           variant="outline"
-          onClick={() => append({ name: '', phone: '', plates: '' })}
+          onClick={() => append({ name: '', phone: '', position: '', plates: '', signature: '' })}
           className="w-full border-dashed border-violet-300 text-violet-700 hover:bg-violet-50 hover:border-violet-400"
         >
           <Plus className="w-4 h-4 mr-1" />
@@ -143,6 +163,34 @@ function DriverPlatesInput({ control, idx }: { control: Control<any>; idx: numbe
       placeholder="К 905 ОЕ 50&#10;Н 218 МР 77"
       rows={2}
       className="font-mono text-[12px] resize-none"
+    />
+  );
+}
+
+// Phase 60c — должность водителя
+function DriverPositionInput({ control, idx }: { control: Control<any>; idx: number }) {
+  return (
+    <Input
+      {...control.register(`drivers.${idx}.position`)}
+      placeholder="Водитель / Экспедитор"
+      autoComplete="off"
+    />
+  );
+}
+
+// Phase 60c — SignaturePad для образца росписи через react-hook-form Controller
+function DriverSignatureInput({ control, idx }: { control: Control<any>; idx: number }) {
+  const { field } = useController({
+    name: `drivers.${idx}.signature`,
+    control,
+    defaultValue: '',
+  });
+  const value = (field.value as string) || null;
+  return (
+    <SignaturePad
+      value={value}
+      onChange={(dataUrl) => field.onChange(dataUrl ?? '')}
+      height={120}
     />
   );
 }

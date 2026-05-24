@@ -553,6 +553,14 @@ export function vedomostRowsFromWashes(agent: CounterAgent, washes: WashEvent[])
   (agent.cars || []).forEach(c => {
     carInfoMap.set(c.licensePlate, { mark: (c as any).mark, category: (c as any).category });
   });
+  // Phase 60c — мапа имён водителей → driver объект (для fallback росписи / телефона).
+  //   Если в мойке roving driverSignature нет, но у CounterAgent.drivers есть образец —
+  //   используем его. Это позволяет один раз расписаться → роспись будет в каждой Ведомости.
+  const driverByName = new Map<string, { name: string; phone?: string; signature?: string; position?: string }>();
+  (agent.drivers || []).forEach((d: any) => {
+    if (d?.name) driverByName.set(d.name.trim().toLowerCase(), d);
+  });
+
   return washes
     .slice()
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
@@ -574,6 +582,10 @@ export function vedomostRowsFromWashes(agent: CounterAgent, washes: WashEvent[])
         || (w as any).driverKickback?.driverName
         || (w.driverComments && w.driverComments[0]?.text)
         || '';
+      // Phase 60c — fallback росписи: WashEvent.driverSignature → CounterAgent.drivers[name].signature
+      const washSignature = (w as any).driverSignature as string | undefined;
+      const fallbackDriver = driverName ? driverByName.get(driverName.trim().toLowerCase()) : undefined;
+      const signature = washSignature || fallbackDriver?.signature || undefined;
       return {
         date: format(new Date(w.timestamp), 'dd.MM.yyyy'),
         mark,
@@ -582,7 +594,7 @@ export function vedomostRowsFromWashes(agent: CounterAgent, washes: WashEvent[])
         extra: extraParts.join('; '),
         totalRub: w.totalAmount ?? 0,
         driver: driverName,
-        signature: (w as any).driverSignature || undefined,
+        signature,
       };
     });
 }
