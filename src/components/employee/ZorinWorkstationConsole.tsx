@@ -2119,44 +2119,60 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
               </h3>
 
               <div className="space-y-3">
-                <p><strong>Номер машины:</strong> {normalizedVehicleNumber} (Введено: {vehicleNumberInput})</p>
-                <p><strong>Клиент:</strong> {
-                  selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent ? `${foundCounterAgent.name} (Контрагент по договору)` :
-                  selectedPaymentMethod === 'aggregator' && selectedAggregator ? `Клиент агрегатора (${selectedAggregator.name})` :
-                  'Розничный клиент'
-                }</p>
-                <p><strong>Способ оплаты:</strong> {
-                  selectedPaymentMethod ? (paymentMethodLabels[selectedPaymentMethod] || 'Не определен') : 'Не определен'
-                }</p>
-                <p><strong>Исполнители:</strong> {selectedEmployees.map(e => e.fullName).join(', ')}</p>
-
-                {/* Phase 57c: бейдж «От имени ИП» — какое наше юр.лицо оформит мойку.
-                    Логика дублирует серверный resolveOurCompanyIdForWashEvent: counterAgent.preferredOurCompanyId
-                    → aggregator.preferredOurCompanyId → primary. Сотрудник видит куда пойдут деньги. */}
+                {/* Phase 60P — компактная info-карточка вместо 5 отдельных <p>.
+                    На мобильнике 5 строк × ~32px = 160px вертикали сжаты в ~80px.
+                    Главное (номер + клиент) видно сразу. Остальное — мелкий шрифт ниже. */}
                 {(() => {
-                  if (allOurCompanies.length === 0) return null;
-                  const active = allOurCompanies.filter(c => !c.archived);
+                  // Компонуем info для targetOc один раз
                   let targetOc: OurCompany | undefined;
                   let reasonHint = '';
+                  const active = allOurCompanies.filter(c => !c.archived);
                   if (selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent?.preferredOurCompanyId) {
                     targetOc = active.find(c => c.id === foundCounterAgent.preferredOurCompanyId);
-                    reasonHint = `назначено контрагенту ${foundCounterAgent.name}`;
+                    reasonHint = `назначено ${foundCounterAgent.name}`;
                   } else if (selectedPaymentMethod === 'aggregator' && selectedAggregator?.preferredOurCompanyId) {
                     targetOc = active.find(c => c.id === selectedAggregator.preferredOurCompanyId);
-                    reasonHint = `назначено агрегатору ${selectedAggregator.name}`;
+                    reasonHint = `назначено ${selectedAggregator.name}`;
                   }
                   if (!targetOc) {
                     targetOc = active.find(c => c.isPrimary);
-                    reasonHint = 'основное ИП по умолчанию';
+                    reasonHint = 'основное ИП';
                   }
-                  if (!targetOc) return null;
+                  const clientLabel =
+                    selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent
+                      ? foundCounterAgent.name
+                      : selectedPaymentMethod === 'aggregator' && selectedAggregator
+                      ? `${selectedAggregator.name} (агрегатор)`
+                      : 'Розничный клиент';
+                  const employeeNames = selectedEmployees.map(e => e.fullName.split(' ').slice(0, 2).join(' ')).join(', ');
+                  const paymentLabel = selectedPaymentMethod ? (paymentMethodLabels[selectedPaymentMethod] || '—') : '—';
                   return (
-                    <p style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', margin: '8px 0' }}>
-                      <strong>От имени ИП:</strong>{' '}
-                      <span style={{ fontWeight: 700 }}>{targetOc.shortName}</span>
-                      {targetOc.isPrimary && <span style={{ marginLeft: 6 }}>⭐</span>}
-                      <span style={{ marginLeft: 8, fontSize: 12, color: '#6366f1' }}>({reasonHint})</span>
-                    </p>
+                    <div className="rounded-lg border border-slate-200 bg-white/60 p-3 space-y-1.5 text-[13px]">
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span className="font-mono font-bold text-base text-slate-900 tracking-wider">{normalizedVehicleNumber}</span>
+                        <span className="text-xs text-slate-400 truncate">введено {vehicleNumberInput}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5 min-w-0">
+                        <span className="text-slate-500 text-xs flex-shrink-0">Клиент:</span>
+                        <span className="font-semibold text-slate-800 truncate">{clientLabel}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5 min-w-0">
+                        <span className="text-slate-500 text-xs flex-shrink-0">Оплата:</span>
+                        <span className="text-slate-700">{paymentLabel}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5 min-w-0">
+                        <span className="text-slate-500 text-xs flex-shrink-0">Бригада:</span>
+                        <span className="text-slate-700 truncate">{employeeNames}</span>
+                      </div>
+                      {targetOc && (
+                        <div className="flex items-baseline gap-1.5 min-w-0 mt-1 pt-1 border-t border-slate-100">
+                          <span className="text-indigo-500 text-xs flex-shrink-0">ИП:</span>
+                          <span className="font-semibold text-indigo-700">{targetOc.shortName}</span>
+                          {targetOc.isPrimary && <span className="text-amber-500">⭐</span>}
+                          <span className="text-[11px] text-slate-400 truncate">· {reasonHint}</span>
+                        </div>
+                      )}
+                    </div>
                   );
                 })()}
 
