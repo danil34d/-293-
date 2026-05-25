@@ -30,6 +30,7 @@ import {
   Box,
   X,
   ArrowRight,
+  AlertCircle,
 } from 'lucide-react';
 import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment, OurCompany } from '@/types';
 import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
@@ -1699,6 +1700,56 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
             Выберите команду на смену, затем введите номер машины. Система автоматически определит тип клиента.
           </p>
 
+          {/* Phase 60k — KIOSK FIX: на терминале нельзя выбрать сотрудников вручную (только из графика).
+              Если график на сегодня пустой → кнопка «Проверить» disabled, и юзер не понимает почему.
+              Показываем явное сообщение с инструкцией что делать. */}
+          {isKioskMode && selectedEmployees.length === 0 && (
+            <div className="my-4 rounded-xl border-2 border-amber-300 bg-amber-50/80 p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-6 w-6 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-amber-900 mb-1">
+                    На боксе {selectedBoxNumber} нет назначенных сотрудников
+                  </p>
+                  <p className="text-xs text-amber-800 leading-snug mb-2">
+                    Оформить мойку можно только когда в графике на сегодня есть бригада на этом боксе.
+                    Откройте смену через админку или составьте график.
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <Link
+                      href="/workstation"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold bg-amber-600 text-white hover:bg-amber-700"
+                    >
+                      Открыть смену → /workstation
+                    </Link>
+                    <Link
+                      href="/schedule"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold bg-white text-amber-700 border border-amber-300 hover:bg-amber-50"
+                    >
+                      График → /schedule
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => router.refresh()}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                    >
+                      🔄 Обновить страницу
+                    </button>
+                  </div>
+                  {boxShiftStateByBox.box1.employees.length === 0 && boxShiftStateByBox.box2.employees.length === 0 ? (
+                    <p className="text-[10px] text-amber-700 italic mt-2">
+                      Подсказка: ни на одном боксе нет сотрудников. Скорее всего график на сегодня вообще не составлен.
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-amber-700 italic mt-2">
+                      Подсказка: на другом боксе сотрудники есть — переключитесь кнопкой Бокс сверху.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {cameraSessionContext && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4">
               {/* Header badges */}
@@ -1830,7 +1881,18 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                     {normalizedVehicleNumber && (
                       <p className="text-sm text-muted-foreground mt-1">Нормализованный: {normalizedVehicleNumber}</p>
                     )}
-                    <button onClick={() => checkVehicleNumber()} disabled={isLoading || !vehicleNumberInput.trim() || selectedEmployees.length === 0} className="zorin-button primary zorin-check-button">
+                    <button
+                      onClick={() => checkVehicleNumber()}
+                      disabled={isLoading || !vehicleNumberInput.trim() || selectedEmployees.length === 0}
+                      className="zorin-button primary zorin-check-button"
+                      title={
+                        selectedEmployees.length === 0
+                          ? 'Сначала назначьте сотрудников на смену (см. жёлтую плашку выше)'
+                          : !vehicleNumberInput.trim()
+                          ? 'Введите номер машины'
+                          : ''
+                      }
+                    >
                       {isLoading && normalizedVehicleNumber ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-4 w-4" />}
                       Проверить
                     </button>
