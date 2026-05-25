@@ -35,41 +35,83 @@ export default function SignatureFullscreenModal({ open, initialSignature, drive
   const [hasInk, setHasInk] = useState(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
+  // Helper: настроить canvas под текущий размер контейнера + опционально восстановить рисунок
+  function setupCanvas(restoreFromDataUrl: string | null = null) {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    if (width === 0 || height === 0) return;
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset любую предыдущую transformation
+    ctx.scale(ratio, ratio);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 3;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    // Восстановить рисунок (масштабируется под новые размеры)
+    if (restoreFromDataUrl) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, width, height);
+      };
+      img.src = restoreFromDataUrl;
+    }
+  }
+
   // Lock body scroll + setup canvas when opened
   useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    // Setup canvas
+    // Setup canvas первый раз
     setTimeout(() => {
-      const canvas = canvasRef.current;
-      const container = containerRef.current;
-      if (!canvas || !container) return;
-      const ratio = Math.max(window.devicePixelRatio || 1, 1);
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-      canvas.width = width * ratio;
-      canvas.height = height * ratio;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.scale(ratio, ratio);
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = 3;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-      }
-      setHasInk(false);
+      setupCanvas(initialSignature || null);
+      setHasInk(!!initialSignature);
     }, 50);
 
     return () => {
       document.body.style.overflow = prevOverflow;
     };
-  }, [open]);
+  }, [open, initialSignature]);
+
+  // Phase 60N — пересчёт канвы при resize/orientationchange (поворот телефона landscape↔portrait)
+  // Без этого: канва остаётся прежнего размера → рисуется только на половине экрана.
+  useEffect(() => {
+    if (!open) return;
+    let lastSnapshot: string | null = null;
+    const handleResize = () => {
+      const canvas = canvasRef.current;
+      // Сохраняем текущий рисунок (если есть штрихи) чтобы перерисовать после resize
+      if (canvas && hasInk) {
+        try {
+          lastSnapshot = canvas.toDataURL('image/png');
+        } catch {
+          lastSnapshot = null;
+        }
+      } else {
+        lastSnapshot = null;
+      }
+      // Небольшая задержка чтобы container успел пересчитать clientWidth/Height после rotate
+      setTimeout(() => setupCanvas(lastSnapshot), 100);
+    };
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [open, hasInk]);
 
   function getPoint(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>): { x: number; y: number } | null {
     const canvas = canvasRef.current;
