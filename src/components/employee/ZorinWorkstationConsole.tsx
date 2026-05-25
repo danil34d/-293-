@@ -1226,11 +1226,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         // Phase 51c: метаданные водителя для backend Phase 50d
         // (создаст DriverKickback после atomic POST)
         ...(driverKickbackPayload ? { driverKickback: driverKickbackPayload } : {}),
-        // Phase 60a/b — ФИО водителя + цифровая роспись (только для split-услуг + contract).
-        // Поле UI скрыто для разовых/не-split, поэтому даже если state остался — не отправляем.
-        ...(selectedPaymentMethod === 'counterAgentContract' && hasSplitServiceLocal && driverNameInput.trim()
+        // Phase 60a/b/L — ФИО водителя + цифровая роспись для ВСЕХ contract-моек.
+        // Phase 60L снял ограничение «только split» — обычные contract-мойки тоже идут в Ведомость.
+        ...(selectedPaymentMethod === 'counterAgentContract' && driverNameInput.trim()
           ? { driverName: driverNameInput.trim() } : {}),
-        ...(selectedPaymentMethod === 'counterAgentContract' && hasSplitServiceLocal && driverSignatureDataUrl
+        ...(selectedPaymentMethod === 'counterAgentContract' && driverSignatureDataUrl
           ? { driverSignature: driverSignatureDataUrl } : {}),
     };
 
@@ -1246,11 +1246,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
             throw new Error(errorData.error || 'Не удалось сохранить мойку.');
         }
 
-        // Phase 60c/e — fire-and-forget: сохранить роспись на CounterAgent.drivers[*].signature
+        // Phase 60c/e/L — fire-and-forget: сохранить роспись на CounterAgent.drivers[*].signature
         //   только если это СВЕЖАЯ роспись (cached уже лежит у водителя). Не блокируем UI.
+        //   Для ЛЮБОЙ contract-мойки (не только split) — Phase 60L снял ограничение.
         if (
           selectedPaymentMethod === 'counterAgentContract' &&
-          hasSplitServiceLocal &&
           foundCounterAgent?.id &&
           driverNameInput.trim() &&
           driverSignatureDataUrl &&
@@ -2166,12 +2166,13 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                   onClearDriver={() => setSelectedDriver(null)}
                 />
 
-                {/* Phase 60a/b — ФИО водителя + цифровая роспись.
-                    Показывается ТОЛЬКО когда среди услуг есть split (мойка скотовоза и т.п.) —
-                    именно там нужен водитель/роспись для Ведомости. Обычные contract-мойки
-                    без split (например, легковая по договору) — не требуют. */}
-                {selectedPaymentMethod === 'counterAgentContract' &&
-                  washServices.some((s) => (s as any).split?.driverBonus > 0) && (
+                {/* Phase 60a/b/L — ФИО водителя + цифровая роспись.
+                    Показывается ВСЕГДА для contract-моек (для Ведомости учёта).
+                    Для split-услуг водитель ОБЯЗАТЕЛЕН (блокирует кнопку Подтвердить).
+                    Для обычных contract — опциональна (но видна, можно расписаться).
+                    Phase 60d ужесточение откатили — слишком частая ситуация когда split-config
+                    потерян в priceList (был баг normalizeItems до Phase 60j). */}
+                {selectedPaymentMethod === 'counterAgentContract' && (
                   <div className="space-y-3 pt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                     <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       🖊️ Водитель — ФИО и роспись
