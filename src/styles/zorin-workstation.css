@@ -685,10 +685,12 @@
     justify-content: center !important;
   }
 
-  /* Confirmation card */
+  /* Confirmation card — Phase 60M: tighter padding для мобильника
+     даёт +12px полезной ширины, важно для row-cells и канвы */
   .zorin-confirmation-card {
-    padding: 20px !important;
-    margin-top: 16px !important;
+    padding: 14px !important;
+    margin-top: 12px !important;
+    border-radius: 12px !important;
   }
 
   .zorin-confirmation-title {

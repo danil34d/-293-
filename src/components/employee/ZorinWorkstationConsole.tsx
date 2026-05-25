@@ -31,11 +31,13 @@ import {
   X,
   ArrowRight,
   AlertCircle,
+  PenLine,
 } from 'lucide-react';
 import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment, OurCompany } from '@/types';
 import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
 import { SplitDriverCard, DriverPickerModal } from './SplitDriverWidgets';
 import SignaturePad from './SignaturePad';
+import SignatureFullscreenModal from './SignatureFullscreenModal';
 import DriverComboBox from './DriverComboBox';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -227,6 +229,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   //   водителя на этом номере (см. effect ниже). Можно править вручную.
   const [driverNameInput, setDriverNameInput] = useState('');
   const [driverSignatureDataUrl, setDriverSignatureDataUrl] = useState<string | null>(null);
+  // Phase 60M — full-screen signature modal state
+  const [signatureModalOpen, setSignatureModalOpen] = useState(false);
   // Phase 60e — источник росписи:
   //   'cached'  — подтянута из CounterAgent.drivers[*].signature (водителю не нужно расписываться)
   //   'fresh'   — нарисована сейчас (новый образец, пойдёт в save-signature)
@@ -1737,11 +1741,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                     </button>
                   </div>
                   {boxShiftStateByBox.box1.employees.length === 0 && boxShiftStateByBox.box2.employees.length === 0 ? (
-                    <p className="text-[10px] text-amber-700 italic mt-2">
+                    <p className="text-[11px] text-amber-700 italic mt-2">
                       Подсказка: ни на одном боксе нет сотрудников. Скорее всего график на сегодня вообще не составлен.
                     </p>
                   ) : (
-                    <p className="text-[10px] text-amber-700 italic mt-2">
+                    <p className="text-[11px] text-amber-700 italic mt-2">
                       Подсказка: на другом боксе сотрудники есть — переключитесь кнопкой Бокс сверху.
                     </p>
                   )}
@@ -1836,7 +1840,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                         Добавить/убрать
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0">
+                    <PopoverContent className="w-[calc(100vw-2rem)] max-w-[300px] p-0">
                       <ScrollArea className="h-60">
                         <div className="p-2 space-y-1">
                           {allEmployees.map(employee => (
@@ -2241,7 +2245,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                             <label className="zorin-form-label text-xs flex items-center justify-between">
                               <span>
                                 Роспись водителя
-                                <span className="ml-2 text-[10px] text-slate-500 italic font-normal">
+                                <span className="ml-2 text-[11px] text-slate-500 italic font-normal">
                                   (можно отрывать — рисуй по частям)
                                 </span>
                               </span>
@@ -2262,26 +2266,55 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                                     setDriverSignatureDataUrl(null);
                                     setDriverSignatureSource(null);
                                   }}
-                                  className="px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100 rounded whitespace-nowrap"
+                                  className="px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 rounded whitespace-nowrap"
                                   title="Очистить и расписаться заново"
                                 >
                                   Расписаться заново
                                 </button>
                               </div>
                             )}
-                            <SignaturePad
-                              value={driverSignatureDataUrl}
-                              onChange={(dataUrl) => {
-                                setDriverSignatureDataUrl(dataUrl);
-                                // если рисовал — это свежая роспись (а не sticky из CA)
-                                if (dataUrl) {
-                                  setDriverSignatureSource('fresh');
-                                } else {
-                                  setDriverSignatureSource(null);
-                                }
-                              }}
-                              height={130}
-                            />
+                            {/* Phase 60M — кнопка открывает FULL-SCREEN modal с канвой на весь экран.
+                                Раньше inline-канва 130px высоты разъезжала layout на мобильнике. */}
+                            {driverSignatureDataUrl && driverSignatureSource !== 'cached' ? (
+                              <div className="rounded-md border border-slate-200 bg-white p-2 flex items-center gap-3">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={driverSignatureDataUrl}
+                                  alt="роспись"
+                                  className="rounded"
+                                  style={{ maxHeight: 60, maxWidth: '60%', objectFit: 'contain' }}
+                                />
+                                <div className="flex flex-col gap-1.5 ml-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSignatureModalOpen(true)}
+                                    className="px-3 py-1.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                                  >
+                                    Перерисовать
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDriverSignatureDataUrl(null);
+                                      setDriverSignatureSource(null);
+                                    }}
+                                    className="px-3 py-1.5 rounded text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                                  >
+                                    Очистить
+                                  </button>
+                                </div>
+                              </div>
+                            ) : driverSignatureSource !== 'cached' ? (
+                              <button
+                                type="button"
+                                onClick={() => setSignatureModalOpen(true)}
+                                className="w-full py-4 rounded-lg border-2 border-dashed border-amber-400 bg-amber-50 hover:bg-amber-100 active:scale-[0.98] text-amber-900 font-bold text-sm flex items-center justify-center gap-2 transition"
+                              >
+                                <PenLine className="w-5 h-5" />
+                                Открыть и расписаться
+                                <ArrowRight className="w-4 h-4" />
+                              </button>
+                            ) : null}
                           </div>
                         </>
                       );
@@ -2431,6 +2464,21 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         onOpenChange={setIsPlateDialogOpen}
         onPlateRecognized={handlePlateRecognized}
         onRecognitionFailed={handlePlateRecognitionFailed}
+      />
+
+      {/* Phase 60M — full-screen modal для росписи водителя.
+          Канва на весь экран — водитель уверенно расписывается пальцем. */}
+      <SignatureFullscreenModal
+        open={signatureModalOpen}
+        initialSignature={driverSignatureDataUrl}
+        driverName={driverNameInput || undefined}
+        onClose={() => setSignatureModalOpen(false)}
+        onSave={(dataUrl) => {
+          setDriverSignatureDataUrl(dataUrl);
+          setDriverSignatureSource('fresh');
+          setSignatureModalOpen(false);
+          toast({ title: 'Подпись зафиксирована', description: 'Можно подтверждать мойку.', variant: 'default' });
+        }}
       />
     </div>
   );
