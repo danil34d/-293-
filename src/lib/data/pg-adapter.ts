@@ -1766,6 +1766,8 @@ export async function saveCounterAgent(data: any): Promise<void> {
       allowCustomServices: data.allowCustomServices ?? false,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
+      // Phase 50/60c: водители + цифровые подписи (JSON массив)
+      drivers: data.drivers ?? [],
       // Phase 57b.1: multi-company FK persistence
       preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
@@ -1780,6 +1782,8 @@ export async function saveCounterAgent(data: any): Promise<void> {
       allowCustomServices: data.allowCustomServices ?? false,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
+      // Phase 50/60c: водители + цифровые подписи (JSON массив)
+      drivers: data.drivers ?? [],
       // Phase 57b.1: multi-company FK persistence (relation connect для Checked-create)
       preferredOurCompany: fkConnect(data.preferredOurCompanyId),
     },

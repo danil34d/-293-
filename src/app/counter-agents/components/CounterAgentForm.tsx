@@ -30,9 +30,13 @@ import { DangerGate } from "@/components/admin";
  * для auto-match по plate при оформлении split-услуги.
  */
 const driverSchema = z.object({
+  // Phase 60c/60j: id + position + signature пробрасываются для CRUD сохранения
+  id: z.string().optional(),
   name: z.string().min(2, "ФИО водителя — минимум 2 символа"),
   phone: z.string().optional(),
+  position: z.string().optional(),
   plates: z.string().optional(), // multi-line text, parsed на submit
+  signature: z.string().optional(),
 });
 
 const schema = z.object({
@@ -82,6 +86,8 @@ function normalizeItems(items: CounterAgent["priceList"]) {
     serviceName: item.serviceName || "",
     price: item.price ?? 0,
     chemicalConsumption: item.chemicalConsumption ?? 0,
+    // Phase 60j — сохраняем split-конфиг при load формы (раньше был обрезан → split не сохранялся при PUT)
+    split: (item as any).split ?? undefined,
   })) || [];
 }
 
@@ -159,10 +165,14 @@ export function CounterAgentForm({
     allowCustomServices: initialData?.allowCustomServices ?? true,
     balance: initialData?.balance ?? 0,
     // Phase 51b: drivers из CounterAgent.drivers Json (plates → multi-line text)
+    // Phase 60j fix — пробрасываем id, position, signature (раньше обрезались → терялись при save)
     drivers: (initialData?.drivers || []).map((d) => ({
+      id: (d as any).id,
       name: d.name || "",
       phone: d.phone || "",
+      position: (d as any).position || "",
       plates: (d.plates || []).join("\n"),
+      signature: (d as any).signature,
     })),
     // Phase 57c: preferredOurCompanyId — "" = default (primary)
     preferredOurCompanyId: initialData?.preferredOurCompanyId || "",
@@ -434,14 +444,18 @@ export function CounterAgentForm({
 
     // Phase 51b / V2-#4: serialize drivers (plates multi-line → string[]).
     // Пустые имена/без plates отфильтруем — невалидные записи.
+    // Phase 60j fix — сохраняем id, position, signature (раньше терялись при save)
     const driversToSave = (data.drivers || [])
-      .map((d) => ({
+      .map((d: any) => ({
+        id: d.id || `drv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: (d.name || '').trim(),
         phone: (d.phone || '').trim(),
+        position: (d.position || '').trim(),
         plates: (d.plates || '')
           .split('\n')
-          .map((p) => normalizeLicensePlate(p.trim()))
+          .map((p: string) => normalizeLicensePlate(p.trim()))
           .filter(Boolean),
+        ...(d.signature ? { signature: d.signature } : {}),
       }))
       .filter((d) => d.name.length >= 2);
 
