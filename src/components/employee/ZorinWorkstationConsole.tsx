@@ -2414,11 +2414,29 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                   <p className="text-xl font-bold text-right"><strong>Оплата:</strong> По договору</p>
                 )}
 
-                <div className="flex space-x-3 pt-3">
-                  {(() => {
-                    const hasSplitConfirm = washServices.some((s) => (s as any).split?.driverBonus > 0);
-                    const splitBlockedNoDriver = hasSplitConfirm && !selectedDriver?.name;
-                    return (
+                {/* Phase 60O — spacer чтобы контент не залезал под sticky-bar внизу.
+                    Высота примерно равна sticky bar (~76px на мобильнике, ~64 на desktop). */}
+                <div className="h-20 md:h-16" aria-hidden />
+              </div>
+
+              {/* Phase 60O — Sticky bottom bar с кнопкой Подтвердить.
+                  На мобильнике постоянно виден внизу — водитель не теряет кнопку при scroll
+                  в длинной форме подтверждения (9 секций × ~100px = 1000px вертикали).
+                  На desktop становится sticky внутри карточки. */}
+              <div className="zorin-confirm-sticky-bar">
+                {(() => {
+                  const hasSplitConfirm = washServices.some((s) => (s as any).split?.driverBonus > 0);
+                  const splitBlockedNoDriver = hasSplitConfirm && !selectedDriver?.name;
+                  return (
+                    <div className="flex gap-2 items-center">
+                      <button
+                        onClick={() => setCurrentStep("serviceSelection")}
+                        className="zorin-button secondary px-3"
+                        title="Назад к выбору услуг"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span className="hidden sm:inline ml-1">Назад</span>
+                      </button>
                       <button
                         onClick={confirmWash}
                         disabled={isLoading || splitBlockedNoDriver}
@@ -2426,14 +2444,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                         title={splitBlockedNoDriver ? 'Выберите водителя для split-услуги' : ''}
                       >
                         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        {splitBlockedNoDriver ? 'Выберите водителя →' : 'Подтвердить и зарегистрировать'}
+                        {splitBlockedNoDriver
+                          ? 'Выберите водителя →'
+                          : showPrices
+                            ? `✓ Подтвердить · ${totalAmount.toFixed(0)} ₽`
+                            : '✓ Подтвердить и зарегистрировать'}
                       </button>
-                    );
-                  })()}
-                  <button onClick={() => setCurrentStep("serviceSelection")} className="zorin-button secondary">
-                    Назад к услугам
-                  </button>
-                </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
