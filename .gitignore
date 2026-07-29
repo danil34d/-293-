@@ -45,6 +45,15 @@ backend-go/server.exe
 .gradle/
 local.properties
 
+# --- Claude Code (runtime-мусор, не коммитим) ---
+# settings.json (allowlist разрешений) и launch.json (dev-серверы) — КОММИТИМ, они полезны команде.
+# Ниже — только эфемерное состояние текущей сессии.
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+.claude/plans/
+.claude/shell-snapshots/
+.claude/todos/
+
 # --- OS ---
 .DS_Store
 Thumbs.db
