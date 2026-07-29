@@ -1,3 +1,13 @@
+-- ============================================================
+-- ✅ УЖЕ ПРИМЕНЕНО НА ПРОДЕ (проверено 2026-07-29)
+--    Таблицы SalaryPeriod и EmployeeSalarySchemeHistory существуют в БД.
+--    Файл оставлен как исторический артефакт Phase 4A.
+--    Название папки «migrations-pending» — рудимент, ничего не pending.
+--
+--    Проект НЕ использует prisma migrate (папки prisma/migrations/ нет).
+--    Схема накатывается через `npx prisma db push` из schema.prisma.
+-- ============================================================
+--
 -- Redesign V1 (admin_safety pilot) — UX-safety schema additions
 -- Дата: 2026-05-13
 -- Применять на проде: psql $DATABASE_URL -f redesign_v1_models.sql
