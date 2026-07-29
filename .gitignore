@@ -60,3 +60,6 @@ Thumbs.db
 
 # --- USB installer (local only) ---
 /ZORIN-USB/
+
+# --- Бэкапы сторонних инструментов ---
+.codex-backup/
