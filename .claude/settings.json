@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nvidia-smi:*)",
+      "Bash(ping:*)",
+      "Bash(tasklist 2 *)",
+      "Bash(tasklist //FI *)",
+      "Bash(wmic process *)",
+      "Bash(where node *)",
+      "Bash(ssh carwash \"systemctl is-active *\")",
+      "Bash(ssh carwash \"systemctl status *\")",
+      "Bash(ssh carwash \"git log *\")",
+      "Bash(ssh carwash \"git status *\")",
+      "Bash(ssh carwash \"git rev-parse *\")",
+      "Bash(ssh carwash \"cd /home/carwash/Project && git log *\")",
+      "Bash(ssh carwash \"cd /home/carwash/Project && git status *\")",
+      "Bash(ssh carwash \"cd /home/carwash/Project && grep *\")",
+      "Bash(ssh -o ConnectTimeout=5 -o BatchMode=yes carwash *)",
+      "Bash(curl -s http://192.168.1.150*)",
+      "Bash(curl -sk http://192.168.1.150*)",
+      "Bash(curl -s http://localhost:8050*)",
+      "Bash(curl -s http://127.0.0.1:3000*)",
+      "Bash(curl -s -o /dev/null -w *)",
+      "Bash(curl -s -b /tmp/cookie.txt *)",
+      "Bash(curl -sb /tmp/c.txt *)",
+      "mcp__Claude_in_Chrome__find",
+      "mcp__Claude_in_Chrome__read_page",
+      "mcp__Claude_in_Chrome__get_page_text",
+      "mcp__Claude_in_Chrome__preview_screenshot",
+      "mcp__Claude_in_Chrome__list_connected_browsers",
+      "mcp__mcp-registry__search_mcp_registry",
+      "mcp__mcp-registry__list_connectors",
+      "mcp__obsidian__obsidian_get_note",
+      "mcp__obsidian__obsidian_list_notes",
+      "mcp__obsidian__obsidian_list_tags",
+      "mcp__obsidian__obsidian_search_notes"
+    ]
+  }
+}

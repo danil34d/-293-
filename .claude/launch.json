@@ -6,6 +6,12 @@
       "runtimeExecutable": "C:\\Users\\S\\node-portable\\node.exe",
       "runtimeArgs": ["-e", "const http=require('http');const proxy=http.createServer((q,s)=>{const opts={hostname:'192.168.1.150',port:3000,path:q.url,method:q.method,headers:{...q.headers,host:'192.168.1.150:3000'}};const r=http.request(opts,p=>{s.writeHead(p.statusCode,p.headers);p.pipe(s)});q.pipe(r);r.on('error',()=>{s.writeHead(502);s.end('Bad Gateway')})});proxy.listen(3100,()=>console.log('Proxy 3100->192.168.1.150:3000'))"],
       "port": 3100
+    },
+    {
+      "name": "v2-prototype",
+      "runtimeExecutable": "C:\\Users\\S\\node-portable\\node.exe",
+      "runtimeArgs": ["-e", "const http=require('http');const fs=require('fs');const path=require('path');const ROOT='C:\\\\Users\\\\S\\\\Desktop\\\\design_handoff_admin\\\\prototype';const MIME={'.html':'text/html;charset=utf-8','.jsx':'text/javascript;charset=utf-8','.js':'text/javascript;charset=utf-8','.css':'text/css','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon'};http.createServer((q,s)=>{let p=q.url.split('?')[0];if(p==='/')p='/index.html';const file=path.join(ROOT,p);fs.readFile(file,(err,data)=>{if(err){s.writeHead(404);return s.end('Not found: '+p)}const ext=path.extname(file).toLowerCase();s.writeHead(200,{'Content-Type':MIME[ext]||'application/octet-stream'});s.end(data)})}).listen(8765,()=>console.log('V2 prototype on 8765 serving '+ROOT))"],
+      "port": 8765
     }
   ]
 }
