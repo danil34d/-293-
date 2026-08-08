@@ -47,17 +47,37 @@ function estimateMinutes(serviceName: string | undefined): number {
   return 25;
 }
 
-function minutesAgo(iso: string | undefined): number {
-  if (!iso) return Infinity;
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return Infinity;
-  return Math.floor((Date.now() - t) / 60000);
+// 🔥 ФИКС 2026-08-08: камера отдаёт время как '2026-08-08_16-15-33'.
+// Вызывающий код делал .replace('_','T') и получал '2026-08-08T16-15-33' —
+// время с дефисами вместо двоеточий, Date.parse даёт NaN. Следствия были
+// видны на /operations: время всегда «—», minutesAgo возвращал Infinity,
+// а Infinity > 30 метил КАЖДУЮ карточку «просрочена (Infinityм)».
+// Теперь разбор здесь, вызывающим .replace() делать не нужно.
+function parseCameraTime(value: string | undefined | null): Date | null {
+  if (!value) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})[_T](\d{2})[-:](\d{2})(?:[-:](\d{2}))?/.exec(value);
+  if (m) {
+    const d = new Date(
+      Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+      Number(m[4]), Number(m[5]), Number(m[6] || 0),
+    );
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function formatHHmm(iso: string | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
+/** Минут назад. Неизвестное время → NaN: любое сравнение с ним даёт false,
+ *  поэтому «время неизвестно» больше не притворяется просрочкой. */
+function minutesAgo(value: string | undefined | null): number {
+  const d = parseCameraTime(value);
+  if (!d) return Number.NaN;
+  return Math.floor((Date.now() - d.getTime()) / 60000);
+}
+
+function formatHHmm(value: string | undefined | null): string {
+  const d = parseCameraTime(value);
+  if (!d) return '—';
   return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -222,7 +242,7 @@ function BoxCard({
 
   // Camera status: считаем "online" если есть pending за последний час или мойка < 10 мин
   const cameraOnline =
-    pendingVehicles.some((v) => v.start && minutesAgo(v.start.replace('_', 'T')) < 60) ||
+    pendingVehicles.some((v) => minutesAgo(v.start) < 60) ||
     (lastEvent && lastEventMinAgo < 10);
   const cameraLabel = cameraOnline ? 'online' : (lastEvent ? `${lastEventMinAgo} мин назад` : 'нет данных');
 
@@ -314,7 +334,7 @@ function BoxCard({
           const plateIsKnown = !!v.plateNumber;
           const vehicleClass = v.vehicleClass ? VEHICLE_CLASS_RU[v.vehicleClass] || v.vehicleClass : null;
           const startTime = v.start ? formatHHmm(v.start.replace('_', 'T')) : null;
-          const ageMin = v.start ? minutesAgo(v.start.replace('_', 'T')) : null;
+          const ageMin = v.start ? minutesAgo(v.start) : null;
           return (
             <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
               <div className="flex items-start gap-2 mb-2">
@@ -602,7 +622,7 @@ export function OperationsClient({
 
   // Pending за последние 60 минут как «overdue» если > 30 мин
   const overduePending = pendingVehicles.filter(
-    (v) => v.start && minutesAgo(v.start.replace('_', 'T')) > 30
+    (v) => minutesAgo(v.start) > 30
   );
 
   const isDay = currentShiftType === 'day';
@@ -724,12 +744,25 @@ export function OperationsClient({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
             {pendingVehicles.slice(0, 6).map((p) => {
-              const ageMin = p.start ? minutesAgo(p.start.replace('_', 'T')) : 0;
-              const overdue = ageMin > 30;
+              const ageMin = minutesAgo(p.start);
+              const ageKnown = Number.isFinite(ageMin);
+              const overdue = ageKnown && ageMin > 30;
+              // ссылка ведёт в форму с подставленными данными сессии,
+              // а не на пустой /workstation?box=N
+              const params = new URLSearchParams({
+                box: String(p.boxNumber),
+                camera: '1',
+                cameraBox: String(p.boxNumber),
+                cameraDir: p.dirName,
+                cameraMode: p.plateNumber ? 'checkout' : 'edit',
+              });
+              if (p.vehicleClass) params.set('cameraVehicleClass', p.vehicleClass);
+              if (p.start) params.set('cameraStart', p.start);
+              if (p.end) params.set('cameraEnd', p.end);
               return (
                 <Link
                   key={p.id}
-                  href={`/workstation?box=${p.boxNumber}`}
+                  href={`/workstation?${params.toString()}`}
                   className={
                     'rounded-lg bg-white p-2.5 flex items-center gap-3 hover:bg-amber-50 transition-colors ' +
                     (overdue ? 'border border-rose-200' : 'border border-amber-200')
@@ -739,8 +772,9 @@ export function OperationsClient({
                     {p.plateNumber || '?'}
                   </code>
                   <div className="flex-1 text-[11px] text-slate-600 min-w-0">
-                    Бокс {p.boxNumber} · {formatHHmm(p.start?.replace('_', 'T'))}
-                    {overdue && <span className="ml-1 text-rose-600 font-bold">просрочена ({ageMin}м)</span>}
+                    Бокс {p.boxNumber} · {formatHHmm(p.start)}
+                    {overdue && <span className="ml-1 text-rose-600 font-bold">просрочена ({ageMin} мин)</span>}
+                    {!ageKnown && <span className="ml-1 text-slate-400">время неизвестно</span>}
                   </div>
                   <span className="text-[11px] font-bold uppercase text-blue-600 inline-flex items-center">
                     оформить <ChevronRight className="w-3 h-3 ml-0.5" />
