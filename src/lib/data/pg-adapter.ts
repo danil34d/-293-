@@ -53,6 +53,7 @@ function washEventFromPrisma(row: any): WashEvent {
     boxNumber: row.boxNumber ?? undefined,
     employeeIds: row.employees?.map((e: any) => e.employeeId) ?? [],
     paymentMethod: parseEnum(row.paymentMethod, PAYMENT_TYPES, 'cash'),
+    createdAt: row.createdAt ? toISOString(row.createdAt) : undefined,
     sourceId: row.aggregatorId ?? row.counterAgentId ?? undefined,
     sourceName: row.sourceName ?? undefined,
     priceListName: row.priceListName ?? undefined,

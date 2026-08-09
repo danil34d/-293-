@@ -62,6 +62,7 @@ import { LicensePlateInput } from '@/components/plate-recognition/LicensePlateIn
 // и, будучи выбранным, делил зарплату. Раньше не стреляло только
 // потому, что pg-adapter молча отдавал ему 'employee'.
 import { isEmployeeAdmin, isKiosk } from '@/lib/employee-role';
+import { parseCameraTime, minutesAgo, formatHHmm, formatMinutes, formatCameraMoment } from '@/lib/camera-time';
 
 type OperationPaymentMethod = "cash" | "card" | "transfer" | "aggregator" | "counterAgentContract";
 type CurrentStep = "idle" | "vehicleInput" | "paymentSelection" | "aggregatorSelection" | "serviceSelection" | "confirmation";
@@ -1771,6 +1772,49 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                   <Badge variant="outline">{cameraSessionContext.vehicleClass}</Badge>
                 )}
               </div>
+
+              {/* 🔥 2026-08-09: карточка не показывала, КОГДА машина была под камерой.
+                  Оператор оформляет в 15:50 сессию, снятую в 10:47, и не видит
+                  разницы — легко приписать услуги не той машине. Время в ссылке
+                  ехало (cameraStart/cameraEnd), просто не отображалось. */}
+              {cameraSessionContext.start && (
+                <div className="mb-3 rounded-lg bg-white/70 border border-amber-200 px-3 py-2 text-[13px] text-slate-700">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span>
+                      <span className="text-slate-500">Заехала:</span>{' '}
+                      <b>{formatCameraMoment(cameraSessionContext.start)}</b>
+                    </span>
+                    {cameraSessionContext.end && (
+                      <span>
+                        <span className="text-slate-500">выехала:</span>{' '}
+                        <b>{formatHHmm(cameraSessionContext.end)}</b>
+                      </span>
+                    )}
+                    {cameraSessionContext.end && (() => {
+                      const a = parseCameraTime(cameraSessionContext.start);
+                      const b = parseCameraTime(cameraSessionContext.end);
+                      if (!a || !b) return null;
+                      const mins = Math.round((b.getTime() - a.getTime()) / 60000);
+                      if (mins <= 0) return null;
+                      return (
+                        <span>
+                          <span className="text-slate-500">в боксе:</span>{' '}
+                          <b>{formatMinutes(mins)}</b>
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  {(() => {
+                    const ago = minutesAgo(cameraSessionContext.start);
+                    if (!Number.isFinite(ago) || ago < 30) return null;
+                    return (
+                      <p className="mt-1 text-[12px] font-medium text-rose-700">
+                        Съёмка была {formatMinutes(ago)} назад — убедитесь, что оформляете именно эту машину.
+                      </p>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* 🔥 ФИКС 2026-05-05: одно фото — крупный план номера. Раньше показывали
                   два (общий план + crop) — общий лишний, оператору важен только номер.

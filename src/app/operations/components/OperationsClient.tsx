@@ -11,6 +11,8 @@ import type { PendingCameraVehicle } from '@/lib/camera-pending';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PendingCameraSessionsPanel } from '@/components/camera/PendingCameraSessionsPanel';
+// 09.08.2026: разбор времени переехал в общий модуль, чтобы копии не разъезжались.
+import { parseCameraTime, minutesAgo, formatHHmm } from '@/lib/camera-time';
 
 interface OperationsClientProps {
   box1Employees: Employee[];
@@ -53,34 +55,6 @@ function estimateMinutes(serviceName: string | undefined): number {
 // видны на /operations: время всегда «—», minutesAgo возвращал Infinity,
 // а Infinity > 30 метил КАЖДУЮ карточку «просрочена (Infinityм)».
 // Теперь разбор здесь, вызывающим .replace() делать не нужно.
-function parseCameraTime(value: string | undefined | null): Date | null {
-  if (!value) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})[_T](\d{2})[-:](\d{2})(?:[-:](\d{2}))?/.exec(value);
-  if (m) {
-    const d = new Date(
-      Number(m[1]), Number(m[2]) - 1, Number(m[3]),
-      Number(m[4]), Number(m[5]), Number(m[6] || 0),
-    );
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/** Минут назад. Неизвестное время → NaN: любое сравнение с ним даёт false,
- *  поэтому «время неизвестно» больше не притворяется просрочкой. */
-function minutesAgo(value: string | undefined | null): number {
-  const d = parseCameraTime(value);
-  if (!d) return Number.NaN;
-  return Math.floor((Date.now() - d.getTime()) / 60000);
-}
-
-function formatHHmm(value: string | undefined | null): string {
-  const d = parseCameraTime(value);
-  if (!d) return '—';
-  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
-
 // ─── small components ───
 
 function CameraPreview({ boxNumber }: { boxNumber: number }) {

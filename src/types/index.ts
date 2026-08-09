@@ -449,6 +449,9 @@ export interface WashEvent {
   boxNumber?: 1 | 2; // Номер бокса, в котором выполнялась мойка
   cameraSession?: WashEventCameraSessionLink;
   logTimeline?: WashEventLogTimeline;
+  /** Когда запись создана в системе. Отличается от timestamp (заезд машины),
+   *  если мойку оформили позже — в журнале это подписано отдельно. */
+  createdAt?: string;
   status?: 'completed' | 'dismissed' | 'restored';
   dismissal?: WashEventDismissalMeta;
   restoration?: WashEventRestorationMeta;
