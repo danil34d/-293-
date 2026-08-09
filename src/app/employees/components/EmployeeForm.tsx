@@ -31,7 +31,9 @@ const employeeFormSchema = z.object({
   hasCar: z.boolean(),
   carPlates: z.array(z.string()).default([]),
   canSwapShifts: z.boolean(),
-  role: z.enum(["admin", "employee", "kiosk"]).default("employee"),
+  // 🔥 2026-08-09: без kiosk1 селект показывал «Сотрудник» для терминала,
+  // а выбор «Киоск (терминал, бокс 1)» из ROLE_LABELS валился на валидации.
+  role: z.enum(["admin", "employee", "kiosk", "kiosk1"]).default("employee"),
   telegramChatId: z.string().regex(/^-?\d+$/, "Telegram ID должен содержать только цифры.").optional().or(z.literal('')),
   username: z.string().min(3, "Логин должен быть не менее 3 символов.").regex(/^[a-z0-9_]+$/i, "Логин может содержать только латинские буквы, цифры и нижнее подчеркивание.").optional().or(z.literal('')),
   password: z.string().min(6, "Пароль должен быть не менее 6 символов.").optional().or(z.literal('')),
@@ -47,7 +49,7 @@ interface EmployeeFormProps {
 }
 
 function normalizeEmployeeFormRole(role: EmployeeRole | undefined): EmployeeFormRole {
-  if (role && ["admin", "employee", "kiosk"].includes(role)) {
+  if (role && ["admin", "employee", "kiosk", "kiosk1"].includes(role)) {
     return role as EmployeeFormRole;
   }
   return "employee";
@@ -254,7 +256,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
     // читается верно, и форму нужно научить её не трогать.
     const initialRole = initialData?.role as string | undefined;
     const roleIsBeyondForm = !!initialRole
-      && !['admin', 'employee', 'kiosk'].includes(initialRole);
+      && !['admin', 'employee', 'kiosk', 'kiosk1'].includes(initialRole);
     const enforcedRole: EmployeeRole = roleIsBeyondForm
       ? (initialRole as EmployeeRole)
       : normalizeEmployeeFormRole(data.role);

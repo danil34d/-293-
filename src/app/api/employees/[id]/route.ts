@@ -8,7 +8,11 @@ import { requireAdmin } from '@/lib/server-auth';
 import { hashPassword } from '@/lib/password-hash';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
 
-const VALID_ROLES: EmployeeRole[] = ['admin', 'employee', 'kiosk'];
+// 🔥 ФИКС 2026-08-09 (найдено субагентом): в списке не было 'kiosk1', и
+// normalizeEmployeeRole понижал роль терминала до 'employee' при КАЖДОМ
+// сохранении карточки. Фронт от этого защитили раньше в тот же день, но
+// сервер всё равно портил данные — фикс был неполным.
+const VALID_ROLES: EmployeeRole[] = ['admin', 'employee', 'kiosk', 'kiosk1'];
 
 function normalizeEmployeeRole(requestedRole?: EmployeeRole): EmployeeRole {
   if (requestedRole && VALID_ROLES.includes(requestedRole)) return requestedRole;

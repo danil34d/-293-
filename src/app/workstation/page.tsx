@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { getShiftsData, getEmployeesData } from '@/lib/data';
 import { resolveCurrentBoxShiftStates } from '@/lib/current-box-team';
 import { ZorinWorkstationConsole } from '@/components/employee/ZorinWorkstationConsole';
+import { isKiosk } from '@/lib/employee-role';
 
 interface Props {
   searchParams: { box?: string };
@@ -20,7 +21,7 @@ export default async function AdminWorkstationPage({ searchParams }: Props) {
   const hour = new Date().getHours();
   const currentShiftType = (hour >= 8 && hour < 20) ? 'day' : 'night';
 
-  const realEmployees = employees.filter(e => e.role !== 'kiosk');
+  const realEmployees = employees.filter((e) => !isKiosk(e));
   const boxShiftStates = resolveCurrentBoxShiftStates({
     shifts,
     employees: realEmployees,

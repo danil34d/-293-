@@ -8,8 +8,13 @@ import { requireAuth, requireAdmin } from '@/lib/server-auth';
 import { hasAdminAccess } from '@/lib/employee-role';
 import { hashPassword } from '@/lib/password-hash';
 import { saveEntity } from '@/lib/data/write-helpers';
+import { isKiosk } from '@/lib/employee-role';
 
-const VALID_ROLES: EmployeeRole[] = ['admin', 'employee', 'kiosk'];
+// 🔥 ФИКС 2026-08-09 (найдено субагентом): в списке не было 'kiosk1', и
+// normalizeEmployeeRole понижал роль терминала до 'employee' при КАЖДОМ
+// сохранении карточки. Фронт от этого защитили раньше в тот же день, но
+// сервер всё равно портил данные — фикс был неполным.
+const VALID_ROLES: EmployeeRole[] = ['admin', 'employee', 'kiosk', 'kiosk1'];
 
 const PUBLIC_FIELDS_FOR_NON_ADMIN = ['id', 'fullName', 'role', 'username'] as const;
 
@@ -33,7 +38,9 @@ export async function GET() {
 
   try {
     const employees = await getEmployeesData();
-    const filteredEmployees = employees.filter((emp) => emp.role !== 'kiosk');
+    // 🔥 2026-08-09: сравнение с литералом пропускало 'kiosk1' — запись
+    // терминала уезжала в общий список сотрудников всем клиентам.
+    const filteredEmployees = employees.filter((emp) => !isKiosk(emp));
 
     if (hasAdminAccess(auth)) {
       const safeEmployees = filteredEmployees.map(({ password, ...emp }) => emp);
