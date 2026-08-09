@@ -37,12 +37,21 @@ function getEventTimelineDate(event: WashEvent): Date {
   return Number.isNaN(parsed.getTime()) ? new Date(event.timestamp) : parsed;
 }
 
+export interface TodayEarning {
+  employeeId: string;
+  employeeName: string;
+  totalEarnings: number;
+  washes: number;
+}
+
 interface WashLogPageWrapperProps {
   initialWashEvents: WashEvent[];
   initialEmployees: Employee[];
+  /** Настоящий заработок за сегодня по схемам, считается на сервере. */
+  todayEarnings?: TodayEarning[];
 }
 
-export function WashLogPageWrapper({ initialWashEvents, initialEmployees }: WashLogPageWrapperProps) {
+export function WashLogPageWrapper({ initialWashEvents, initialEmployees, todayEarnings = [] }: WashLogPageWrapperProps) {
   const [query, setQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('all');
@@ -137,28 +146,20 @@ export function WashLogPageWrapper({ initialWashEvents, initialEmployees }: Wash
     return initialWashEvents.filter(event => isToday(getEventTimelineDate(event)));
   }, [initialWashEvents]);
 
-  const todayReport = useMemo(() => {
-    const completedTodayEvents = todayEvents.filter(isCompletedWashEvent);
-    // Build simple report matching TodaySummary expectations
-    const employeesWorkedToday = new Set<string>();
-
-    completedTodayEvents.forEach(event => {
-      event.employeeIds?.forEach(id => employeesWorkedToday.add(id));
-    });
-
-    return Array.from(employeesWorkedToday).map(empId => {
-      const empEvents = completedTodayEvents.filter(e => e.employeeIds?.includes(empId));
-      const totalPay = empEvents.reduce((sum, e) => {
-        // Divide total amount by number of employees on that wash
-        const empCount = e.employeeIds?.length || 1;
-        return sum + (e.totalAmount / empCount);
-      }, 0);
-
-      return {
-        grossPay: totalPay,
-        completedWashes: empEvents.length
-      };
-    });
+  // 🔥 ФИКС 2026-08-09: «Всего моек» ДВОИЛОСЬ. Считалось как сумма моек по
+  // каждому сотруднику, поэтому мойка с двумя исполнителями попадала в итог
+  // дважды: 09.08 в базе было 8 завершённых моек, а сводка показывала 15.
+  // Средний чек следом врал: 835 ₽ вместо 1565 ₽. Выручка при этом сходилась
+  // (доли делились на число исполнителей), из-за чего ошибку и не замечали.
+  // Теперь мойки и выручка считаются по СОБЫТИЯМ, а не по людям.
+  const todayTotals = useMemo(() => {
+    const completed = todayEvents.filter(isCompletedWashEvent);
+    const revenue = completed.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
+    return {
+      revenue,
+      washes: completed.length,
+      averageCheck: completed.length > 0 ? Math.round(revenue / completed.length) : 0,
+    };
   }, [todayEvents]);
 
   const handlePageChange = (page: number) => {
@@ -188,7 +189,7 @@ export function WashLogPageWrapper({ initialWashEvents, initialEmployees }: Wash
 
   return (
     <div className="wash-log">
-      <TodaySummary reportData={todayReport} />
+      <TodaySummary totals={todayTotals} earnings={todayEarnings} />
 
       <ZorinWashLogClient
         washEvents={paginatedEvents}

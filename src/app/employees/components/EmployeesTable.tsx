@@ -85,7 +85,14 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
       if (filter === "active" && e.archived) return false;
       if (filter === "archived" && !e.archived) return false;
       // Filter by role
-      if (roleFilter !== "all" && e.role !== roleFilter) return false;
+      // 🔥 ФИКС 2026-08-09: вкладка «Терминалы» сравнивала роль с литералом
+      // "kiosk", а у терминала бокса роль "kiosk1" — вкладка была всегда пустой,
+      // при том что сама запись висела в «Все роли». Устройства ищем помощником.
+      if (roleFilter === "kiosk") {
+        if (!isKioskDevice(e)) return false;
+      } else if (roleFilter !== "all" && e.role !== roleFilter) {
+        return false;
+      }
       // Search
       if (search) {
         const s = search.toLowerCase();
