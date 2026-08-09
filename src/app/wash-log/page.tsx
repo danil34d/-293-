@@ -129,7 +129,11 @@ export default async function WashLogPage() {
   // «долю выручки» (totalAmount / число исполнителей) и называла это grossPay —
   // это не зарплата, схемы (проценты, split, вычеты) не учитывались вовсе.
   // generateSalaryReport считает по схемам и сам отсеивает роли-устройства.
-  const todayKey = new Date().toISOString().slice(0, 10);
+  // 🔥 2026-08-09: было toISOString() (UTC), а события сравнивались по
+  // локальной дате. Сервер в UTC+3, поэтому с 00:00 до 03:00 ключ указывал
+  // на вчера и ранние мойки выпадали из разбивки «кто сколько заработал».
+  const nowLocal = new Date();
+  const todayKey = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
   const todaysEvents = sourceWashEvents.filter((e) => {
     const d = new Date(e.timestamp);
     if (Number.isNaN(d.getTime())) return false;

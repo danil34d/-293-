@@ -7,6 +7,10 @@ import { LogOut, Monitor, Home, ClipboardList, XCircle, History, Calendar } from
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export default function KioskLayout({ children }: { children: ReactNode }) {
   const { logout } = useAuth();
@@ -14,6 +18,9 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [isEndingShift, setIsEndingShift] = useState(false);
   const [endingBox, setEndingBox] = useState<number | null>(null);
+  // 🔥 2026-08-09: закрытие смены необратимо, а подтверждения не было. Пока
+  // кнопка была заглушкой, это ничем не грозило; теперь она реально закрывает.
+  const [confirmBox, setConfirmBox] = useState<number | null>(null);
 
   const isHome = pathname === '/kiosk';
   const isOrder = pathname.includes('/order');
@@ -31,15 +38,27 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
     setIsEndingShift(true);
     setEndingBox(boxNumber);
     try {
-      const shiftId = typeof window !== 'undefined'
-        ? sessionStorage.getItem('activeShiftId')
-        : null;
-
-      if (!shiftId) {
+      // Спрашиваем сервер, какая смена открыта именно в ЭТОМ боксе.
+      // sessionStorage тут не источник правды: ключ один на оба бокса.
+      const stateResponse = await fetch('/api/workstation/shift');
+      if (!stateResponse.ok) {
         toast({
-          title: 'Смена не найдена',
-          description: 'Эта смена не была начата на терминале — закрывать нечего. '
-            + 'Если смена шла, закройте её в админке.',
+          title: 'Смена НЕ закрыта',
+          description: 'Не удалось получить состояние смен. Попробуйте ещё раз.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const state = await stateResponse.json();
+      const boxState = boxNumber === 2 ? state?.box2 : state?.box1;
+      const shiftId: string | null = boxState?.shiftId ?? null;
+
+      if (!shiftId || !boxState?.isShiftActive) {
+        toast({
+          title: `Бокс ${boxNumber}: открытой смены нет`,
+          description: Array.isArray(state?.orphanActive) && state.orphanActive.length > 0
+            ? `Закрывать нечего. Есть незакрытые смены прошлых дней (${state.orphanActive.length}) — их закрывает владелец в админке.`
+            : 'Закрывать нечего — смена в этом боксе не начиналась.',
           variant: 'destructive',
         });
         return;
@@ -118,13 +137,13 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
               boxNumber={1}
               isLoading={isEndingShift && endingBox === 1}
               disabled={isEndingShift}
-              onClick={() => handleEndBoxShift(1)}
+              onClick={() => setConfirmBox(1)}
             />
             <BoxShiftButton
               boxNumber={2}
               isLoading={isEndingShift && endingBox === 2}
               disabled={isEndingShift}
-              onClick={() => handleEndBoxShift(2)}
+              onClick={() => setConfirmBox(2)}
             />
             <div className="mx-1 h-6 w-px bg-gray-200" />
             <button
@@ -184,6 +203,36 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
           })}
         </div>
       </nav>
+
+      {/* 🔥 2026-08-09: подтверждение перед необратимым действием. Смену
+          закрывают мокрыми руками на телефоне у стены — промах по кнопке
+          стоил бы закрытой смены и отчёта, который уже не переоткрыть. */}
+      <AlertDialog open={confirmBox !== null} onOpenChange={(o) => { if (!o) setConfirmBox(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Завершить смену — Бокс {confirmBox}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Смена закроется, будет сохранён отчёт: касса, разбивка по оплатам,
+              чаевые, расход химии. <b>Отменить это будет нельзя.</b>
+              <br /><br />
+              Закрывайте, только когда бокс действительно закончил работу.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="min-h-[48px]">Нет, продолжаем работу</AlertDialogCancel>
+            <AlertDialogAction
+              className="min-h-[48px] bg-orange-600 hover:bg-orange-700"
+              onClick={() => {
+                const box = confirmBox;
+                setConfirmBox(null);
+                if (box) handleEndBoxShift(box);
+              }}
+            >
+              Да, завершить смену
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -132,6 +132,18 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
   // и каждый раз терял уже выбранную услугу и переписывал её вручную.
   // Теперь розница cash/card/transfer — один ключ 'retail', и переключение
   // внутри неё услуги не трогает.
+  // 🔥 2026-08-09: при переключении между агрегатором и контрагентом чужой
+  // sourceId оставался в форме и уезжал на сервер. Сбрасываем его сразу.
+  useEffect(() => {
+    if (!sourceId) return;
+    const wrongForAggregator = paymentMethod === 'aggregator' && !sourceId.startsWith('agg_');
+    const wrongForAgent = paymentMethod === 'counterAgentContract' && !sourceId.startsWith('agent_');
+    if (wrongForAggregator || wrongForAgent) {
+      form.setValue('sourceId', undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethod, sourceId]);
+
   const priceSourceKey = useMemo(() => {
     switch (paymentMethod) {
       case 'cash':

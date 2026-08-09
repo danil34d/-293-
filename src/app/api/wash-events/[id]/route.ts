@@ -186,6 +186,27 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     // 🔥 ФИКС 2026-08-09: зеркальный инвариант. Безналичный источник обязан быть
     // назван: иначе мойка числится за агрегатором, но баланс не трогается —
     // updateBalance ниже вызывается только `if (newSourceId)`, и сумма пропадает.
+    // 🔥 ФИКС 2026-08-09 (найдено ревью): проверялось только наличие sourceId,
+    // но не его ТИП. При переключении «Агрегатор» → «Контрагент» старый
+    // sourceId оставался, и мойка сохранялась как договорная с id агрегатора:
+    // updateBalance списывал деньги с агрегатора (он смотрит на префикс id),
+    // а запись не попадала ни в отчёт агрегатора (paymentMethod не тот),
+    // ни в отчёт контрагента (id не тот). Мойка становилась «ничьей».
+    if (updatedData.paymentMethod === 'aggregator' && updatedData.sourceId
+        && !updatedData.sourceId.startsWith('agg_')) {
+      return NextResponse.json(
+        { error: 'Выбран не агрегатор. Выберите агрегатора заново.' },
+        { status: 400 },
+      );
+    }
+    if (updatedData.paymentMethod === 'counterAgentContract' && updatedData.sourceId
+        && !updatedData.sourceId.startsWith('agent_')) {
+      return NextResponse.json(
+        { error: 'Выбран не контрагент. Выберите контрагента заново.' },
+        { status: 400 },
+      );
+    }
+
     const SOURCE_METHODS = ['aggregator', 'counterAgentContract'];
     if (SOURCE_METHODS.includes(updatedData.paymentMethod) && !updatedData.sourceId) {
       return NextResponse.json(
