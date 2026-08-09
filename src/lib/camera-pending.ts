@@ -19,6 +19,11 @@ interface CameraSession {
   yolo_detections: number;
   plate_number: string | null;
   plate_confidence: number;
+  // 🔥 2026-08-08: камера отдаёт эти поля с 31.07, но мост их игнорировал —
+  // сотрудник не видел кандидатов, хотя OCR их прочитал.
+  plate_candidates?: Array<{ text: string; votes: number; conf?: number | null }> | null;
+  plate_rejected_reason?: string | null;
+  ocr_done?: boolean;
   has_thumbnail: boolean;
   has_grid: boolean;
   is_negative: boolean;
@@ -50,6 +55,10 @@ export interface PendingCameraVehicle {
   hasGrid: boolean;
   // Operator overrides из camera-dashboard (передаются прозрачно)
   isPlateCorrected?: boolean;   // true если plateNumber взят из corrected_plate
+  /** Что OCR прочитал, но не записал как номер. Для выбора одним кликом. */
+  plateCandidates?: Array<{ text: string; votes: number; conf?: number | null }>;
+  /** OCR по сессии отработал (иначе «ждём распознавание» — правда). */
+  ocrDone?: boolean;
   note?: string | null;
   isMergedGroup?: boolean;      // true если это main группы (несколько сегментов)
   mergedSegmentsCount?: number; // сколько сегментов в группе (>= 2 для main, 1 для одиночной)
@@ -187,6 +196,10 @@ export function buildPendingCameraVehicles(
       hasThumbnail: Boolean(session.has_thumbnail),
       hasGrid: Boolean(session.has_grid),
       isPlateCorrected: Boolean(correctedPlate),
+      plateCandidates: Array.isArray(session.plate_candidates)
+        ? session.plate_candidates.slice(0, 4)
+        : undefined,
+      ocrDone: Boolean(session.ocr_done),
       note: session.note || null,
       isMergedGroup: Boolean(session.is_main && aggregatedCount > 1),
       mergedSegmentsCount: aggregatedCount,
