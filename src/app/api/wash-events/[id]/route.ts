@@ -183,6 +183,21 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       updatedData.priceListName = undefined;
     }
 
+    // 🔥 ФИКС 2026-08-09: зеркальный инвариант. Безналичный источник обязан быть
+    // назван: иначе мойка числится за агрегатором, но баланс не трогается —
+    // updateBalance ниже вызывается только `if (newSourceId)`, и сумма пропадает.
+    const SOURCE_METHODS = ['aggregator', 'counterAgentContract'];
+    if (SOURCE_METHODS.includes(updatedData.paymentMethod) && !updatedData.sourceId) {
+      return NextResponse.json(
+        {
+          error: updatedData.paymentMethod === 'aggregator'
+            ? 'Не выбран агрегатор — мойку не на кого списать.'
+            : 'Не выбран контрагент — мойку не на кого списать.',
+        },
+        { status: 400 },
+      );
+    }
+
     // Migration logic for data coming from client
     if ((updatedData as any).driverComment && !Array.isArray(updatedData.driverComments)) {
       const comment = (updatedData as any).driverComment;

@@ -55,6 +55,23 @@ const washEventSchema = z.object({
     message: "Необходимо выбрать основную услугу.",
     path: ['main'],
   }),
+// 🔥 ФИКС 2026-08-09: sourceId был просто .optional() — мойку можно было
+// сохранить как «Агрегатор» вообще без агрегатора. Такая запись попадала в
+// выручку по агрегаторам, но ни на чей баланс не ложилась: списывать было
+// некого (updateBalance вызывается только `if (newSourceId)`), и деньги
+// растворялись. Симметрично дыре «розница с прилипшим источником».
+}).superRefine((data, ctx) => {
+  const needsSource = data.paymentMethod === 'aggregator'
+    || data.paymentMethod === 'counterAgentContract';
+  if (needsSource && !data.sourceId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sourceId'],
+      message: data.paymentMethod === 'aggregator'
+        ? 'Выберите агрегатора — без него мойку не на кого списать.'
+        : 'Выберите контрагента — без него мойку не на кого списать.',
+    });
+  }
 });
 
 type WashEventFormValues = z.infer<typeof washEventSchema>;
@@ -108,10 +125,33 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
   };
 
 
+  // 🔥 ФИКС 2026-08-09: сброс услуг завязан на ПРАЙС, а не на способ оплаты.
+  // Раньше любая смена paymentMethod требовала выбрать услуги заново — включая
+  // «Наличные → Карта», хотя это один и тот же розничный прайс с теми же ценами.
+  // Владелец правит способ оплаты постоянно (клиент заплатил картой, а не налом),
+  // и каждый раз терял уже выбранную услугу и переписывал её вручную.
+  // Теперь розница cash/card/transfer — один ключ 'retail', и переключение
+  // внутри неё услуги не трогает.
+  const priceSourceKey = useMemo(() => {
+    switch (paymentMethod) {
+      case 'cash':
+      case 'card':
+      case 'transfer':
+        return 'retail';
+      case 'aggregator':
+        return `aggregator:${sourceId || ''}`;
+      case 'counterAgentContract':
+        return `counterAgent:${sourceId || ''}`;
+      default:
+        return 'unknown';
+    }
+  }, [paymentMethod, sourceId]);
+
   // Track whether payment/source have changed from initial values
   const isInitialRender = useRef(true);
   const prevPaymentMethod = useRef(paymentMethod);
   const prevSourceId = useRef(sourceId);
+  const prevPriceSourceKey = useRef(priceSourceKey);
 
   // Phase 17 / finding #24: confirm перед сбросом услуг.
   // Раньше: при смене paymentMethod/sourceId услуги тихо сбрасывались —
@@ -123,6 +163,7 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
     fromSource: string | undefined;
     toPayment: WashEvent['paymentMethod'];
     toSource: string | undefined;
+    toKey: string;
   }>(null);
 
   useEffect(() => {
@@ -131,8 +172,13 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
       isInitialRender.current = false;
       return;
     }
-    // Only reset if payment method or source actually changed (not on mount)
-    if (prevPaymentMethod.current === paymentMethod && prevSourceId.current === sourceId) return;
+    // Сбрасываем, только если сменился САМ прайс. Внутри розницы (нал/карта/
+    // перевод) ключ один и тот же — услуги остаются.
+    if (prevPriceSourceKey.current === priceSourceKey) {
+      prevPaymentMethod.current = paymentMethod;
+      prevSourceId.current = sourceId;
+      return;
+    }
 
     // Есть ли уже заполненные услуги? Тогда показываем confirm.
     const mainFilled = !!(mainService?.serviceName && mainService.serviceName.trim());
@@ -144,6 +190,7 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
         fromSource: prevSourceId.current,
         toPayment: paymentMethod,
         toSource: sourceId,
+        toKey: priceSourceKey,
       });
       // Не сбрасываем сразу — ждём решения user'а.
       return;
@@ -154,19 +201,32 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
     form.setValue("services.additional", []);
     prevPaymentMethod.current = paymentMethod;
     prevSourceId.current = sourceId;
+    prevPriceSourceKey.current = priceSourceKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentMethod, sourceId, form]);
+  }, [paymentMethod, sourceId, priceSourceKey, form]);
+
+  // 🔥 ФИКС 2026-08-09: onOpenChange диалога звал cancelPaymentChange при ЛЮБОМ
+  // закрытии — в том числе после «Да, сбросить услуги». Radix закрывает окно
+  // сразу после AlertDialogAction, поэтому подтверждение и отмена срабатывали
+  // подряд: услуги стирались (confirm), а способ оплаты откатывался на прежний
+  // (cancel, по замыканию со старым pendingPaymentChange). Итог — до «Агрегатора»
+  // и «Контрагента» невозможно было дойти: форма прыгала обратно на «Наличные»
+  // с пустым прайсом. Флаг отличает осознанное закрытие от Esc/клика мимо.
+  const dialogResolved = useRef(false);
 
   const confirmPaymentChange = () => {
+    dialogResolved.current = true;
     if (!pendingPaymentChange) return;
     form.setValue("services.main", { serviceName: '', price: 0, chemicalConsumption: 0 });
     form.setValue("services.additional", []);
     prevPaymentMethod.current = pendingPaymentChange.toPayment;
     prevSourceId.current = pendingPaymentChange.toSource;
+    prevPriceSourceKey.current = pendingPaymentChange.toKey;
     setPendingPaymentChange(null);
   };
 
   const cancelPaymentChange = () => {
+    dialogResolved.current = true;
     if (!pendingPaymentChange) return;
     // Откатываем paymentMethod/sourceId на предыдущие значения.
     form.setValue("paymentMethod", pendingPaymentChange.fromPayment);
@@ -417,8 +477,26 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
                         {(Object.keys(paymentMethodLabels) as Array<keyof typeof paymentMethodLabels>).map(method => (
                             <FormItem key={method}><FormControl>
                             <RadioGroupItem value={method} className="sr-only" />
-                            </FormControl><Label className={cn(
+                            </FormControl><Label
+                                // 🔥 ФИКС 2026-08-09: способ оплаты НЕ ПЕРЕКЛЮЧАЛСЯ мышью.
+                                // RadioGroupItem у Radix — это <button role="radio">, скрытая
+                                // через sr-only. Видимый Label не имел htmlFor, да и <label for>
+                                // в принципе не активирует <button> (кнопка не labelable).
+                                // Плашка выглядела нажимаемой (cursor-pointer), но клик не делал
+                                // ничего — ни у владельца, ни в автотесте. Ставим обработчик явно.
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => field.onChange(method)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        field.onChange(method);
+                                    }
+                                }}
+                                aria-pressed={field.value === method}
+                                className={cn(
                                 "flex items-center justify-center gap-1.5 p-2.5 border rounded-md cursor-pointer hover:bg-accent/50 text-xs",
+                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                 field.value === method && "border-primary bg-primary/10 font-medium"
                             )}>
                                 {React.createElement(paymentMethodIcons[method], {className: "h-3.5 w-3.5"})}
@@ -445,6 +523,15 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
                             <FormMessage />
                         </FormItem>
                     )} />
+                )}
+                {/* 🔥 2026-08-09: раньше при переключении на агрегатора/контрагента
+                    карточка услуг просто исчезала (currentServiceSource === null),
+                    и форма выглядела сломанной. Объясняем, чего ждём. */}
+                {(paymentMethod === 'aggregator' || paymentMethod === 'counterAgentContract') && !sourceId && (
+                    <p className="text-xs text-muted-foreground">
+                        Выберите {paymentMethod === 'aggregator' ? 'агрегатора' : 'контрагента'} выше —
+                        тогда подтянется его прайс-лист и появится выбор услуг.
+                    </p>
                 )}
               </CardContent>
             </Card>
@@ -616,7 +703,13 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
       </form>
 
       {/* Phase 17 / finding #24: confirm перед сбросом услуг при смене paymentMethod/sourceId */}
-      <AlertDialog open={!!pendingPaymentChange} onOpenChange={(o) => { if (!o) cancelPaymentChange(); }}>
+      <AlertDialog open={!!pendingPaymentChange} onOpenChange={(o) => {
+        if (o) { dialogResolved.current = false; return; }
+        // Кнопки диалога уже отработали — второй раз решать нечего.
+        if (dialogResolved.current) { dialogResolved.current = false; return; }
+        // Закрыли Esc или кликом мимо — считаем отменой.
+        cancelPaymentChange();
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-amber-700">

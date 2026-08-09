@@ -28,8 +28,20 @@ function parseJsonField<T>(val: any, fallback: T): T {
 
 // ─── WashEvent mappers ───────────────────────────────────────
 
-const PAYMENT_TYPES = ['cash', 'card', 'transfer'] as const;
-const EMPLOYEE_ROLES = ['admin', 'employee', 'kiosk'] as const;
+// 🔥 ФИКС 2026-08-09: в списке НЕ БЫЛО 'aggregator' и 'counterAgentContract',
+// а parseEnum молча подменяет незнакомое значение на fallback. Из-за этого
+// КАЖДАЯ мойка по агрегатору или контрагенту читалась из Postgres как
+// «Наличные»: 43 записи из 67 на 106 609 ₽. В базе лежало верно — врало чтение.
+// Последствия: форма редактирования открывала договорную мойку как наличную и
+// при сохранении переписывала её в наличные, стирая источник; иконка оплаты в
+// журнале, фильтры по способу оплаты и касса смены считали безнал наличкой.
+// Незаметно было потому, что имя клиента берётся из sourceName и выживало.
+// Регрессия внесена 25.05 в 029ae83 (Phase 60h), когда `row.X as any` меняли
+// на parseEnum и список способов оплаты выписали не полностью.
+// ПРАВИЛО: список для parseEnum обязан покрывать ВЕСЬ union из src/types —
+// иначе тихая подмена данных, а не ошибка.
+const PAYMENT_TYPES = ['cash', 'card', 'transfer', 'aggregator', 'counterAgentContract'] as const;
+const EMPLOYEE_ROLES = ['admin', 'employee', 'kiosk', 'kiosk1'] as const;
 const CANISTER_STATUSES = ['active', 'empty', 'returned'] as const;
 const CANISTER_MODES = ['purchase', 'bonus', 'gift', 'salary-deduction'] as const;
 

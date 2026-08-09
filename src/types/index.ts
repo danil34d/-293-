@@ -190,13 +190,20 @@ export interface CashPayment {
   paymentMethod: 'cash' | 'card' | 'transfer';
 }
 
-export type EmployeeRole = 'admin' | 'employee' | 'kiosk';
+// 🔥 ФИКС 2026-08-09: 'kiosk1' — реальная роль второго терминала, она лежит
+// в базе и проверяется в коде (k/route.ts, kiosk/order, employee/page,
+// employee/finance, EmployeeCanistersSection), но в union её не было. Поэтому
+// повсюду стояли касты `(e.role as string) === 'kiosk1'`, а pg-adapter через
+// parseEnum молча превращал её в 'employee' — и терминал попадал в списки
+// мойщиков, деля зарплату и получая канистры.
+export type EmployeeRole = 'admin' | 'employee' | 'kiosk' | 'kiosk1';
 
 // Человекочитаемые названия ролей
 export const ROLE_LABELS: Record<EmployeeRole, string> = {
   admin: 'Администратор',
   employee: 'Сотрудник',
   kiosk: 'Киоск (терминал)',
+  kiosk1: 'Киоск (терминал, бокс 1)',
 };
 
 // Маршруты по умолчанию для каждой роли
@@ -204,6 +211,7 @@ export const ROLE_DEFAULT_ROUTES: Record<EmployeeRole, string> = {
   admin: '/dashboard',
   employee: '/employee/workstation',
   kiosk: '/employee/workstation',
+  kiosk1: '/employee/workstation',
 };
 
 export interface Employee {
