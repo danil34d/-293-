@@ -20,22 +20,69 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
   const isHistory = pathname.includes('/history');
   const isSchedule = pathname.includes('/schedule');
 
+  // 🔥 ФИКС 2026-08-09: кнопка была НАРИСОВАННОЙ. Обработчик чистил
+  // sessionStorage и показывал зелёный тост «смена завершена», не отправляя на
+  // сервер ничего — с 14.04 (коммит fcb06c2) и ни разу не менялся. Оператор был
+  // уверен, что закрыл смену; в БД она оставалась active навсегда. Отсюда шесть
+  // смен, висящих с 26 апреля, и всего 4 ShiftReport за историю: отчёт создаётся
+  // только внутри PUT /api/workstation/shift, который никто не вызывал.
+  // Теперь закрываем по-настоящему и показываем итог, а при ошибке — ошибку.
   const handleEndBoxShift = async (boxNumber: number) => {
     setIsEndingShift(true);
     setEndingBox(boxNumber);
     try {
+      const shiftId = typeof window !== 'undefined'
+        ? sessionStorage.getItem('activeShiftId')
+        : null;
+
+      if (!shiftId) {
+        toast({
+          title: 'Смена не найдена',
+          description: 'Эта смена не была начата на терминале — закрывать нечего. '
+            + 'Если смена шла, закройте её в админке.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const response = await fetch('/api/workstation/shift', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftId }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        toast({
+          title: 'Смена НЕ закрыта',
+          description: err?.error || `Сервер ответил ${response.status}. Смена осталась открытой.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const result = await response.json().catch(() => ({}));
+      const summary = result?.summary;
+
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('isShiftActive');
         sessionStorage.removeItem('activeShiftId');
         sessionStorage.removeItem('selectedEmployees');
       }
+
       toast({
-        title: `Бокс ${boxNumber} — смена завершена`,
-        description: 'Данные смены очищены. Следующая команда загрузится из графика.',
+        title: `Бокс ${boxNumber} — смена закрыта`,
+        description: summary
+          ? `Моек: ${summary.totalWashes ?? 0}, на сумму ${(summary.totalAmount ?? 0).toLocaleString('ru-RU')} ₽. Отчёт сохранён.`
+          : 'Отчёт по смене сохранён.',
       });
       window.location.href = '/kiosk';
     } catch (error) {
-      toast({ title: 'Ошибка', description: 'Не удалось завершить смену.', variant: 'destructive' });
+      toast({
+        title: 'Смена НЕ закрыта',
+        description: 'Нет связи с сервером. Смена осталась открытой, попробуйте ещё раз.',
+        variant: 'destructive',
+      });
     } finally {
       setIsEndingShift(false);
       setEndingBox(null);
