@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { SafetyBar, HazardPill } from "@/components/admin";
 import { EmployeeDeleteModal } from "./EmployeeDeleteModal";
 import { ExpandedEmployee } from "./ExpandedEmployee";
+import { isKiosk as isKioskDevice } from '@/lib/employee-role';
 
 export interface EmployeesTableProps {
   employees: Employee[];
@@ -241,7 +242,9 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
                 const isProtected =
                   e.id === "emp_manager_admin" || e.role === "kiosk";
                 const isOwner = e.id === "emp_manager_admin";
-                const isKiosk = e.role === "kiosk";
+                // 🔥 ФИКС 2026-08-09: было e.role === "kiosk" — терминал
+                // с ролью kiosk1 не опознавался как устройство.
+                const isKiosk = isKioskDevice(e);
                 const noLogin = !e.username && !isProtected;
                 const isExpanded = expandedId === e.id;
                 return (

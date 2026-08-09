@@ -756,6 +756,16 @@ export function OperationsClient({
                 cameraDir: p.dirName,
                 cameraMode: p.plateNumber ? 'checkout' : 'edit',
               });
+              // 🔥 ФИКС 2026-08-09: номер знали, но в форму не передавали.
+              // Ссылка использовала p.plateNumber для выбора режима 'checkout' и
+              // печатала его в плашке, а параметр cameraPlate не ставила —
+              // ZorinWorkstationConsole открывался с пустым полем и надписью
+              // «Камера не распознала номер», хотя OCR прочитал его с
+              // уверенностью 1.0. Оператор набирал вручную то, что система уже
+              // знала. Остальные три точки входа (PendingCameraSessionsPanel,
+              // KioskHistoryClient, UnprocessedClient) параметр ставят — эта
+              // разъехалась с ними, потому что строит URL своей копией кода.
+              if (p.plateNumber) params.set('cameraPlate', p.plateNumber);
               if (p.vehicleClass) params.set('cameraVehicleClass', p.vehicleClass);
               if (p.start) params.set('cameraStart', p.start);
               if (p.end) params.set('cameraEnd', p.end);

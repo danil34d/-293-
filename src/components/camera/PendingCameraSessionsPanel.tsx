@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { isKiosk } from '@/lib/employee-role';
 
 const VEHICLE_CLASS_LABELS: Record<string, string> = {
   car: 'легковой',
@@ -147,9 +148,11 @@ export function PendingCameraSessionsPanel({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const availableEmployees = useMemo(() => {
-    const fromBox = boxEmployees.filter((employee) => employee.role !== 'kiosk');
+    // 🔥 ФИКС 2026-08-09: сравнение с 'kiosk' пропускало роль 'kiosk1'
+    // (терминал бокса). Готовый isKiosk() покрывает обе роли-устройства.
+    const fromBox = boxEmployees.filter((employee) => !isKiosk(employee));
     if (fromBox.length > 0) return fromBox;
-    return allEmployees.filter((employee) => employee.role !== 'kiosk');
+    return allEmployees.filter((employee) => !isKiosk(employee));
   }, [allEmployees, boxEmployees]);
 
   const openDismissDialog = (vehicle: PendingCameraVehicle) => {

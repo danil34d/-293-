@@ -56,7 +56,12 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PlateRecognitionDialog } from '@/components/plate-recognition/PlateRecognitionDialog';
 import { LicensePlateInput } from '@/components/plate-recognition/LicensePlateInput';
-import { isEmployeeAdmin } from '@/lib/employee-role';
+// 🔥 ФИКС 2026-08-09: добавлен isKiosk — он покрывает И 'kiosk', И 'kiosk1'.
+// Фильтры ниже сравнивали только с 'kiosk', поэтому терминал бокса
+// (role='kiosk1', «Общий терминал») предлагался как мойщик в команду
+// и, будучи выбранным, делил зарплату. Раньше не стреляло только
+// потому, что pg-adapter молча отдавал ему 'employee'.
+import { isEmployeeAdmin, isKiosk } from '@/lib/employee-role';
 
 type OperationPaymentMethod = "cash" | "card" | "transfer" | "aggregator" | "counterAgentContract";
 type CurrentStep = "idle" | "vehicleInput" | "paymentSelection" | "aggregatorSelection" | "serviceSelection" | "confirmation";
@@ -199,7 +204,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
       }
     }
     // Auto-select logged-in non-admin employee (so they can start shift without schedule)
-    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') {
+    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && !isKiosk(loggedInEmployee)) {
       return [loggedInEmployee];
     }
     return [];
@@ -402,7 +407,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   useEffect(() => {
     // Don't auto-add kiosk account as employee
     if (isKioskMode) return;
-    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') {
+    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && !isKiosk(loggedInEmployee)) {
       setSelectedEmployees(prev => {
         if (!prev.some(e => e.id === loggedInEmployee.id)) {
           return [...prev, loggedInEmployee];
@@ -493,7 +498,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           setAllCounterAgents(activeAgents);
           setAllAggregators(aggregatorsData);
           setRetailPriceConfig(retailData);
-          const activeEmployees = (employeesData as any[]).filter((e: any) => e.role !== 'admin' && e.role !== 'kiosk');
+          const activeEmployees = (employeesData as any[]).filter((e: any) => e.role !== 'admin' && !isKiosk(e));
           setAllEmployees(activeEmployees);
           setEmployeeMap(new Map(activeEmployees.map((e: any) => [e.id, e.fullName])));
           setAllWashEvents(washEventsData);
@@ -1299,7 +1304,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         if ((isKioskMode || isAdminMode) && selectedBoxState.employees.length > 0) {
           setSelectedEmployees(selectedBoxState.employees);
         } else {
-          setSelectedEmployees((loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') ? [loggedInEmployee] : []);
+          setSelectedEmployees((loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && !isKiosk(loggedInEmployee)) ? [loggedInEmployee] : []);
         }
       }
     }

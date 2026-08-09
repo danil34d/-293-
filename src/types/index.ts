@@ -220,6 +220,8 @@ export interface Employee {
   phone: string;
   paymentDetails: string;
   hasCar: boolean;
+  /** Госномера личных машин (латиница, normalizeLicensePlate). Пусто = не указаны. */
+  carPlates?: string[];
   role?: EmployeeRole;
   telegramChatId?: string;
   username?: string;
