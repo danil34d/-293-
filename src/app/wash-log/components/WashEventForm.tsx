@@ -232,8 +232,22 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
     let newSourceId = data.sourceId;
     let newPriceListName = initialData.priceListName;
 
-    // Logic to update sourceName/priceListName when sourceId or paymentMethod changes
-    if (data.sourceId !== initialData.sourceId || data.paymentMethod !== initialData.paymentMethod) {
+    // 🔥 ФИКС 2026-08-09: розничная оплата ВСЕГДА без источника — это инвариант,
+    // а не следствие «что-то изменилось». Раньше очистка висела внутри условия
+    // «sourceId или paymentMethod отличаются от initialData», и запись, уже
+    // сохранённая как cash с прилипшим aggregatorId, чинить себя отказывалась:
+    // при следующем сохранении ничего «не менялось», источник уезжал обратно
+    // на сервер, и мойка оставалась наличной, но привязанной к агрегатору.
+    // Поймано на живой записи we_1786269420798_medkdzv (ШЛ, 1620 → 2000):
+    // вместо возврата 1620 ₽ агрегатору ему дописали разницу цен −380 ₽.
+    const isRetailPayment = data.paymentMethod === 'cash'
+        || data.paymentMethod === 'card'
+        || data.paymentMethod === 'transfer';
+    if (isRetailPayment) {
+        newSourceName = undefined;
+        newSourceId = undefined;
+        newPriceListName = undefined;
+    } else if (data.sourceId !== initialData.sourceId || data.paymentMethod !== initialData.paymentMethod) {
         if (data.paymentMethod === 'aggregator') {
             const source = aggregators.find(a => a.id === data.sourceId);
             newSourceName = source?.name;
@@ -243,12 +257,8 @@ export function WashEventForm({ initialData, employees, counterAgents, aggregato
             const source = counterAgents.find(c => c.id === data.sourceId);
             newSourceName = source?.name;
             newPriceListName = undefined;
-        } else {
-            // It's a retail payment, so clear the source info
-            newSourceName = undefined;
-            newSourceId = undefined;
-            newPriceListName = undefined;
         }
+        // Розница обработана выше отдельной веткой (isRetailPayment).
     }
     
     const { editHistory, ...previousState } = initialData;

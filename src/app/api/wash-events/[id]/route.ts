@@ -165,6 +165,24 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       updatedData.id = id;
     }
 
+    // 🔥 ФИКС 2026-08-09: денежный инвариант проверяем на сервере, а не надеемся
+    // на клиента. Розничная мойка не может быть привязана к агрегатору или
+    // контрагенту: иначе выручка идёт в кассу И одновременно висит на балансе
+    // клиента. Клиент присылал sourceId при paymentMethod='cash' — поймано на
+    // живой записи 09.08.
+    const RETAIL_METHODS = ['cash', 'card', 'transfer'];
+    if (RETAIL_METHODS.includes(updatedData.paymentMethod)) {
+      if (updatedData.sourceId || updatedData.sourceName) {
+        console.warn(
+          `[wash-events PUT] розничная оплата '${updatedData.paymentMethod}' пришла с источником `
+          + `'${updatedData.sourceId}' — очищаю (id=${id})`,
+        );
+      }
+      updatedData.sourceId = undefined;
+      updatedData.sourceName = undefined;
+      updatedData.priceListName = undefined;
+    }
+
     // Migration logic for data coming from client
     if ((updatedData as any).driverComment && !Array.isArray(updatedData.driverComments)) {
       const comment = (updatedData as any).driverComment;
