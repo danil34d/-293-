@@ -41,6 +41,25 @@ function buildCameraStreamUrl(boxNumber: number, wide = false) {
 }
 
 // Длительность мойки по «эвристике названия»: Лайт ≈ 15 мин, Премиум ≈ 40, остальное ≈ 25
+/**
+ * Ссылка «оформить» из карточки бокса. Собирает тот же набор параметров, что и
+ * верхняя плашка: без них форма открывается пустой и оператор набирает номер,
+ * который система уже прочитала.
+ */
+function buildBoxPendingHref(boxNumber: number, vehicle: PendingCameraVehicle | undefined) {
+  const params = new URLSearchParams({ box: String(boxNumber) });
+  if (!vehicle) return `/workstation?${params.toString()}`;
+  params.set('camera', '1');
+  params.set('cameraBox', String(vehicle.boxNumber ?? boxNumber));
+  params.set('cameraDir', vehicle.dirName);
+  params.set('cameraMode', vehicle.plateNumber ? 'checkout' : 'edit');
+  if (vehicle.plateNumber) params.set('cameraPlate', vehicle.plateNumber);
+  if (vehicle.vehicleClass) params.set('cameraVehicleClass', vehicle.vehicleClass);
+  if (vehicle.start) params.set('cameraStart', vehicle.start);
+  if (vehicle.end) params.set('cameraEnd', vehicle.end);
+  return `/workstation?${params.toString()}`;
+}
+
 function estimateMinutes(serviceName: string | undefined): number {
   if (!serviceName) return 25;
   const lower = serviceName.toLowerCase();
@@ -307,7 +326,11 @@ function BoxCard({
           const plateLabel = v.plateNumber || 'без номера';
           const plateIsKnown = !!v.plateNumber;
           const vehicleClass = v.vehicleClass ? VEHICLE_CLASS_RU[v.vehicleClass] || v.vehicleClass : null;
-          const startTime = v.start ? formatHHmm(v.start.replace('_', 'T')) : null;
+          // 🔥 ФИКС 2026-08-12: тут остался старый .replace('_','T'). Камера
+          // отдаёт заезд как «2026-08-09_10-47-02», и такая замена давала
+          // «2026-08-09T10-47-02» — всё равно нечитаемую строку. Разбор формата
+          // живёт в camera-time.ts, ему нужно отдавать исходное значение.
+          const startTime = v.start ? formatHHmm(v.start) : null;
           const ageMin = v.start ? minutesAgo(v.start) : null;
           return (
             <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
@@ -344,8 +367,15 @@ function BoxCard({
                   </span>
                 )}
               </div>
+              {/* 🔥 ФИКС 2026-08-12: третья точка входа в оформление, и она
+                  единственная не передавала камерный контекст — открывала
+                  ПУСТУЮ форму, хотя номер ожидающей машины напечатан на бейдже
+                  прямо выше. Верхняя плашка «Камеры зафиксировали» и панель
+                  «Неоформленные машины» параметры передают; эта копия разошлась.
+                  Тот же дефект чинили 09.08 в верхней плашке — и не заметили,
+                  что рядом лежит вторая такая же ссылка. */}
               <Link
-                href={`/workstation?box=${boxNumber}`}
+                href={buildBoxPendingHref(boxNumber, v)}
                 className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 text-[12px] font-bold transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
