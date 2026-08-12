@@ -312,7 +312,7 @@ export function PendingCameraSessionsPanel({
                               >
                                 {valid ? '\u2713 ' : ''}{cand.text}
                                 <span className="ml-1 opacity-60">
-                                  \u00d7{cand.votes}
+                                  {'\u00d7'}{cand.votes}
                                   {cand.conf ? ` \u00b7 ${Math.round(cand.conf * 100)}%` : ''}
                                 </span>
                               </Link>
