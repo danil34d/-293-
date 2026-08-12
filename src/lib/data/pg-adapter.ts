@@ -2617,6 +2617,18 @@ export async function createWashEventWithSideEffects(
         // Phase 60: водитель + цифровая роспись (для Ведомости)
         driverName: washEvent.driverName ?? null,
         driverSignature: washEvent.driverSignature ?? null,
+        // 🔥 ФИКС 2026-08-09: этих четырёх полей в insert НЕ БЫЛО — они писались
+        // только в saveWashEvent (путь PUT). Всё, что приходило через POST, то
+        // есть каждая мойка, оформленная с терминала или рабочей станции, теряло
+        // их молча. Замер до фикса: 87 моек из 87 с shiftId = NULL и
+        // createdInClosedPeriod = false у всех.
+        // Последствия: мойка не попадала в отчёт по смене (он матчит по shiftId),
+        // а защита закрытого зарплатного периода не срабатывала ни разу —
+        // wash-event-create-service выставляет флаг, а слой записи его выбрасывал.
+        shiftId: washEvent.shiftId ?? null,
+        createdInClosedPeriod: washEvent.createdInClosedPeriod ?? false,
+        closedPeriodAtCreate: washEvent.closedPeriodAtCreate ?? null,
+        editHistory: washEvent.editHistory ?? undefined,
       },
     });
 
