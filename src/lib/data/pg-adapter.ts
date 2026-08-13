@@ -2086,6 +2086,20 @@ export async function saveEmployeeTransaction(data: any): Promise<void> {
 }
 
 export async function saveEmployeeTransactions(employeeId: string, transactions: any[]): Promise<void> {
+  // 🔥 ФИКС 2026-08-13: «удалить все и создать заново» — наследие работы с
+  // JSON-массивами. В Postgres при пересоздании Prisma заново проставляет
+  // createdAt (@default(now())), и КАЖДАЯ выплата затирала время создания у всей
+  // прошлой истории сотрудника. Поймано на живой выплате: транзакции от 26.05 и
+  // 09.08 получили createdAt = 13.08 17:14:56 — ту же миллисекунду, что и новая.
+  // Поле date (дата операции по смыслу бизнеса) не страдало, но аудит «когда
+  // запись реально появилась в системе» терялся целиком.
+  // Сохраняем исходное время для тех записей, что уже были.
+  const existing = await prisma.employeeTransaction.findMany({
+    where: { employeeId },
+    select: { id: true, createdAt: true },
+  });
+  const createdAtById = new Map(existing.map((r) => [r.id, r.createdAt]));
+
   // Replace all transactions for this employee
   await prisma.$transaction([
     prisma.employeeTransaction.deleteMany({ where: { employeeId } }),
@@ -2098,6 +2112,9 @@ export async function saveEmployeeTransactions(employeeId: string, transactions:
           type: t.type,
           amount: t.amount,
           description: t.description ?? '',
+          // у существующей записи оставляем её настоящее время создания,
+          // у новой Prisma проставит now() сама
+          ...(createdAtById.has(t.id) ? { createdAt: createdAtById.get(t.id)! } : {}),
         },
       })
     ),
