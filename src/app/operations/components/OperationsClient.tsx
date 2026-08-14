@@ -131,12 +131,22 @@ function CameraPreview({ boxNumber }: { boxNumber: number }) {
 }
 
 function LiveKpi({
-  label, value, icon: Icon, color,
+  label, value, icon: Icon, color, onClick, hint,
 }: {
   label: string; value: string | number; icon: typeof Box; color: string;
+  /** Если задан — плитка становится кнопкой (сейчас так работает «Касса смены»). */
+  onClick?: () => void;
+  hint?: string;
 }) {
+  const Wrapper: any = onClick ? 'button' : 'div';
   return (
-    <div className="flex items-center gap-3">
+    <Wrapper
+      {...(onClick ? { type: 'button', onClick, title: hint } : {})}
+      className={
+        'flex items-center gap-3 text-left rounded-xl transition-colors '
+        + (onClick ? 'cursor-pointer hover:bg-slate-50 -m-1.5 p-1.5' : '')
+      }
+    >
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
         style={{ background: color + '15', color }}
@@ -145,9 +155,12 @@ function LiveKpi({
       </div>
       <div className="min-w-0">
         <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">{label}</div>
-        <div className="text-[20px] font-extrabold text-slate-900 tabular-nums leading-tight">{value}</div>
+        <div className="text-[20px] font-extrabold text-slate-900 tabular-nums leading-tight">
+          {value}
+          {onClick && <span className="ml-1.5 text-[12px] font-bold text-slate-400">›</span>}
+        </div>
       </div>
-    </div>
+    </Wrapper>
   );
 }
 
@@ -605,6 +618,27 @@ export function OperationsClient({
   const totalEmployees = box1Employees.length + box2Employees.length;
   const totalRevenue = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
+  // 🔥 2026-08-13: «Касса смены» была просто числом, и число это вводило в
+  // заблуждение. 13.08 плитка показывала 8 828 ₽, хотя ВСЕ шесть моек были по
+  // агрегатору — живых денег в кассе ноль, вся сумма записана на балансы
+  // клиентов. Владелец видит «касса», а кассы нет.
+  // Теперь клик раскрывает разбивку: сколько реально получено и сколько
+  // числится за клиентами.
+  const [cashOpen, setCashOpen] = useState(false);
+  const revenueBreakdown = useMemo(() => {
+    const byMethod: Record<string, { sum: number; count: number }> = {};
+    for (const e of todayEvents) {
+      const m = e.paymentMethod || 'cash';
+      byMethod[m] = byMethod[m] || { sum: 0, count: 0 };
+      byMethod[m].sum += e.totalAmount || 0;
+      byMethod[m].count += 1;
+    }
+    const cashLike = ['cash', 'card', 'transfer'];
+    const live = cashLike.reduce((s, m) => s + (byMethod[m]?.sum || 0), 0);
+    const onAccount = totalRevenue - live;
+    return { byMethod, live, onAccount };
+  }, [todayEvents, totalRevenue]);
+
   // Phase 49: KPI «занято» считает как busy И pending (камера видит машину).
   // Иначе «1/2 работает» противоречит большому amber-блоку «машина ждёт оформления».
   const boxesBusy = useMemo(() => {
@@ -707,6 +741,8 @@ export function OperationsClient({
           <LiveKpi label="Команда на смене" value={totalEmployees} icon={Users} color="#10b981" />
           <LiveKpi
             label="Касса смены"
+            onClick={() => setCashOpen(true)}
+            hint="Показать, сколько получено живыми деньгами, а сколько записано на балансы клиентов"
             value={`${totalRevenue.toLocaleString('ru-RU')} ₽`}
             icon={Wallet}
             color="#10b981"
@@ -828,6 +864,125 @@ export function OperationsClient({
           onDismissed={handlePendingDismissed}
         />
       </div>
+
+        {/* Разбивка кассы — открывается кликом по плитке «Касса смены» */}
+        {cashOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[8vh]"
+            onClick={() => setCashOpen(false)}
+          >
+            <div
+              className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500">
+                    Касса за сегодня
+                  </div>
+                  <div className="text-[26px] font-extrabold text-slate-900 tabular-nums leading-tight">
+                    {totalRevenue.toLocaleString('ru-RU')} ₽
+                  </div>
+                  <div className="text-[12px] text-slate-500">
+                    {todayEvents.length} моек · средний чек{' '}
+                    {todayEvents.length
+                      ? Math.round(totalRevenue / todayEvents.length).toLocaleString('ru-RU')
+                      : 0}{' '}
+                    ₽
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCashOpen(false)}
+                  className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 text-lg leading-none"
+                  aria-label="Закрыть"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Главное разделение: что реально получено против того, что
+                  записано за клиентами. Именно его не хватало на плитке. */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+                    Живые деньги
+                  </div>
+                  <div className="text-[22px] font-extrabold text-emerald-800 tabular-nums leading-tight">
+                    {revenueBreakdown.live.toLocaleString('ru-RU')} ₽
+                  </div>
+                  <div className="text-[11px] text-emerald-700">нал · карта · перевод</div>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                    Записано на клиентов
+                  </div>
+                  <div className="text-[22px] font-extrabold text-amber-800 tabular-nums leading-tight">
+                    {revenueBreakdown.onAccount.toLocaleString('ru-RU')} ₽
+                  </div>
+                  <div className="text-[11px] text-amber-700">агрегаторы · контрагенты</div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 mb-4">
+                {([
+                  ['cash', 'Наличные'],
+                  ['card', 'Карта'],
+                  ['transfer', 'Перевод'],
+                  ['aggregator', 'Агрегатор'],
+                  ['counterAgentContract', 'Контрагент'],
+                ] as const).map(([key, label]) => {
+                  const row = revenueBreakdown.byMethod[key];
+                  const sum = row?.sum || 0;
+                  const share = totalRevenue > 0 ? Math.round((sum / totalRevenue) * 100) : 0;
+                  return (
+                    <div key={key} className="flex items-center gap-3 text-[13px]">
+                      <span className="w-28 shrink-0 text-slate-700">{label}</span>
+                      <span className="w-14 shrink-0 text-right text-[11px] text-slate-400">
+                        {row ? `${row.count} шт` : '—'}
+                      </span>
+                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <span
+                          className="block h-full rounded-full"
+                          style={{
+                            width: `${share}%`,
+                            background: key === 'aggregator' || key === 'counterAgentContract' ? '#f59e0b' : '#10b981',
+                          }}
+                        />
+                      </span>
+                      <span className="w-24 shrink-0 text-right font-semibold tabular-nums text-slate-900">
+                        {sum.toLocaleString('ru-RU')} ₽
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {revenueBreakdown.live === 0 && totalRevenue > 0 && (
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+                  <b>В кассе пусто.</b> Вся сегодняшняя сумма записана на балансы клиентов —
+                  наличных, карты и переводов не было. Проверьте, все ли мойки оформлены
+                  верным способом оплаты.
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Link
+                  href="/wash-log"
+                  className="flex-1 rounded-lg bg-[#0088CC] px-3 py-2 text-center text-[13px] font-semibold text-white hover:bg-[#0077b3]"
+                >
+                  Открыть журнал моек
+                </Link>
+                <Link
+                  href="/transactions"
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-center text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Сверка кассы
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* What's new strip */}
       <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4">
