@@ -32,6 +32,7 @@ import {
   ArrowRight,
   AlertCircle,
   PenLine,
+  RefreshCw,
 } from 'lucide-react';
 import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment, OurCompany } from '@/types';
 import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
@@ -1721,29 +1722,29 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                   <p className="text-sm font-bold text-amber-900 mb-1">
                     На боксе {selectedBoxNumber} нет назначенных сотрудников
                   </p>
-                  <p className="text-xs text-amber-800 leading-snug mb-2">
-                    Оформить мойку можно только когда в графике на сегодня есть бригада на этом боксе.
-                    Откройте смену через админку или составьте график.
+                  <p className="text-sm text-amber-800 leading-snug mb-2">
+                    Оформить мойку можно, только когда в графике на сегодня стоит бригада на этом боксе.
+                    Попросите администратора поставить смену, затем нажмите «Обновить».
                   </p>
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  {/* 2026-09-14: здесь были ссылки на /workstation и /schedule — админские
+                      страницы, с которых терминал сразу уводит обратно на /kiosk. Работник жал
+                      большую оранжевую кнопку и оказывался на главной. Терминалу доступен
+                      только свой график — на него и ведём. */}
+                  <div className="flex flex-wrap gap-2 mt-3">
                     <Link
-                      href="/workstation"
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold bg-amber-600 text-white hover:bg-amber-700"
+                      href="/kiosk/schedule"
+                      className="inline-flex min-h-[44px] items-center gap-2 px-4 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700"
                     >
-                      Открыть смену → /workstation
-                    </Link>
-                    <Link
-                      href="/schedule"
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold bg-white text-amber-700 border border-amber-300 hover:bg-amber-50"
-                    >
-                      График → /schedule
+                      <Calendar className="h-4 w-4" />
+                      Кто работает сегодня
                     </Link>
                     <button
                       type="button"
                       onClick={() => router.refresh()}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                      className="inline-flex min-h-[44px] items-center gap-2 px-4 rounded-lg text-sm font-semibold bg-white text-amber-700 border border-amber-300 hover:bg-amber-50"
                     >
-                      🔄 Обновить страницу
+                      <RefreshCw className="h-4 w-4" />
+                      Обновить
                     </button>
                   </div>
                   {boxShiftStateByBox.box1.employees.length === 0 && boxShiftStateByBox.box2.employees.length === 0 ? (
