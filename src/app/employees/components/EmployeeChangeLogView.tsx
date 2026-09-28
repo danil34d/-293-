@@ -94,7 +94,7 @@ export function EmployeeChangeLogView({ employeeId, employees }: {
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-bold text-slate-900">📜 Audit-журнал изменений</div>
           <div className="text-[11px] text-slate-500">
-            Phase 29 · все правки role / username / password / схема ЗП / архивация / ФИО / тел / реквизиты
+            Все правки: роль, логин, пароль, схема ЗП, архивация, ФИО, телефон, реквизиты
           </div>
         </div>
         {loaded && entries.length > 0 && (

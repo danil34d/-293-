@@ -352,11 +352,8 @@ function SplitEditor({
       </div>
 
       <div className="rounded bg-violet-100/50 border border-violet-200 p-2 text-[11px] text-violet-900 leading-snug">
-        <b>Backend handshake:</b> чтобы split полностью работал — заведите в схеме зарплаты
-        строку «{fieldArrayName.includes('priceList') ? '<название услуги>' : 'эта услуга'}» с
-        <code className="bg-white px-1 rounded mx-0.5">rate</code> = {employee.toLocaleString('ru-RU')}₽ и
-        <code className="bg-white px-1 rounded mx-0.5">splitDriverBonus</code> = {driverBonus.toLocaleString('ru-RU')}₽.
-        Backend читает SalaryScheme для создания DriverKickback (Phase 50).
+        Сплит берётся из этой услуги — в схеме зарплаты ничего заводить не нужно.
+        Водитель получит {driverBonus.toLocaleString('ru-RU')}₽, мойщикам достанется {employee.toLocaleString('ru-RU')}₽.
       </div>
     </div>
   );

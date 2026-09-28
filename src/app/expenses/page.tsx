@@ -202,7 +202,7 @@ export default async function ExpensesPage() {
                       {/* Phase 31: 🔗 badge для chemical expenses — atomic с StockMovement (Phase 24a) */}
                       {isChemicalPurchase(expense) && (
                         <span
-                          title="Atomic-связь со складом: DELETE расхода атомарно реверсирует StockMovement (Phase 24a)"
+                          title="Связан со складом: если удалить расход, химия спишется со склада обратно"
                           style={{
                             display: 'inline-flex', alignItems: 'center', gap: 3,
                             fontSize: 10, fontWeight: 700, color: '#0e7490', background: '#ecfeff',

@@ -984,19 +984,6 @@ export function OperationsClient({
           </div>
         )}
 
-      {/* What's new strip */}
-      <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4">
-        <div className="text-[11px] uppercase tracking-wider font-bold text-emerald-800 flex items-center gap-1.5 mb-2">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Phase 36 — что изменилось
-        </div>
-        <ul className="text-[12px] text-emerald-900 space-y-1 leading-relaxed">
-          <li>• <b>BoxCard</b> с live-статусом — занят / свободен / офлайн по цвету шапки</li>
-          <li>• <b>Текущая мойка</b> с прогресс-полосой времени и оценкой длительности</li>
-          <li>• <b>Pending от камер</b> в отдельной полосе — просрочки выделены красным</li>
-          <li>• <b>Live KPI</b> сверху: боксов работает, команда, касса, моек</li>
-          <li>• Camera status (pulse + last-ping) — сразу видно живое устройство</li>
-        </ul>
-      </div>
     </div>
   );
 }

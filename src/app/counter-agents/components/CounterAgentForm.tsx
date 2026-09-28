@@ -654,10 +654,8 @@ export function CounterAgentForm({
                         </div>
                         <div className="text-[12px] text-muted-foreground mt-1">{balanceMeta.hint}</div>
                         <div className="mt-3 text-[12px] text-amber-900 leading-snug">
-                          Phase 25 (17.05.2026): прямая правка баланса в этой форме <b>отключена</b> на уровне сервера
-                          (PUT игнорирует поле <code className="bg-amber-100 px-1 rounded text-[11px]">balance</code>).
-                          Любое изменение должно идти через <b>«Добавить платёж»</b> в списке контрагентов
-                          — это создаёт <code className="bg-amber-100 px-1 rounded text-[11px]">ClientTransaction(type='payment')</code> с audit-меткой.
+                          Баланс здесь не редактируется. Чтобы его изменить, внесите платёж через
+                          <b> «Добавить платёж»</b> в списке контрагентов — так у каждого изменения останется запись: кто и когда.
                         </div>
                       </div>
                     </div>
