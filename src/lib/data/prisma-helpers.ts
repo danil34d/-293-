@@ -97,6 +97,45 @@ export async function createStockMovement(tx: any, params: {
   });
 }
 
+// ─── Исполнители мойки ───────────────────────────────────────
+
+/** Роли-устройства: терминал бокса — не человек, в исполнители мойки не пишется. */
+const DEVICE_ROLES: readonly string[] = ['kiosk', 'kiosk1'];
+
+/**
+ * Последняя линия защиты для строк `WashEventEmployee`: убирает из employeeIds
+ * учётки терминалов. Вызывается на ОБОИХ путях записи исполнителей — создание
+ * мойки (createWashEventWithSideEffects) и правка (saveWashEvent, PUT).
+ *
+ * 🔥 ФИКС 2026-09-28: терминал записан исполнителем в 11 мойках. Фильтр
+ * в wash-event-create-service.ts опирался на isKiosk(), а тот — на роль,
+ * прочитанную через parseEnum. 25.05 (029ae83) из EMPLOYEE_ROLES выпал 'kiosk1',
+ * терминал стал читаться как 'employee', и фильтр молча пропускал его
+ * до 09.08. Путь PUT фильтра не имел вовсе.
+ * Здесь роль берётся из сырой колонки в той же транзакции — регрессия списка
+ * ролей в мапперах эту проверку отключить не может.
+ *
+ * Неизвестные id не трогаем: FK упадёт, как и раньше, — молча выкинуть
+ * живого мойщика хуже, чем получить ошибку.
+ *
+ * Принимает `tx` любого типа (`prisma` или `Prisma.TransactionClient`).
+ */
+export async function withoutDeviceEmployees(tx: any, employeeIds: readonly string[]): Promise<string[]> {
+  const unique = Array.from(new Set(employeeIds));
+  if (unique.length === 0) return [];
+  const devices: { id: string }[] = await tx.employee.findMany({
+    where: { id: { in: unique }, role: { in: [...DEVICE_ROLES] } },
+    select: { id: true },
+  });
+  if (devices.length === 0) return unique;
+  const deviceIds = new Set(devices.map((d) => d.id));
+  const kept = unique.filter((id) => !deviceIds.has(id));
+  console.warn(
+    `[wash-event] терминал убран из исполнителей: ${unique.join(',')} → ${kept.join(',')}`,
+  );
+  return kept;
+}
+
 // ─── Enum parsing helper ─────────────────────────────────────
 
 /**

@@ -1,7 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/db/prisma';
-import { fkConnect, createStockMovement, parseEnum } from './prisma-helpers';
+import { fkConnect, createStockMovement, parseEnum, withoutDeviceEmployees } from './prisma-helpers';
 import type {
   WashEvent, Aggregator, CounterAgent, Employee, SalaryScheme,
   EmployeeTransaction, RetailPriceConfig, Expense, ClientTransaction,
@@ -651,101 +651,105 @@ export async function saveWashEvent(data: any): Promise<void> {
     else if (data.sourceId.startsWith('agent_')) counterAgentId = data.sourceId;
   }
 
-  await prisma.washEvent.upsert({
-    where: { id: data.id },
-    update: {
-      timestamp: new Date(data.timestamp),
-      vehicleNumber: data.vehicleNumber,
-      boxNumber: data.boxNumber ?? null,
-      paymentMethod: data.paymentMethod,
-      aggregatorId,
-      counterAgentId,
-      sourceName: data.sourceName ?? null,
-      priceListName: data.priceListName ?? null,
-      totalAmount: data.totalAmount,
-      netAmount: data.netAmount ?? null,
-      acquiringFee: data.acquiringFee ?? null,
-      services: data.services,
-      driverComments: data.driverComments ?? undefined,
-      editHistory: data.editHistory ?? undefined,
-      photos: data.photos ?? undefined,
-      chemicalConsumptionGrams: data.chemicalConsumptionGrams ?? null,
-      chemicalCostRub: data.chemicalCostRub ?? null,
-      status: data.status ?? null,
-      completedAt: data.completedAt ?? null,
-      refundedAt: data.refundedAt ?? null,
-      refundReason: data.refundReason ?? null,
-      tips: data.tips ?? null,
-      shiftId: data.shiftId ?? undefined,
-      washDurationSeconds: data.washDurationSeconds ?? null,
-      cameraSession: data.cameraSession ?? undefined,
-      dismissal: data.dismissal ?? undefined,
-      restoration: data.restoration ?? undefined,
-      // Phase 8 / finding #38
-      createdInClosedPeriod: data.createdInClosedPeriod ?? false,
-      closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
-      // Phase 10 / finding #40 — НЕ перезаписываем при upsert update,
-      // чтобы не потерять оригинального автора при последующих edit'ах.
-      // (Update path — это PUT, у нас createdByEmployeeId фиксируется только на create.)
-      // Phase 57 / multi-company — admin может сменить ИП через UI (override)
-      ourCompanyId: data.ourCompanyId ?? null,
-      // Phase 60: водитель + цифровая роспись (для автозаполнения Ведомости учёта)
-      driverName: data.driverName ?? null,
-      driverSignature: data.driverSignature ?? null,
-    },
-    create: {
-      id: data.id,
-      timestamp: new Date(data.timestamp),
-      vehicleNumber: data.vehicleNumber,
-      boxNumber: data.boxNumber ?? null,
-      paymentMethod: data.paymentMethod,
-      // Phase 60 helper: relation connect для Checked-create
-      aggregator: fkConnect(aggregatorId),
-      counterAgent: fkConnect(counterAgentId),
-      sourceName: data.sourceName ?? null,
-      priceListName: data.priceListName ?? null,
-      totalAmount: data.totalAmount,
-      netAmount: data.netAmount ?? null,
-      acquiringFee: data.acquiringFee ?? null,
-      services: data.services,
-      driverComments: data.driverComments ?? undefined,
-      editHistory: data.editHistory ?? undefined,
-      photos: data.photos ?? undefined,
-      chemicalConsumptionGrams: data.chemicalConsumptionGrams ?? null,
-      chemicalCostRub: data.chemicalCostRub ?? null,
-      status: data.status ?? null,
-      completedAt: data.completedAt ?? null,
-      refundedAt: data.refundedAt ?? null,
-      refundReason: data.refundReason ?? null,
-      tips: data.tips ?? null,
-      shiftId: data.shiftId ?? null,
-      washDurationSeconds: data.washDurationSeconds ?? null,
-      cameraSession: data.cameraSession ?? undefined,
-      dismissal: data.dismissal ?? undefined,
-      restoration: data.restoration ?? undefined,
-      // Phase 8 / finding #38
-      createdInClosedPeriod: data.createdInClosedPeriod ?? false,
-      closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
-      // Phase 10 / finding #40 — фиксируется только на create (PUT не трогает)
-      createdByEmployeeId: data.createdByEmployeeId ?? null,
-      // Phase 57 / multi-company — какое НАШЕ ИП оказало услугу
-      ourCompany: fkConnect(data.ourCompanyId),
-      // Phase 60: водитель + цифровая роспись
-      driverName: data.driverName ?? null,
-      driverSignature: data.driverSignature ?? null,
-    },
-  });
-
-  // Sync junction table for employeeIds
-  const employeeIds: string[] = data.employeeIds ?? [];
-  // Delete old links and recreate
-  await prisma.washEventEmployee.deleteMany({ where: { washEventId: data.id } });
-  if (employeeIds.length > 0) {
-    await prisma.washEventEmployee.createMany({
-      data: employeeIds.map(empId => ({ washEventId: data.id, employeeId: empId })),
-      skipDuplicates: true,
+  // Мойка и её исполнители — одной транзакцией: раньше deleteMany+createMany
+  // шли отдельными запросами, и сбой между ними оставлял мойку без исполнителей.
+  await prisma.$transaction(async (tx) => {
+    await tx.washEvent.upsert({
+      where: { id: data.id },
+      update: {
+        timestamp: new Date(data.timestamp),
+        vehicleNumber: data.vehicleNumber,
+        boxNumber: data.boxNumber ?? null,
+        paymentMethod: data.paymentMethod,
+        aggregatorId,
+        counterAgentId,
+        sourceName: data.sourceName ?? null,
+        priceListName: data.priceListName ?? null,
+        totalAmount: data.totalAmount,
+        netAmount: data.netAmount ?? null,
+        acquiringFee: data.acquiringFee ?? null,
+        services: data.services,
+        driverComments: data.driverComments ?? undefined,
+        editHistory: data.editHistory ?? undefined,
+        photos: data.photos ?? undefined,
+        chemicalConsumptionGrams: data.chemicalConsumptionGrams ?? null,
+        chemicalCostRub: data.chemicalCostRub ?? null,
+        status: data.status ?? null,
+        completedAt: data.completedAt ?? null,
+        refundedAt: data.refundedAt ?? null,
+        refundReason: data.refundReason ?? null,
+        tips: data.tips ?? null,
+        shiftId: data.shiftId ?? undefined,
+        washDurationSeconds: data.washDurationSeconds ?? null,
+        cameraSession: data.cameraSession ?? undefined,
+        dismissal: data.dismissal ?? undefined,
+        restoration: data.restoration ?? undefined,
+        // Phase 8 / finding #38
+        createdInClosedPeriod: data.createdInClosedPeriod ?? false,
+        closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
+        // Phase 10 / finding #40 — НЕ перезаписываем при upsert update,
+        // чтобы не потерять оригинального автора при последующих edit'ах.
+        // (Update path — это PUT, у нас createdByEmployeeId фиксируется только на create.)
+        // Phase 57 / multi-company — admin может сменить ИП через UI (override)
+        ourCompanyId: data.ourCompanyId ?? null,
+        // Phase 60: водитель + цифровая роспись (для автозаполнения Ведомости учёта)
+        driverName: data.driverName ?? null,
+        driverSignature: data.driverSignature ?? null,
+      },
+      create: {
+        id: data.id,
+        timestamp: new Date(data.timestamp),
+        vehicleNumber: data.vehicleNumber,
+        boxNumber: data.boxNumber ?? null,
+        paymentMethod: data.paymentMethod,
+        // Phase 60 helper: relation connect для Checked-create
+        aggregator: fkConnect(aggregatorId),
+        counterAgent: fkConnect(counterAgentId),
+        sourceName: data.sourceName ?? null,
+        priceListName: data.priceListName ?? null,
+        totalAmount: data.totalAmount,
+        netAmount: data.netAmount ?? null,
+        acquiringFee: data.acquiringFee ?? null,
+        services: data.services,
+        driverComments: data.driverComments ?? undefined,
+        editHistory: data.editHistory ?? undefined,
+        photos: data.photos ?? undefined,
+        chemicalConsumptionGrams: data.chemicalConsumptionGrams ?? null,
+        chemicalCostRub: data.chemicalCostRub ?? null,
+        status: data.status ?? null,
+        completedAt: data.completedAt ?? null,
+        refundedAt: data.refundedAt ?? null,
+        refundReason: data.refundReason ?? null,
+        tips: data.tips ?? null,
+        shiftId: data.shiftId ?? null,
+        washDurationSeconds: data.washDurationSeconds ?? null,
+        cameraSession: data.cameraSession ?? undefined,
+        dismissal: data.dismissal ?? undefined,
+        restoration: data.restoration ?? undefined,
+        // Phase 8 / finding #38
+        createdInClosedPeriod: data.createdInClosedPeriod ?? false,
+        closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
+        // Phase 10 / finding #40 — фиксируется только на create (PUT не трогает)
+        createdByEmployeeId: data.createdByEmployeeId ?? null,
+        // Phase 57 / multi-company — какое НАШЕ ИП оказало услугу
+        ourCompany: fkConnect(data.ourCompanyId),
+        // Phase 60: водитель + цифровая роспись
+        driverName: data.driverName ?? null,
+        driverSignature: data.driverSignature ?? null,
+      },
     });
-  }
+
+    // Sync junction table for employeeIds
+    const employeeIds = await withoutDeviceEmployees(tx, data.employeeIds ?? []);
+    // Delete old links and recreate
+    await tx.washEventEmployee.deleteMany({ where: { washEventId: data.id } });
+    if (employeeIds.length > 0) {
+      await tx.washEventEmployee.createMany({
+        data: employeeIds.map(empId => ({ washEventId: data.id, employeeId: empId })),
+        skipDuplicates: true,
+      });
+    }
+  });
 }
 
 export async function deleteWashEvent(id: string): Promise<void> {
@@ -2650,7 +2654,7 @@ export async function createWashEventWithSideEffects(
     });
 
     // 2. Junction table
-    const employeeIds: string[] = washEvent.employeeIds ?? [];
+    const employeeIds = await withoutDeviceEmployees(tx, washEvent.employeeIds ?? []);
     if (employeeIds.length > 0) {
       await tx.washEventEmployee.createMany({
         data: employeeIds.map(empId => ({ washEventId: washEvent.id, employeeId: empId })),
