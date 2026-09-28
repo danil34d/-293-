@@ -4,13 +4,14 @@ import { NextResponse } from 'next/server';
 import type { WashEvent } from '@/types';
 import { invalidateWashEventsCache } from '@/lib/data';
 import { readEntity, saveEntity } from '@/lib/data/write-helpers';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAdmin } from '@/lib/server-auth';
 
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  const auth = requireAuth();
+  // Возврат убирает мойку из выручки — только админ (ФИКС 2026-09-28: было requireAuth)
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   const { id } = params;

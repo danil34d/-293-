@@ -17,7 +17,8 @@ import {
   saveInventoryData,
   updateBalance,
 } from '@/lib/data/write-helpers';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAdmin, requireAuth } from '@/lib/server-auth';
+import { hasAdminAccess, isKioskTerminal } from '@/lib/employee-role';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
 
 /**
@@ -136,6 +137,12 @@ export async function GET(request: Request, { params }: { params: { id: string }
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   const auth = requireAuth();
   if (auth instanceof NextResponse) return auth;
+  // 🔥 ФИКС 2026-09-28: раньше хватало любого входа — сотрудник мог поменять
+  // сумму, исполнителей или клиента любой мойки (а с ними зарплату и баланс).
+  // Правят только админ и терминал бокса kiosk1 (см. employee-role.ts).
+  if (!hasAdminAccess(auth) && !isKioskTerminal(auth)) {
+    return NextResponse.json({ error: 'Править мойку может только администратор' }, { status: 403 });
+  }
 
   const { id } = params;
   if (!id) {
@@ -270,7 +277,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 }
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-  const auth = requireAuth();
+  // Удаление мойки необратимо и двигает баланс клиента — только админ (ФИКС 2026-09-28)
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   const { id } = params;

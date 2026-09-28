@@ -16,6 +16,10 @@ async function updateInventory(changeInGrams: number) {
 
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
+  // Только админ (ФИКС 2026-09-28: раньше отдавалось любой учётке — расходы — приватные финансы владельца)
+  const auth = requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   const { id } = params;
   if (!id) {
     return NextResponse.json({ error: 'Expense ID is required' }, { status: 400 });

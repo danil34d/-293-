@@ -9,6 +9,10 @@ import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
 
 // GET request handler for a specific counter agent
 export async function GET(request: Request, { params }: { params: { id: string } }) {
+  // Только админ (ФИКС 2026-09-28: раньше отдавалось любой учётке — баланс, реквизиты, подписи водителей, проверки не было вовсе)
+  const auth = requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   const { id } = params;
   if (!id) {
     return NextResponse.json({ error: 'Agent ID is required' }, { status: 400 });

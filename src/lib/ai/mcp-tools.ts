@@ -4,6 +4,7 @@
  */
 
 import type { GLMToolDefinition } from '@/types/ai-assistant';
+import { withoutPassword } from '@/lib/employee-safe';
 import {
   getWashEventsData,
   getEmployeesData,
@@ -339,7 +340,8 @@ export async function executeMCPTool(toolName: string, parameters: any): Promise
 
         return {
           success: true,
-          data: filtered,
+          // Без паролей: результат инструмента уходит в ответ чата (ФИКС 2026-09-28)
+          data: filtered.map(withoutPassword),
           total: filtered.length,
         };
       }

@@ -4,7 +4,8 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import type { Employee, EmployeeRole } from '@/types';
 import { appendEmployeeSchemeHistory, getEmployeeImpact, getEmployeesData, invalidateEmployeesCache, createEmployeeChangeLogBatch } from '@/lib/data';
-import { requireAdmin } from '@/lib/server-auth';
+import { requireAdmin, requireAuth } from '@/lib/server-auth';
+import { hasAdminAccess } from '@/lib/employee-role';
 import { hashPassword } from '@/lib/password-hash';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
 
@@ -20,7 +21,14 @@ function normalizeEmployeeRole(requestedRole?: EmployeeRole): EmployeeRole {
 }
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
+  // 🔥 ФИКС 2026-09-28: проверки не было — любой вошедший по чужому id получал
+  // телефон, реквизиты для выплаты и схему зарплаты. Теперь админ или сам сотрудник.
+  const auth = requireAuth();
+  if (auth instanceof NextResponse) return auth;
   const { id } = params;
+  if (!hasAdminAccess(auth) && auth.id !== id) {
+    return NextResponse.json({ error: 'Нет доступа' }, { status: 403 });
+  }
   if (!id) {
     return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
   }

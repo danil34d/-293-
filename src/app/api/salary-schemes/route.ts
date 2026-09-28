@@ -8,6 +8,10 @@ import { requireAdmin } from '@/lib/server-auth';
 import { saveEntity } from '@/lib/data/write-helpers';
 
 export async function GET() {
+  // Только админ (ФИКС 2026-09-28: раньше отдавалось любой учётке — ставки зарплат всех схем)
+  const auth = requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const schemes = await getSalarySchemesData();
     return NextResponse.json(schemes);

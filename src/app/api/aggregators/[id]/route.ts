@@ -8,6 +8,10 @@ import { requireAdmin } from '@/lib/server-auth';
 import { saveEntity, deleteEntity, readEntity } from '@/lib/data/write-helpers';
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
+  // Только админ (ФИКС 2026-09-28: раньше отдавалось любой учётке — баланс, реквизиты и договорные прайсы, проверки не было вовсе)
+  const auth = requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   const { id } = params;
   if (!id) {
     return NextResponse.json({ error: 'Aggregator ID is required' }, { status: 400 });

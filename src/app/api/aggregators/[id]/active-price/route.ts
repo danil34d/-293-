@@ -3,14 +3,15 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import type { Aggregator } from '@/types';
 import { invalidateAggregatorsCache } from '@/lib/data';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAdmin } from '@/lib/server-auth';
 import { readEntity, saveEntity } from '@/lib/data/write-helpers';
 
 export async function PUT(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  const auth = requireAuth();
+  // Только админ (ФИКС 2026-09-28: было requireAuth — смена тарифа, по которому считаются мойки)
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   const { id } = params;
