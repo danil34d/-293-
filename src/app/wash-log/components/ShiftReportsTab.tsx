@@ -260,7 +260,7 @@ export function ShiftReportsTab({ reports, employees }: ShiftReportsTabProps) {
             </thead>
             <tbody>
               {filteredReports.map((report) => {
-                const visibleEmployees = report.employeeIds.filter((employeeId) => employeeMap.get(employeeId)?.role !== 'kiosk');
+                const visibleEmployees = report.employeeIds.filter((employeeId) => !isKiosk(employeeMap.get(employeeId)));
                 const employeeIdsToRender = visibleEmployees.length > 0 ? visibleEmployees : report.employeeIds;
 
                 return (
