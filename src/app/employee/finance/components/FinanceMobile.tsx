@@ -26,6 +26,7 @@ const TXN_DETAILS: Record<EmployeeTransactionType, { label: string; sign: 1 | -1
   bonus: { label: 'Премия', sign: 1, color: 'text-sky-700', bg: 'bg-sky-50', ring: 'ring-sky-100', iconBg: 'from-sky-400 to-blue-500', Icon: Gift },
   loan: { label: 'Аванс / Долг', sign: -1, color: 'text-orange-700', bg: 'bg-orange-50', ring: 'ring-orange-100', iconBg: 'from-amber-400 to-orange-500', Icon: MinusCircle },
   purchase: { label: 'Покупка', sign: -1, color: 'text-rose-700', bg: 'bg-rose-50', ring: 'ring-rose-100', iconBg: 'from-rose-400 to-red-500', Icon: ShoppingCart },
+  'salary-deduction': { label: 'Удержание из ЗП', sign: -1, color: 'text-rose-700', bg: 'bg-rose-50', ring: 'ring-rose-100', iconBg: 'from-rose-400 to-red-500', Icon: MinusCircle },
   debt_write_off: { label: 'Списание долга', sign: 1, color: 'text-teal-700', bg: 'bg-teal-50', ring: 'ring-teal-100', iconBg: 'from-teal-400 to-emerald-500', Icon: CircleOff },
 };
 

@@ -77,6 +77,7 @@ function transactionTypeToRu(type: string): string {
     bonus: 'Премия',
     loan: 'Долг',
     purchase: 'Покупка',
+    'salary-deduction': 'Удержание из ЗП',
     debt_write_off: 'Списание долга',
     earning: 'Начисление',
   };

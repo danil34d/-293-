@@ -51,8 +51,10 @@ export async function getEmployeeFinanceSummary(employeeId: string, month: strin
   const bonuses = sumTransactionsByType(filteredTransactions, 'bonus');
   const loans = sumTransactionsByType(filteredTransactions, 'loan');
   const purchases = sumTransactionsByType(filteredTransactions, 'purchase');
+  // Канистра «в счёт ЗП» — такое же удержание, как покупка (раньше выпадала из баланса)
+  const salaryDeductions = sumTransactionsByType(filteredTransactions, 'salary-deduction');
   const debtWriteOffs = sumTransactionsByType(filteredTransactions, 'debt_write_off');
-  const loansAndPurchases = loans + purchases;
+  const loansAndPurchases = loans + purchases + salaryDeductions;
   const balance = totalEarned + bonuses + debtWriteOffs - payments - loansAndPurchases;
 
   return {
