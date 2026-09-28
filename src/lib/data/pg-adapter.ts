@@ -110,6 +110,8 @@ function employeeFromPrisma(row: any): Employee {
     weekendPreferredShiftType: row.weekendPreferredShiftType ?? undefined,
     targetShiftsPerMonth: row.targetShiftsPerMonth ?? undefined,
     wantsMoreShifts: row.wantsMoreShifts ?? undefined,
+    // колонка есть, маппер её не читал — на /inventory всегда было «—»
+    avgChemPerWash: row.avgChemPerWash ?? undefined,
     archived: row.archived ?? false,
     archivedAt: row.archivedAt ?? undefined,
   };
@@ -128,6 +130,11 @@ function aggregatorFromPrisma(row: any): Aggregator {
     activePriceListName: row.activePriceListName ?? undefined,
     // Phase 57 / multi-company
     preferredOurCompanyId: row.preferredOurCompanyId ?? undefined,
+    // 🔥 ФИКС 2026-09-28: маппер не читал архив — агрегатор в архиве выглядел
+    // активным, а следующее же сохранение (saveAggregator пишет archived ?? false)
+    // молча доставало его из архива.
+    archived: row.archived ?? false,
+    archivedAt: row.archivedAt ?? undefined,
   };
 }
 
@@ -433,6 +440,11 @@ export async function getEmployeeCanistersData(): Promise<EmployeeChemicalCanist
   return rows.map(canisterFromPrisma);
 }
 
+export async function getEmployeeCanisterById(id: string): Promise<EmployeeChemicalCanister | null> {
+  const row = await prisma.employeeCanister.findUnique({ where: { id } });
+  return row ? canisterFromPrisma(row) : null;
+}
+
 export async function getEmployeeCanistersByEmployee(employeeId: string): Promise<EmployeeChemicalCanister[]> {
   const rows = await prisma.employeeCanister.findMany({
     where: { employeeId },
@@ -646,7 +658,11 @@ export async function saveWashEvent(data: any): Promise<void> {
   // Resolve sourceId → aggregatorId / counterAgentId
   let aggregatorId: string | null = null;
   let counterAgentId: string | null = null;
-  if (data.sourceId) {
+  // Инвариант из PUT /api/wash-events/[id] (09.08) — на уровне записи: розничная
+  // оплата не привязывается к клиенту, иначе выручка и в кассе, и на балансе.
+  // След старого бага: we_1779725963383_ylyso6z (25.05, нал 2000 ₽ на agg_shl).
+  const isRetail = ['cash', 'card', 'transfer'].includes(data.paymentMethod);
+  if (data.sourceId && !isRetail) {
     if (data.sourceId.startsWith('agg_')) aggregatorId = data.sourceId;
     else if (data.sourceId.startsWith('agent_')) counterAgentId = data.sourceId;
   }
@@ -1724,7 +1740,9 @@ export async function saveAggregator(data: any): Promise<void> {
     where: { id: data.id },
     update: {
       name: data.name,
-      balance: data.balance ?? 0,
+      // 🔥 ФИКС 2026-09-28: balance в update не пишем. Форма присылает баланс,
+      // запомненный при открытии, — мойка, оформленная за это время, стиралась.
+      // Баланс меняется только атомарно через updateClientBalance (increment).
       companies: data.companies ?? [],
       cars: data.cars ?? [],
       priceLists: data.priceLists ?? [],
@@ -1778,7 +1796,7 @@ export async function saveCounterAgent(data: any): Promise<void> {
     where: { id: data.id },
     update: {
       name: data.name,
-      balance: data.balance ?? 0,
+      // balance не пишем — см. saveAggregator (ФИКС 2026-09-28).
       companies: data.companies ?? [],
       cars: data.cars ?? [],
       priceList: data.priceList ?? [],
@@ -2179,6 +2197,14 @@ export async function saveClientTransactions(clientId: string, transactions: any
   if (clientId.startsWith('agg_')) aggregatorId = clientId;
   else if (clientId.startsWith('agent_')) counterAgentId = clientId;
 
+  // Сохраняем исходное время создания — тот же баг, что исправлен
+  // в saveEmployeeTransactions 13.08: пересоздание затирало createdAt всей истории.
+  const existing = await prisma.clientTransaction.findMany({
+    where: { clientId },
+    select: { id: true, createdAt: true },
+  });
+  const createdAtById = new Map(existing.map((r) => [r.id, r.createdAt]));
+
   await prisma.$transaction([
     prisma.clientTransaction.deleteMany({ where: { clientId } }),
     ...transactions.map(t =>
@@ -2195,6 +2221,7 @@ export async function saveClientTransactions(clientId: string, transactions: any
           description: t.description ?? '',
           // Phase 57b.1: multi-company FK persistence
           ourCompany: fkConnect(t.ourCompanyId),
+          ...(createdAtById.has(t.id) ? { createdAt: createdAtById.get(t.id)! } : {}),
         },
       })
     ),
@@ -2204,46 +2231,50 @@ export async function saveClientTransactions(clientId: string, transactions: any
 // --- Shifts ---
 
 export async function saveShift(data: any): Promise<void> {
-  await prisma.shift.upsert({
-    where: { id: data.id },
-    update: {
-      date: data.date,
-      washId: data.washId ?? 'wash_1',
-      boxNumber: data.boxNumber,
-      shiftType: data.shiftType,
-      startTime: data.startTime ?? '08:00',
-      endTime: data.endTime ?? '20:00',
-      releasedEmployeeId: data.releasedEmployeeId ?? null,
-      isAutoAssigned: data.isAutoAssigned ?? false,
-      status: data.status ?? 'scheduled',
-      startedAt: data.startedAt ? new Date(data.startedAt) : null,
-      closedAt: data.closedAt ? new Date(data.closedAt) : null,
-    },
-    create: {
-      id: data.id,
-      date: data.date,
-      washId: data.washId ?? 'wash_1',
-      boxNumber: data.boxNumber,
-      shiftType: data.shiftType,
-      startTime: data.startTime ?? '08:00',
-      endTime: data.endTime ?? '20:00',
-      releasedEmployeeId: data.releasedEmployeeId ?? null,
-      isAutoAssigned: data.isAutoAssigned ?? false,
-      status: data.status ?? 'scheduled',
-      startedAt: data.startedAt ? new Date(data.startedAt) : null,
-      closedAt: data.closedAt ? new Date(data.closedAt) : null,
-    },
-  });
-
-  // Sync junction table
-  const employeeIds: string[] = data.employeeIds ?? [];
-  await prisma.shiftEmployee.deleteMany({ where: { shiftId: data.id } });
-  if (employeeIds.length > 0) {
-    await prisma.shiftEmployee.createMany({
-      data: employeeIds.map(empId => ({ shiftId: data.id, employeeId: empId })),
-      skipDuplicates: true,
+  // Смена и её люди — одной транзакцией: сбой между deleteMany и createMany
+  // оставлял смену без сотрудников (как было в saveWashEvent до 28.09).
+  await prisma.$transaction(async (tx) => {
+    await tx.shift.upsert({
+      where: { id: data.id },
+      update: {
+        date: data.date,
+        washId: data.washId ?? 'wash_1',
+        boxNumber: data.boxNumber,
+        shiftType: data.shiftType,
+        startTime: data.startTime ?? '08:00',
+        endTime: data.endTime ?? '20:00',
+        releasedEmployeeId: data.releasedEmployeeId ?? null,
+        isAutoAssigned: data.isAutoAssigned ?? false,
+        status: data.status ?? 'scheduled',
+        startedAt: data.startedAt ? new Date(data.startedAt) : null,
+        closedAt: data.closedAt ? new Date(data.closedAt) : null,
+      },
+      create: {
+        id: data.id,
+        date: data.date,
+        washId: data.washId ?? 'wash_1',
+        boxNumber: data.boxNumber,
+        shiftType: data.shiftType,
+        startTime: data.startTime ?? '08:00',
+        endTime: data.endTime ?? '20:00',
+        releasedEmployeeId: data.releasedEmployeeId ?? null,
+        isAutoAssigned: data.isAutoAssigned ?? false,
+        status: data.status ?? 'scheduled',
+        startedAt: data.startedAt ? new Date(data.startedAt) : null,
+        closedAt: data.closedAt ? new Date(data.closedAt) : null,
+      },
     });
-  }
+
+    // Sync junction table
+    const employeeIds: string[] = data.employeeIds ?? [];
+    await tx.shiftEmployee.deleteMany({ where: { shiftId: data.id } });
+    if (employeeIds.length > 0) {
+      await tx.shiftEmployee.createMany({
+        data: employeeIds.map(empId => ({ shiftId: data.id, employeeId: empId })),
+        skipDuplicates: true,
+      });
+    }
+  });
 }
 
 export async function deleteShift(id: string): Promise<void> {

@@ -169,9 +169,14 @@ export async function readEntity<T>(type: EntityType, id: string): Promise<T | n
       shiftSwapRequest: 'getShiftSwapRequestById',
       employeeDayStatus: 'getEmployeeDayStatusById',
       schedulePlan: 'getSchedulePlanById',
+      employeeCanister: 'getEmployeeCanisterById',
     };
     const fn = pg[byIdFns[type]];
-    return fn ? await fn(id) : null;
+    // 🔥 ФИКС 2026-09-28: раньше для незнакомого типа молча возвращался null —
+    // и GET/PUT/DELETE /api/employee-canisters/[id] на Postgres всегда отвечали 404.
+    // Нет геттера — это ошибка кода, а не «запись не найдена».
+    if (!fn) throw new Error(`readEntity: нет геттера по id для '${type}' в pg-adapter`);
+    return await fn(id);
   } else {
     return readJsonFile<T>(entityDirMap[type], `${id}.json`);
   }
