@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Employee } from '@/types';
+import { getDefaultRouteForRole, hasAdminAccess } from '@/lib/employee-role';
+import { isNonAdminAppPath } from '@/lib/public-routes';
 
 const COOKIE_NAME = 'employee_auth_sim';
 const DEFAULT_SECRET = 'zorin-carwash-dev-secret-change-in-production';
@@ -68,6 +71,17 @@ async function verifyCookieSignature(signedValue: string, secret: string): Promi
   return crypto.subtle.verify('HMAC', key, sigBytes as BufferSource, enc.encode(encoded));
 }
 
+/** Полезная нагрузка куки (base64(JSON).подпись). Вызывать только после проверки подписи. */
+function decodeCookiePayload(signedValue: string): Partial<Employee> | null {
+  try {
+    const encoded = signedValue.substring(0, signedValue.lastIndexOf('.'));
+    const bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -87,7 +101,20 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (authorized) return NextResponse.next();
+  if (authorized && cookie) {
+    // 🔥 ФИКС 2026-09-28: роль на админских страницах проверялась только в браузере
+    // (AppLayout делал router.push уже ПОСЛЕ того, как серверная страница отдала
+    // HTML с данными). Сотрудник или терминал, открыв /expenses или /employees,
+    // получал суммы и записи сотрудников в исходнике страницы. Теперь не-админа
+    // уводим на его стартовую страницу до рендера. API-роуты проверяют роль сами.
+    if (!pathname.startsWith('/api/') && !isNonAdminAppPath(pathname)) {
+      const payload = decodeCookiePayload(cookie);
+      if (!hasAdminAccess(payload)) {
+        return NextResponse.redirect(new URL(getDefaultRouteForRole(payload), request.url));
+      }
+    }
+    return NextResponse.next();
+  }
 
   if (pathname.startsWith('/api/')) {
     return NextResponse.json({ error: 'Требуется авторизация' }, { status: 401 });

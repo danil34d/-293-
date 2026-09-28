@@ -12,7 +12,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { hasAdminAccess, getDefaultRouteForRole } from '@/lib/employee-role';
-import { isLoginPath, isPublicAppPath } from '@/lib/public-routes';
+import { isLoginPath, isNonAdminAppPath, isPublicAppPath } from '@/lib/public-routes';
 
 export function AppLayout({ children, newServicesCount = 0 }: { children: ReactNode, newServicesCount?: number }) {
   const { isAuthenticated, employee, isLoading, logout } = useAuth();
@@ -87,13 +87,13 @@ export function AppLayout({ children, newServicesCount = 0 }: { children: ReactN
   }
 
   // For regular employees/kiosk on their dedicated layout
-  const isNonAdminPage = (pathname.startsWith('/employee') || pathname.startsWith('/kiosk')) && !hasAdminAccess(employee);
+  const isNonAdminPage = isNonAdminAppPath(pathname) && !hasAdminAccess(employee);
   if (isNonAdminPage) {
     return <>{children}</>;
   }
 
   // Redirect non-admin employees to their default route if they try to access admin pages
-  const isAdminPage = !pathname.startsWith('/employee') && !pathname.startsWith('/kiosk') && !pathname.startsWith('/login');
+  const isAdminPage = !isNonAdminAppPath(pathname);
   if (isAdminPage && !hasAdminAccess(employee)) {
     router.push(getDefaultRouteForRole(employee));
     return (
