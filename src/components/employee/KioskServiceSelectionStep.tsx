@@ -199,7 +199,7 @@ export function KioskServiceSelectionStep({
       {/* ─── 1. КОНТЕКСТНАЯ ПЛАШКА: что оформляем ───────────── */}
       <div className="rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50 px-4 py-3 ring-1 ring-blue-200">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-blue-700">
+          <span className="text-[11px] uppercase tracking-wider font-bold text-blue-700">
             Оформляем мойку
           </span>
           <span className="flex items-center gap-1 text-xs font-mono text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
@@ -252,7 +252,7 @@ export function KioskServiceSelectionStep({
         <div>
           <div className="mb-1.5 px-1 flex items-center gap-1.5">
             <Zap className="h-3 w-3 text-amber-500" />
-            <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+            <span className="text-[11px] uppercase tracking-wider text-gray-500 font-bold">
               Часто выбирают
             </span>
           </div>
@@ -292,7 +292,7 @@ export function KioskServiceSelectionStep({
       {/* ─── 4. SEARCH (collapsible) ──────────────────────── */}
       <div>
         <div className="mb-1.5 px-1 flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+          <span className="text-[11px] uppercase tracking-wider text-gray-500 font-bold">
             {searchQuery
               ? `Найдено: ${filteredServices.length} из ${services.length}`
               : `Все услуги (${services.length})`}
@@ -300,7 +300,7 @@ export function KioskServiceSelectionStep({
           {(!searchOpen && !searchQuery && services.length > 3) && (
             <button
               onClick={() => setSearchOpen(true)}
-              className="text-[10px] uppercase tracking-wider text-blue-600 font-bold flex items-center gap-1 active:scale-95"
+              className="text-[11px] uppercase tracking-wider text-blue-600 font-bold flex items-center gap-1 active:scale-95"
             >
               <Search className="h-3 w-3" />
               Найти
@@ -386,7 +386,7 @@ export function KioskServiceSelectionStep({
                       </div>
                       <div
                         className={
-                          'text-[10px] font-bold ' +
+                          'text-[11px] font-bold ' +
                           (selected ? 'text-blue-600' : 'text-emerald-600/70')
                         }
                       >
@@ -421,7 +421,7 @@ export function KioskServiceSelectionStep({
       {/* ─── 6. ДОП. УСЛУГИ (chips) ───────────────────────── */}
       {predefinedExtraServices && predefinedExtraServices.length > 0 && (
         <div>
-          <div className="mb-1.5 px-1 text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+          <div className="mb-1.5 px-1 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
             Дополнительно
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -463,7 +463,7 @@ export function KioskServiceSelectionStep({
       {/* ─── 7. ВЫБРАННЫЕ УСЛУГИ (группировка по serviceName с counter) ──── */}
       {selectedGroups.length > 0 && (
         <div>
-          <div className="mb-1.5 px-1 text-[10px] uppercase tracking-wider text-blue-700 font-bold">
+          <div className="mb-1.5 px-1 text-[11px] uppercase tracking-wider text-blue-700 font-bold">
             Выбрано
           </div>
           <div className="space-y-1.5">
@@ -486,7 +486,7 @@ export function KioskServiceSelectionStep({
                       </span>
                     )}
                     {group.count > 1 && (
-                      <span className="ml-2 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white tabular-nums">
+                      <span className="ml-2 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[11px] font-bold text-white tabular-nums">
                         ×{group.count}
                       </span>
                     )}
@@ -543,7 +543,7 @@ export function KioskServiceSelectionStep({
       {/* ─── 8. CUSTOM СВОЯ УСЛУГА ────────────────────────── */}
       {canAddCustomServices && onCustomNameChange && onCustomPriceChange && onAddCustomService && (
         <div className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 space-y-2">
-          <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+          <div className="text-[11px] uppercase tracking-wider text-gray-500 font-bold">
             Своя доп. услуга
           </div>
           <div className="grid grid-cols-3 gap-1.5">
@@ -587,7 +587,7 @@ export function KioskServiceSelectionStep({
             <div className="bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] px-3 py-2.5">
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="text-[10px] uppercase tracking-wider font-bold text-gray-500">
+                  <div className="text-[11px] uppercase tracking-wider font-bold text-gray-500">
                     Выбрано: {selectedCountLabel}
                   </div>
                   {showPrices ? (

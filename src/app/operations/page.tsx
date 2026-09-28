@@ -6,6 +6,7 @@ import { resolveCurrentBoxShiftStates } from '@/lib/current-box-team';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
 import { OperationsClient } from './components/OperationsClient';
 import type { WashId } from '@/types';
+import { isKiosk } from '@/lib/employee-role';
 
 interface Props {
   searchParams: { wash?: string };
@@ -27,7 +28,7 @@ export default async function OperationsPage({ searchParams }: Props) {
   const hour = new Date().getHours();
   const currentShiftType = (hour >= 8 && hour < 20) ? 'day' : 'night';
 
-  const realEmployees = employees.filter(e => e.role !== 'kiosk');
+  const realEmployees = employees.filter((e) => !isKiosk(e));
   const boxShiftStates = resolveCurrentBoxShiftStates({
     shifts,
     employees: realEmployees,

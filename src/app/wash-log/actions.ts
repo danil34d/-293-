@@ -1,27 +1,25 @@
-'use server';
-
 import type { WashComment } from '@/types';
 
+/**
+ * Сохраняет комментарии водителя к мойке. Вызывается из CommentDialog в браузере.
+ *
+ * 🔥 ФИКС 2026-09-28: раньше это был server action ('use server'), который
+ * сам ходил на `${NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/api/wash-events/…`
+ * без куки входа — middleware отвечал 401, и комментарий не сохранялся.
+ * Теперь запрос идёт из браузера с куками пользователя, а права проверяет
+ * PUT /api/wash-events/[id].
+ */
 export async function handleCommentUpdate(eventId: string, newComments: WashComment[]): Promise<void> {
-  const url = new URL(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9002'}/api/wash-events/${eventId}`);
+  const url = `/api/wash-events/${encodeURIComponent(eventId)}`;
 
-  try {
-    const fetchRes = await fetch(url, { cache: 'no-store' });
-    if (!fetchRes.ok) throw new Error("Failed to fetch event data before update.");
-    const eventToUpdate = await fetchRes.json();
+  const fetchRes = await fetch(url, { cache: 'no-store' });
+  if (!fetchRes.ok) throw new Error('Не удалось загрузить мойку перед сохранением комментария.');
+  const eventToUpdate = await fetchRes.json();
 
-    const updatedEvent = { ...eventToUpdate, driverComments: newComments };
-
-    const updateRes = await fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedEvent),
-    });
-
-    if (!updateRes.ok) throw new Error("Failed to save comment.");
-
-  } catch(e) {
-    console.error("Server Action Error (handleCommentUpdate):", e);
-    throw e;
-  }
+  const updateRes = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...eventToUpdate, driverComments: newComments }),
+  });
+  if (!updateRes.ok) throw new Error('Не удалось сохранить комментарий.');
 }

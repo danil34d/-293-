@@ -202,9 +202,8 @@ export function PaymentModal({ agent, open, onOpenChange, onPaymentRecorded }: P
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 text-[11px] text-slate-600 flex items-start gap-2">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
             <div>
-              Запись будет создана как <code className="bg-white px-1 rounded text-[10px]">ClientTransaction(type='payment')</code>
-              {" "}— audit-метка: admin (cookie identity) + текущее время. Прямая правка balance в форме Edit заблокирована
-              (Phase 25 server-side enforcement).
+              Платёж сохранится в истории с отметкой, кто и когда его внёс. Баланс меняется только так —
+              в карточке контрагента он не редактируется.
             </div>
           </div>
         </div>

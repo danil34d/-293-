@@ -11,6 +11,8 @@ import type { PendingCameraVehicle } from '@/lib/camera-pending';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PendingCameraSessionsPanel } from '@/components/camera/PendingCameraSessionsPanel';
+// 09.08.2026: разбор времени переехал в общий модуль, чтобы копии не разъезжались.
+import { parseCameraTime, minutesAgo, formatHHmm } from '@/lib/camera-time';
 
 interface OperationsClientProps {
   box1Employees: Employee[];
@@ -39,6 +41,25 @@ function buildCameraStreamUrl(boxNumber: number, wide = false) {
 }
 
 // Длительность мойки по «эвристике названия»: Лайт ≈ 15 мин, Премиум ≈ 40, остальное ≈ 25
+/**
+ * Ссылка «оформить» из карточки бокса. Собирает тот же набор параметров, что и
+ * верхняя плашка: без них форма открывается пустой и оператор набирает номер,
+ * который система уже прочитала.
+ */
+function buildBoxPendingHref(boxNumber: number, vehicle: PendingCameraVehicle | undefined) {
+  const params = new URLSearchParams({ box: String(boxNumber) });
+  if (!vehicle) return `/workstation?${params.toString()}`;
+  params.set('camera', '1');
+  params.set('cameraBox', String(vehicle.boxNumber ?? boxNumber));
+  params.set('cameraDir', vehicle.dirName);
+  params.set('cameraMode', vehicle.plateNumber ? 'checkout' : 'edit');
+  if (vehicle.plateNumber) params.set('cameraPlate', vehicle.plateNumber);
+  if (vehicle.vehicleClass) params.set('cameraVehicleClass', vehicle.vehicleClass);
+  if (vehicle.start) params.set('cameraStart', vehicle.start);
+  if (vehicle.end) params.set('cameraEnd', vehicle.end);
+  return `/workstation?${params.toString()}`;
+}
+
 function estimateMinutes(serviceName: string | undefined): number {
   if (!serviceName) return 25;
   const lower = serviceName.toLowerCase();
@@ -47,20 +68,12 @@ function estimateMinutes(serviceName: string | undefined): number {
   return 25;
 }
 
-function minutesAgo(iso: string | undefined): number {
-  if (!iso) return Infinity;
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return Infinity;
-  return Math.floor((Date.now() - t) / 60000);
-}
-
-function formatHHmm(iso: string | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
-
+// 🔥 ФИКС 2026-08-08: камера отдаёт время как '2026-08-08_16-15-33'.
+// Вызывающий код делал .replace('_','T') и получал '2026-08-08T16-15-33' —
+// время с дефисами вместо двоеточий, Date.parse даёт NaN. Следствия были
+// видны на /operations: время всегда «—», minutesAgo возвращал Infinity,
+// а Infinity > 30 метил КАЖДУЮ карточку «просрочена (Infinityм)».
+// Теперь разбор здесь, вызывающим .replace() делать не нужно.
 // ─── small components ───
 
 function CameraPreview({ boxNumber }: { boxNumber: number }) {
@@ -118,12 +131,22 @@ function CameraPreview({ boxNumber }: { boxNumber: number }) {
 }
 
 function LiveKpi({
-  label, value, icon: Icon, color,
+  label, value, icon: Icon, color, onClick, hint,
 }: {
   label: string; value: string | number; icon: typeof Box; color: string;
+  /** Если задан — плитка становится кнопкой (сейчас так работает «Касса смены»). */
+  onClick?: () => void;
+  hint?: string;
 }) {
+  const Wrapper: any = onClick ? 'button' : 'div';
   return (
-    <div className="flex items-center gap-3">
+    <Wrapper
+      {...(onClick ? { type: 'button', onClick, title: hint } : {})}
+      className={
+        'flex items-center gap-3 text-left rounded-xl transition-colors '
+        + (onClick ? 'cursor-pointer hover:bg-slate-50 -m-1.5 p-1.5' : '')
+      }
+    >
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
         style={{ background: color + '15', color }}
@@ -132,9 +155,12 @@ function LiveKpi({
       </div>
       <div className="min-w-0">
         <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">{label}</div>
-        <div className="text-[20px] font-extrabold text-slate-900 tabular-nums leading-tight">{value}</div>
+        <div className="text-[20px] font-extrabold text-slate-900 tabular-nums leading-tight">
+          {value}
+          {onClick && <span className="ml-1.5 text-[12px] font-bold text-slate-400">›</span>}
+        </div>
       </div>
-    </div>
+    </Wrapper>
   );
 }
 
@@ -222,7 +248,7 @@ function BoxCard({
 
   // Camera status: считаем "online" если есть pending за последний час или мойка < 10 мин
   const cameraOnline =
-    pendingVehicles.some((v) => v.start && minutesAgo(v.start.replace('_', 'T')) < 60) ||
+    pendingVehicles.some((v) => minutesAgo(v.start) < 60) ||
     (lastEvent && lastEventMinAgo < 10);
   const cameraLabel = cameraOnline ? 'online' : (lastEvent ? `${lastEventMinAgo} мин назад` : 'нет данных');
 
@@ -313,8 +339,12 @@ function BoxCard({
           const plateLabel = v.plateNumber || 'без номера';
           const plateIsKnown = !!v.plateNumber;
           const vehicleClass = v.vehicleClass ? VEHICLE_CLASS_RU[v.vehicleClass] || v.vehicleClass : null;
-          const startTime = v.start ? formatHHmm(v.start.replace('_', 'T')) : null;
-          const ageMin = v.start ? minutesAgo(v.start.replace('_', 'T')) : null;
+          // 🔥 ФИКС 2026-08-12: тут остался старый .replace('_','T'). Камера
+          // отдаёт заезд как «2026-08-09_10-47-02», и такая замена давала
+          // «2026-08-09T10-47-02» — всё равно нечитаемую строку. Разбор формата
+          // живёт в camera-time.ts, ему нужно отдавать исходное значение.
+          const startTime = v.start ? formatHHmm(v.start) : null;
+          const ageMin = v.start ? minutesAgo(v.start) : null;
           return (
             <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
               <div className="flex items-start gap-2 mb-2">
@@ -350,8 +380,15 @@ function BoxCard({
                   </span>
                 )}
               </div>
+              {/* 🔥 ФИКС 2026-08-12: третья точка входа в оформление, и она
+                  единственная не передавала камерный контекст — открывала
+                  ПУСТУЮ форму, хотя номер ожидающей машины напечатан на бейдже
+                  прямо выше. Верхняя плашка «Камеры зафиксировали» и панель
+                  «Неоформленные машины» параметры передают; эта копия разошлась.
+                  Тот же дефект чинили 09.08 в верхней плашке — и не заметили,
+                  что рядом лежит вторая такая же ссылка. */}
               <Link
-                href={`/workstation?box=${boxNumber}`}
+                href={buildBoxPendingHref(boxNumber, v)}
                 className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 text-[12px] font-bold transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -581,6 +618,27 @@ export function OperationsClient({
   const totalEmployees = box1Employees.length + box2Employees.length;
   const totalRevenue = todayEvents.reduce((sum, e) => sum + (e.totalAmount || 0), 0);
 
+  // 🔥 2026-08-13: «Касса смены» была просто числом, и число это вводило в
+  // заблуждение. 13.08 плитка показывала 8 828 ₽, хотя ВСЕ шесть моек были по
+  // агрегатору — живых денег в кассе ноль, вся сумма записана на балансы
+  // клиентов. Владелец видит «касса», а кассы нет.
+  // Теперь клик раскрывает разбивку: сколько реально получено и сколько
+  // числится за клиентами.
+  const [cashOpen, setCashOpen] = useState(false);
+  const revenueBreakdown = useMemo(() => {
+    const byMethod: Record<string, { sum: number; count: number }> = {};
+    for (const e of todayEvents) {
+      const m = e.paymentMethod || 'cash';
+      byMethod[m] = byMethod[m] || { sum: 0, count: 0 };
+      byMethod[m].sum += e.totalAmount || 0;
+      byMethod[m].count += 1;
+    }
+    const cashLike = ['cash', 'card', 'transfer'];
+    const live = cashLike.reduce((s, m) => s + (byMethod[m]?.sum || 0), 0);
+    const onAccount = totalRevenue - live;
+    return { byMethod, live, onAccount };
+  }, [todayEvents, totalRevenue]);
+
   // Phase 49: KPI «занято» считает как busy И pending (камера видит машину).
   // Иначе «1/2 работает» противоречит большому amber-блоку «машина ждёт оформления».
   const boxesBusy = useMemo(() => {
@@ -602,7 +660,7 @@ export function OperationsClient({
 
   // Pending за последние 60 минут как «overdue» если > 30 мин
   const overduePending = pendingVehicles.filter(
-    (v) => v.start && minutesAgo(v.start.replace('_', 'T')) > 30
+    (v) => minutesAgo(v.start) > 30
   );
 
   const isDay = currentShiftType === 'day';
@@ -683,6 +741,8 @@ export function OperationsClient({
           <LiveKpi label="Команда на смене" value={totalEmployees} icon={Users} color="#10b981" />
           <LiveKpi
             label="Касса смены"
+            onClick={() => setCashOpen(true)}
+            hint="Показать, сколько получено живыми деньгами, а сколько записано на балансы клиентов"
             value={`${totalRevenue.toLocaleString('ru-RU')} ₽`}
             icon={Wallet}
             color="#10b981"
@@ -724,12 +784,35 @@ export function OperationsClient({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
             {pendingVehicles.slice(0, 6).map((p) => {
-              const ageMin = p.start ? minutesAgo(p.start.replace('_', 'T')) : 0;
-              const overdue = ageMin > 30;
+              const ageMin = minutesAgo(p.start);
+              const ageKnown = Number.isFinite(ageMin);
+              const overdue = ageKnown && ageMin > 30;
+              // ссылка ведёт в форму с подставленными данными сессии,
+              // а не на пустой /workstation?box=N
+              const params = new URLSearchParams({
+                box: String(p.boxNumber),
+                camera: '1',
+                cameraBox: String(p.boxNumber),
+                cameraDir: p.dirName,
+                cameraMode: p.plateNumber ? 'checkout' : 'edit',
+              });
+              // 🔥 ФИКС 2026-08-09: номер знали, но в форму не передавали.
+              // Ссылка использовала p.plateNumber для выбора режима 'checkout' и
+              // печатала его в плашке, а параметр cameraPlate не ставила —
+              // ZorinWorkstationConsole открывался с пустым полем и надписью
+              // «Камера не распознала номер», хотя OCR прочитал его с
+              // уверенностью 1.0. Оператор набирал вручную то, что система уже
+              // знала. Остальные три точки входа (PendingCameraSessionsPanel,
+              // KioskHistoryClient, UnprocessedClient) параметр ставят — эта
+              // разъехалась с ними, потому что строит URL своей копией кода.
+              if (p.plateNumber) params.set('cameraPlate', p.plateNumber);
+              if (p.vehicleClass) params.set('cameraVehicleClass', p.vehicleClass);
+              if (p.start) params.set('cameraStart', p.start);
+              if (p.end) params.set('cameraEnd', p.end);
               return (
                 <Link
                   key={p.id}
-                  href={`/workstation?box=${p.boxNumber}`}
+                  href={`/workstation?${params.toString()}`}
                   className={
                     'rounded-lg bg-white p-2.5 flex items-center gap-3 hover:bg-amber-50 transition-colors ' +
                     (overdue ? 'border border-rose-200' : 'border border-amber-200')
@@ -739,8 +822,9 @@ export function OperationsClient({
                     {p.plateNumber || '?'}
                   </code>
                   <div className="flex-1 text-[11px] text-slate-600 min-w-0">
-                    Бокс {p.boxNumber} · {formatHHmm(p.start?.replace('_', 'T'))}
-                    {overdue && <span className="ml-1 text-rose-600 font-bold">просрочена ({ageMin}м)</span>}
+                    Бокс {p.boxNumber} · {formatHHmm(p.start)}
+                    {overdue && <span className="ml-1 text-rose-600 font-bold">просрочена ({ageMin} мин)</span>}
+                    {!ageKnown && <span className="ml-1 text-slate-400">время неизвестно</span>}
                   </div>
                   <span className="text-[11px] font-bold uppercase text-blue-600 inline-flex items-center">
                     оформить <ChevronRight className="w-3 h-3 ml-0.5" />
@@ -781,19 +865,125 @@ export function OperationsClient({
         />
       </div>
 
-      {/* What's new strip */}
-      <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4">
-        <div className="text-[11px] uppercase tracking-wider font-bold text-emerald-800 flex items-center gap-1.5 mb-2">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Phase 36 — что изменилось
-        </div>
-        <ul className="text-[12px] text-emerald-900 space-y-1 leading-relaxed">
-          <li>• <b>BoxCard</b> с live-статусом — занят / свободен / офлайн по цвету шапки</li>
-          <li>• <b>Текущая мойка</b> с прогресс-полосой времени и оценкой длительности</li>
-          <li>• <b>Pending от камер</b> в отдельной полосе — просрочки выделены красным</li>
-          <li>• <b>Live KPI</b> сверху: боксов работает, команда, касса, моек</li>
-          <li>• Camera status (pulse + last-ping) — сразу видно живое устройство</li>
-        </ul>
-      </div>
+        {/* Разбивка кассы — открывается кликом по плитке «Касса смены» */}
+        {cashOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[8vh]"
+            onClick={() => setCashOpen(false)}
+          >
+            <div
+              className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500">
+                    Касса за сегодня
+                  </div>
+                  <div className="text-[26px] font-extrabold text-slate-900 tabular-nums leading-tight">
+                    {totalRevenue.toLocaleString('ru-RU')} ₽
+                  </div>
+                  <div className="text-[12px] text-slate-500">
+                    {todayEvents.length} моек · средний чек{' '}
+                    {todayEvents.length
+                      ? Math.round(totalRevenue / todayEvents.length).toLocaleString('ru-RU')
+                      : 0}{' '}
+                    ₽
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCashOpen(false)}
+                  className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 text-lg leading-none"
+                  aria-label="Закрыть"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Главное разделение: что реально получено против того, что
+                  записано за клиентами. Именно его не хватало на плитке. */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+                    Живые деньги
+                  </div>
+                  <div className="text-[22px] font-extrabold text-emerald-800 tabular-nums leading-tight">
+                    {revenueBreakdown.live.toLocaleString('ru-RU')} ₽
+                  </div>
+                  <div className="text-[11px] text-emerald-700">нал · карта · перевод</div>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                    Записано на клиентов
+                  </div>
+                  <div className="text-[22px] font-extrabold text-amber-800 tabular-nums leading-tight">
+                    {revenueBreakdown.onAccount.toLocaleString('ru-RU')} ₽
+                  </div>
+                  <div className="text-[11px] text-amber-700">агрегаторы · контрагенты</div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 mb-4">
+                {([
+                  ['cash', 'Наличные'],
+                  ['card', 'Карта'],
+                  ['transfer', 'Перевод'],
+                  ['aggregator', 'Агрегатор'],
+                  ['counterAgentContract', 'Контрагент'],
+                ] as const).map(([key, label]) => {
+                  const row = revenueBreakdown.byMethod[key];
+                  const sum = row?.sum || 0;
+                  const share = totalRevenue > 0 ? Math.round((sum / totalRevenue) * 100) : 0;
+                  return (
+                    <div key={key} className="flex items-center gap-3 text-[13px]">
+                      <span className="w-28 shrink-0 text-slate-700">{label}</span>
+                      <span className="w-14 shrink-0 text-right text-[11px] text-slate-400">
+                        {row ? `${row.count} шт` : '—'}
+                      </span>
+                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <span
+                          className="block h-full rounded-full"
+                          style={{
+                            width: `${share}%`,
+                            background: key === 'aggregator' || key === 'counterAgentContract' ? '#f59e0b' : '#10b981',
+                          }}
+                        />
+                      </span>
+                      <span className="w-24 shrink-0 text-right font-semibold tabular-nums text-slate-900">
+                        {sum.toLocaleString('ru-RU')} ₽
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {revenueBreakdown.live === 0 && totalRevenue > 0 && (
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+                  <b>В кассе пусто.</b> Вся сегодняшняя сумма записана на балансы клиентов —
+                  наличных, карты и переводов не было. Проверьте, все ли мойки оформлены
+                  верным способом оплаты.
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Link
+                  href="/wash-log"
+                  className="flex-1 rounded-lg bg-[#0088CC] px-3 py-2 text-center text-[13px] font-semibold text-white hover:bg-[#0077b3]"
+                >
+                  Открыть журнал моек
+                </Link>
+                <Link
+                  href="/transactions"
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-center text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Сверка кассы
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
     </div>
   );
 }

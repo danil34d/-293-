@@ -47,7 +47,8 @@ interface SalaryReportRowProps {
     hasUnpaidEdits?: boolean;
 }
 
-const transactionTypeDetails: Record<Exclude<EmployeeTransactionType, 'payment'>, { label: string; icon: React.ElementType, sign: number, color: string }> = {
+// Типы, которые админ создаёт вручную. 'salary-deduction' создаётся только выдачей канистры.
+const transactionTypeDetails: Record<Exclude<EmployeeTransactionType, 'payment' | 'salary-deduction'>, { label: string; icon: React.ElementType, sign: number, color: string }> = {
     bonus: { label: 'Премия', icon: Gift, sign: 1, color: 'text-sky-600' },
     loan: { label: 'Долг/Аванс', icon: MinusCircle, sign: -1, color: 'text-orange-600' },
     purchase: { label: 'Покупка', icon: MinusCircle, sign: -1, color: 'text-red-600' },

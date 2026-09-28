@@ -3,7 +3,7 @@ import { getChat, getMessages, getRecentMessages, createMessage, updateChat } fr
 import { getGLMClient } from '@/lib/ai/glm-client';
 import { mcpTools, executeMCPTool } from '@/lib/ai/mcp-tools';
 import type { GLMMessage, GLMToolDefinition } from '@/types/ai-assistant';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAdmin } from '@/lib/server-auth';
 import { checkAndIncrementAIQuota } from '@/lib/ai/rate-limit';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +16,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const auth = requireAuth();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {
@@ -60,7 +60,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const auth = requireAuth();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   // Phase 18 / finding #22: rate-limit перед дорогим GLM API call.

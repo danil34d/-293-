@@ -1,5 +1,6 @@
 
-'use server';
+// Чистый расчёт без доступа к данным: работает и на сервере, и в браузере.
+// Раньше был 'use server' — расчёт уходил на сервер как server action (ФИКС 2026-09-28).
 
 import type { WashEvent, Employee, SalaryScheme, SalaryRate, SalaryReportData, SalaryBreakdownItem, Violation, SalaryPenaltyItem } from '@/types';
 import { isKiosk } from '@/lib/employee-role';

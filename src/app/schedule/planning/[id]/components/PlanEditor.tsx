@@ -758,7 +758,7 @@ export function PlanEditor({ plan, employees, initialDayStatuses }: PlanEditorPr
         title: 'Журнал собран',
         description: typeof (json as any)?.journalFile === 'string'
           ? `Файл: ${(json as any).journalFile}`
-          : 'Файл журнала сохранен в data/_meta/pattern-journal',
+          : 'Журнал сохранён',
       });
     } catch (error: any) {
       console.error('Pattern journal error:', error);

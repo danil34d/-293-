@@ -1,6 +1,10 @@
-'use server';
+// Серверный модуль. НЕ 'use server': с этой директивой каждая экспортируемая
+// функция становилась server action, которую можно вызвать POST-запросом
+// с любой страницы (включая публичную /login) в обход проверок ролей
+// (ФИКС 2026-09-28). Клиентские компоненты ходят в данные только через API.
 
 import { prisma } from '@/lib/db/prisma';
+import { fkConnect, createStockMovement, parseEnum, withoutDeviceEmployees } from './prisma-helpers';
 import type {
   WashEvent, Aggregator, CounterAgent, Employee, SalaryScheme,
   EmployeeTransaction, RetailPriceConfig, Expense, ClientTransaction,
@@ -27,6 +31,23 @@ function parseJsonField<T>(val: any, fallback: T): T {
 
 // ─── WashEvent mappers ───────────────────────────────────────
 
+// 🔥 ФИКС 2026-08-09: в списке НЕ БЫЛО 'aggregator' и 'counterAgentContract',
+// а parseEnum молча подменяет незнакомое значение на fallback. Из-за этого
+// КАЖДАЯ мойка по агрегатору или контрагенту читалась из Postgres как
+// «Наличные»: 43 записи из 67 на 106 609 ₽. В базе лежало верно — врало чтение.
+// Последствия: форма редактирования открывала договорную мойку как наличную и
+// при сохранении переписывала её в наличные, стирая источник; иконка оплаты в
+// журнале, фильтры по способу оплаты и касса смены считали безнал наличкой.
+// Незаметно было потому, что имя клиента берётся из sourceName и выживало.
+// Регрессия внесена 25.05 в 029ae83 (Phase 60h), когда `row.X as any` меняли
+// на parseEnum и список способов оплаты выписали не полностью.
+// ПРАВИЛО: список для parseEnum обязан покрывать ВЕСЬ union из src/types —
+// иначе тихая подмена данных, а не ошибка.
+const PAYMENT_TYPES = ['cash', 'card', 'transfer', 'aggregator', 'counterAgentContract'] as const;
+const EMPLOYEE_ROLES = ['admin', 'employee', 'kiosk', 'kiosk1'] as const;
+const CANISTER_STATUSES = ['active', 'empty', 'returned'] as const;
+const CANISTER_MODES = ['purchase', 'bonus', 'gift', 'salary-deduction'] as const;
+
 function washEventFromPrisma(row: any): WashEvent {
   return {
     id: row.id,
@@ -34,7 +55,8 @@ function washEventFromPrisma(row: any): WashEvent {
     vehicleNumber: row.vehicleNumber,
     boxNumber: row.boxNumber ?? undefined,
     employeeIds: row.employees?.map((e: any) => e.employeeId) ?? [],
-    paymentMethod: row.paymentMethod as any,
+    paymentMethod: parseEnum(row.paymentMethod, PAYMENT_TYPES, 'cash'),
+    createdAt: row.createdAt ? toISOString(row.createdAt) : undefined,
     sourceId: row.aggregatorId ?? row.counterAgentId ?? undefined,
     sourceName: row.sourceName ?? undefined,
     priceListName: row.priceListName ?? undefined,
@@ -79,7 +101,8 @@ function employeeFromPrisma(row: any): Employee {
     phone: row.phone,
     paymentDetails: row.paymentDetails,
     hasCar: row.hasCar,
-    role: row.role as any,
+    carPlates: row.carPlates ?? [],
+    role: parseEnum(row.role, EMPLOYEE_ROLES, 'employee'),
     telegramChatId: row.telegramChatId ?? undefined,
     username: row.username ?? undefined,
     password: row.password ?? undefined,
@@ -90,6 +113,8 @@ function employeeFromPrisma(row: any): Employee {
     weekendPreferredShiftType: row.weekendPreferredShiftType ?? undefined,
     targetShiftsPerMonth: row.targetShiftsPerMonth ?? undefined,
     wantsMoreShifts: row.wantsMoreShifts ?? undefined,
+    // колонка есть, маппер её не читал — на /inventory всегда было «—»
+    avgChemPerWash: row.avgChemPerWash ?? undefined,
     archived: row.archived ?? false,
     archivedAt: row.archivedAt ?? undefined,
   };
@@ -108,6 +133,11 @@ function aggregatorFromPrisma(row: any): Aggregator {
     activePriceListName: row.activePriceListName ?? undefined,
     // Phase 57 / multi-company
     preferredOurCompanyId: row.preferredOurCompanyId ?? undefined,
+    // 🔥 ФИКС 2026-09-28: маппер не читал архив — агрегатор в архиве выглядел
+    // активным, а следующее же сохранение (saveAggregator пишет archived ?? false)
+    // молча доставало его из архива.
+    archived: row.archived ?? false,
+    archivedAt: row.archivedAt ?? undefined,
   };
 }
 
@@ -233,10 +263,10 @@ function canisterFromPrisma(row: any): EmployeeChemicalCanister {
     initialAmountGrams: row.initialAmountGrams,
     remainingAmountGrams: row.remainingAmountGrams,
     priceRub: row.priceRub,
-    status: row.status as any,
+    status: parseEnum(row.status, CANISTER_STATUSES, 'active'),
     transactionId: row.transactionId ?? undefined,
     // Phase 52 / V2-NEW-1 канистры
-    mode: row.mode as any,
+    mode: parseEnum(row.mode, CANISTER_MODES, 'purchase'),
     issuedBy: row.issuedBy ?? undefined,
     notes: row.notes ?? '',
     washPoint: row.washPoint ?? undefined,
@@ -411,6 +441,11 @@ export async function getStockMovementsByMaterial(materialId: string): Promise<S
 export async function getEmployeeCanistersData(): Promise<EmployeeChemicalCanister[]> {
   const rows = await prisma.employeeCanister.findMany({ orderBy: { issuedAt: 'desc' } });
   return rows.map(canisterFromPrisma);
+}
+
+export async function getEmployeeCanisterById(id: string): Promise<EmployeeChemicalCanister | null> {
+  const row = await prisma.employeeCanister.findUnique({ where: { id } });
+  return row ? canisterFromPrisma(row) : null;
 }
 
 export async function getEmployeeCanistersByEmployee(employeeId: string): Promise<EmployeeChemicalCanister[]> {
@@ -626,105 +661,114 @@ export async function saveWashEvent(data: any): Promise<void> {
   // Resolve sourceId → aggregatorId / counterAgentId
   let aggregatorId: string | null = null;
   let counterAgentId: string | null = null;
-  if (data.sourceId) {
+  // Инвариант из PUT /api/wash-events/[id] (09.08) — на уровне записи: розничная
+  // оплата не привязывается к клиенту, иначе выручка и в кассе, и на балансе.
+  // След старого бага: we_1779725963383_ylyso6z (25.05, нал 2000 ₽ на agg_shl).
+  const isRetail = ['cash', 'card', 'transfer'].includes(data.paymentMethod);
+  if (data.sourceId && !isRetail) {
     if (data.sourceId.startsWith('agg_')) aggregatorId = data.sourceId;
     else if (data.sourceId.startsWith('agent_')) counterAgentId = data.sourceId;
   }
 
-  await prisma.washEvent.upsert({
-    where: { id: data.id },
-    update: {
-      timestamp: new Date(data.timestamp),
-      vehicleNumber: data.vehicleNumber,
-      boxNumber: data.boxNumber ?? null,
-      paymentMethod: data.paymentMethod,
-      aggregatorId,
-      counterAgentId,
-      sourceName: data.sourceName ?? null,
-      priceListName: data.priceListName ?? null,
-      totalAmount: data.totalAmount,
-      netAmount: data.netAmount ?? null,
-      acquiringFee: data.acquiringFee ?? null,
-      services: data.services,
-      driverComments: data.driverComments ?? undefined,
-      editHistory: data.editHistory ?? undefined,
-      photos: data.photos ?? undefined,
-      chemicalConsumptionGrams: data.chemicalConsumptionGrams ?? null,
-      chemicalCostRub: data.chemicalCostRub ?? null,
-      status: data.status ?? null,
-      completedAt: data.completedAt ?? null,
-      refundedAt: data.refundedAt ?? null,
-      refundReason: data.refundReason ?? null,
-      tips: data.tips ?? null,
-      shiftId: data.shiftId ?? undefined,
-      washDurationSeconds: data.washDurationSeconds ?? null,
-      cameraSession: data.cameraSession ?? undefined,
-      dismissal: data.dismissal ?? undefined,
-      restoration: data.restoration ?? undefined,
-      // Phase 8 / finding #38
-      createdInClosedPeriod: data.createdInClosedPeriod ?? false,
-      closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
-      // Phase 10 / finding #40 — НЕ перезаписываем при upsert update,
-      // чтобы не потерять оригинального автора при последующих edit'ах.
-      // (Update path — это PUT, у нас createdByEmployeeId фиксируется только на create.)
-      // Phase 57 / multi-company — admin может сменить ИП через UI (override)
-      ourCompanyId: data.ourCompanyId ?? null,
-      // Phase 60: водитель + цифровая роспись (для автозаполнения Ведомости учёта)
-      driverName: data.driverName ?? null,
-      driverSignature: data.driverSignature ?? null,
-    },
-    create: {
-      id: data.id,
-      timestamp: new Date(data.timestamp),
-      vehicleNumber: data.vehicleNumber,
-      boxNumber: data.boxNumber ?? null,
-      paymentMethod: data.paymentMethod,
-      aggregatorId,
-      counterAgentId,
-      sourceName: data.sourceName ?? null,
-      priceListName: data.priceListName ?? null,
-      totalAmount: data.totalAmount,
-      netAmount: data.netAmount ?? null,
-      acquiringFee: data.acquiringFee ?? null,
-      services: data.services,
-      driverComments: data.driverComments ?? undefined,
-      editHistory: data.editHistory ?? undefined,
-      photos: data.photos ?? undefined,
-      chemicalConsumptionGrams: data.chemicalConsumptionGrams ?? null,
-      chemicalCostRub: data.chemicalCostRub ?? null,
-      status: data.status ?? null,
-      completedAt: data.completedAt ?? null,
-      refundedAt: data.refundedAt ?? null,
-      refundReason: data.refundReason ?? null,
-      tips: data.tips ?? null,
-      shiftId: data.shiftId ?? null,
-      washDurationSeconds: data.washDurationSeconds ?? null,
-      cameraSession: data.cameraSession ?? undefined,
-      dismissal: data.dismissal ?? undefined,
-      restoration: data.restoration ?? undefined,
-      // Phase 8 / finding #38
-      createdInClosedPeriod: data.createdInClosedPeriod ?? false,
-      closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
-      // Phase 10 / finding #40 — фиксируется только на create (PUT не трогает)
-      createdByEmployeeId: data.createdByEmployeeId ?? null,
-      // Phase 57 / multi-company — какое НАШЕ ИП оказало услугу
-      ourCompanyId: data.ourCompanyId ?? null,
-      // Phase 60: водитель + цифровая роспись
-      driverName: data.driverName ?? null,
-      driverSignature: data.driverSignature ?? null,
-    },
-  });
-
-  // Sync junction table for employeeIds
-  const employeeIds: string[] = data.employeeIds ?? [];
-  // Delete old links and recreate
-  await prisma.washEventEmployee.deleteMany({ where: { washEventId: data.id } });
-  if (employeeIds.length > 0) {
-    await prisma.washEventEmployee.createMany({
-      data: employeeIds.map(empId => ({ washEventId: data.id, employeeId: empId })),
-      skipDuplicates: true,
+  // Мойка и её исполнители — одной транзакцией: раньше deleteMany+createMany
+  // шли отдельными запросами, и сбой между ними оставлял мойку без исполнителей.
+  await prisma.$transaction(async (tx) => {
+    await tx.washEvent.upsert({
+      where: { id: data.id },
+      update: {
+        timestamp: new Date(data.timestamp),
+        vehicleNumber: data.vehicleNumber,
+        boxNumber: data.boxNumber ?? null,
+        paymentMethod: data.paymentMethod,
+        aggregatorId,
+        counterAgentId,
+        sourceName: data.sourceName ?? null,
+        priceListName: data.priceListName ?? null,
+        totalAmount: data.totalAmount,
+        netAmount: data.netAmount ?? null,
+        acquiringFee: data.acquiringFee ?? null,
+        services: data.services,
+        driverComments: data.driverComments ?? undefined,
+        editHistory: data.editHistory ?? undefined,
+        photos: data.photos ?? undefined,
+        chemicalConsumptionGrams: data.chemicalConsumptionGrams ?? null,
+        chemicalCostRub: data.chemicalCostRub ?? null,
+        status: data.status ?? null,
+        completedAt: data.completedAt ?? null,
+        refundedAt: data.refundedAt ?? null,
+        refundReason: data.refundReason ?? null,
+        tips: data.tips ?? null,
+        shiftId: data.shiftId ?? undefined,
+        washDurationSeconds: data.washDurationSeconds ?? null,
+        cameraSession: data.cameraSession ?? undefined,
+        dismissal: data.dismissal ?? undefined,
+        restoration: data.restoration ?? undefined,
+        // Phase 8 / finding #38
+        createdInClosedPeriod: data.createdInClosedPeriod ?? false,
+        closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
+        // Phase 10 / finding #40 — НЕ перезаписываем при upsert update,
+        // чтобы не потерять оригинального автора при последующих edit'ах.
+        // (Update path — это PUT, у нас createdByEmployeeId фиксируется только на create.)
+        // Phase 57 / multi-company — admin может сменить ИП через UI (override)
+        ourCompanyId: data.ourCompanyId ?? null,
+        // Phase 60: водитель + цифровая роспись (для автозаполнения Ведомости учёта)
+        driverName: data.driverName ?? null,
+        driverSignature: data.driverSignature ?? null,
+      },
+      create: {
+        id: data.id,
+        timestamp: new Date(data.timestamp),
+        vehicleNumber: data.vehicleNumber,
+        boxNumber: data.boxNumber ?? null,
+        paymentMethod: data.paymentMethod,
+        // Phase 60 helper: relation connect для Checked-create
+        aggregator: fkConnect(aggregatorId),
+        counterAgent: fkConnect(counterAgentId),
+        sourceName: data.sourceName ?? null,
+        priceListName: data.priceListName ?? null,
+        totalAmount: data.totalAmount,
+        netAmount: data.netAmount ?? null,
+        acquiringFee: data.acquiringFee ?? null,
+        services: data.services,
+        driverComments: data.driverComments ?? undefined,
+        editHistory: data.editHistory ?? undefined,
+        photos: data.photos ?? undefined,
+        chemicalConsumptionGrams: data.chemicalConsumptionGrams ?? null,
+        chemicalCostRub: data.chemicalCostRub ?? null,
+        status: data.status ?? null,
+        completedAt: data.completedAt ?? null,
+        refundedAt: data.refundedAt ?? null,
+        refundReason: data.refundReason ?? null,
+        tips: data.tips ?? null,
+        shiftId: data.shiftId ?? null,
+        washDurationSeconds: data.washDurationSeconds ?? null,
+        cameraSession: data.cameraSession ?? undefined,
+        dismissal: data.dismissal ?? undefined,
+        restoration: data.restoration ?? undefined,
+        // Phase 8 / finding #38
+        createdInClosedPeriod: data.createdInClosedPeriod ?? false,
+        closedPeriodAtCreate: data.closedPeriodAtCreate ?? null,
+        // Phase 10 / finding #40 — фиксируется только на create (PUT не трогает)
+        createdByEmployeeId: data.createdByEmployeeId ?? null,
+        // Phase 57 / multi-company — какое НАШЕ ИП оказало услугу
+        ourCompany: fkConnect(data.ourCompanyId),
+        // Phase 60: водитель + цифровая роспись
+        driverName: data.driverName ?? null,
+        driverSignature: data.driverSignature ?? null,
+      },
     });
-  }
+
+    // Sync junction table for employeeIds
+    const employeeIds = await withoutDeviceEmployees(tx, data.employeeIds ?? []);
+    // Delete old links and recreate
+    await tx.washEventEmployee.deleteMany({ where: { washEventId: data.id } });
+    if (employeeIds.length > 0) {
+      await tx.washEventEmployee.createMany({
+        data: employeeIds.map(empId => ({ washEventId: data.id, employeeId: empId })),
+        skipDuplicates: true,
+      });
+    }
+  });
 }
 
 export async function deleteWashEvent(id: string): Promise<void> {
@@ -742,6 +786,7 @@ export async function saveEmployee(data: any): Promise<void> {
       phone: data.phone ?? '',
       paymentDetails: data.paymentDetails ?? '',
       hasCar: data.hasCar ?? false,
+      carPlates: Array.isArray(data.carPlates) ? data.carPlates : [],
       role: data.role ?? 'employee',
       telegramChatId: data.telegramChatId ?? null,
       username: data.username || null,
@@ -762,11 +807,13 @@ export async function saveEmployee(data: any): Promise<void> {
       phone: data.phone ?? '',
       paymentDetails: data.paymentDetails ?? '',
       hasCar: data.hasCar ?? false,
+      carPlates: Array.isArray(data.carPlates) ? data.carPlates : [],
       role: data.role ?? 'employee',
       telegramChatId: data.telegramChatId ?? null,
       username: data.username || null,
       password: data.password || null,
-      salarySchemeId: data.salarySchemeId ?? null,
+      // Phase 60 helper: relation connect для Checked-create
+      salaryScheme: fkConnect(data.salarySchemeId),
       canSwapShifts: data.canSwapShifts ?? true,
       preferredShiftType: data.preferredShiftType ?? null,
       weekdayPreferredShiftType: data.weekdayPreferredShiftType ?? null,
@@ -858,21 +905,19 @@ export async function reverseExpenseStockMovements(
       const newStock = (material?.currentStock ?? 0) + reverseAmount;
 
       const reverseId = `sm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_rev`;
-      await tx.stockMovement.create({
-        data: {
-          id: reverseId,
-          // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
-          material: { connect: { id: m.materialId } },
-          type: 'adjustment',
-          amount: reverseAmount,
-          balanceAfter: newStock,
-          date: now,
-          description: `Авто-реверс при удалении Expense ${expenseId} (оригинал SM ${m.id}, ${m.type})`,
-          relatedEntityType: 'expense_reversal',
-          relatedEntityId: expenseId,
-          ...(employeeId ? { employee: { connect: { id: employeeId } } } : {}),
-          createdBy: employeeId ?? null,
-        },
+      // Phase 60 + helper рефактор — единая фабрика createStockMovement
+      await createStockMovement(tx, {
+        id: reverseId,
+        materialId: m.materialId,
+        type: 'adjustment',
+        amount: reverseAmount,
+        balanceAfter: newStock,
+        date: now,
+        description: `Авто-реверс при удалении Expense ${expenseId} (оригинал SM ${m.id}, ${m.type})`,
+        relatedEntityType: 'expense_reversal',
+        relatedEntityId: expenseId,
+        employeeId: employeeId ?? null,
+        createdBy: employeeId ?? null,
       });
       await tx.inventoryMaterial.update({
         where: { id: m.materialId },
@@ -1276,7 +1321,7 @@ export async function createInvoice(data: {
   const created = await prisma.invoice.create({
     data: {
       number,
-      counterAgentId: data.counterAgentId,
+      counterAgent: fkConnect(data.counterAgentId)!,
       periodStart: data.periodStart,
       periodEnd: data.periodEnd,
       status: 'draft',
@@ -1288,8 +1333,8 @@ export async function createInvoice(data: {
       items: data.items as any,
       createdByEmployeeId: data.createdByEmployeeId ?? null,
       notes: data.notes ?? '',
-      // Phase 57b.1: multi-company FK persistence
-      ourCompanyId: resolvedOurCompanyId,
+      // Phase 57b.1: multi-company FK persistence (через relation connect для Checked-create)
+      ourCompany: fkConnect(resolvedOurCompanyId),
     },
     include: { counterAgent: { select: { name: true } } },
   });
@@ -1539,18 +1584,16 @@ export async function backfillChemicalPurchasesFromExpenses(apply: boolean): Pro
 
       // Создаём movements хронологически (важно для balanceAfter если будет recompute)
       for (const c of toCreate) {
-        await prisma.stockMovement.create({
-          data: {
-            id: `mov_backfill_${c.expenseId}`,
-            materialId: 'mat_chemical_main',
-            type: 'purchase',
-            amount: c.grams,
-            balanceAfter: 0, // будет пересчитано при recomputeInventoryStock(apply:true)
-            date: new Date(c.date),
-            description: `[backfill #35] ${c.description || c.category}`,
-            relatedEntityType: 'expense',
-            relatedEntityId: c.expenseId,
-          },
+        await createStockMovement(prisma, {
+          id: `mov_backfill_${c.expenseId}`,
+          materialId: 'mat_chemical_main',
+          type: 'purchase',
+          amount: c.grams,
+          balanceAfter: 0, // будет пересчитано при recomputeInventoryStock(apply:true)
+          date: new Date(c.date),
+          description: `[backfill #35] ${c.description || c.category}`,
+          relatedEntityType: 'expense',
+          relatedEntityId: c.expenseId,
         });
       }
     }
@@ -1700,7 +1743,9 @@ export async function saveAggregator(data: any): Promise<void> {
     where: { id: data.id },
     update: {
       name: data.name,
-      balance: data.balance ?? 0,
+      // 🔥 ФИКС 2026-09-28: balance в update не пишем. Форма присылает баланс,
+      // запомненный при открытии, — мойка, оформленная за это время, стиралась.
+      // Баланс меняется только атомарно через updateClientBalance (increment).
       companies: data.companies ?? [],
       cars: data.cars ?? [],
       priceLists: data.priceLists ?? [],
@@ -1721,8 +1766,8 @@ export async function saveAggregator(data: any): Promise<void> {
       activePriceListName: data.activePriceListName ?? null,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
-      // Phase 57b.1: multi-company FK persistence
-      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
+      // Phase 57b.1: multi-company FK persistence (relation connect для Checked-create)
+      preferredOurCompany: fkConnect(data.preferredOurCompanyId),
     },
   });
 }
@@ -1754,7 +1799,7 @@ export async function saveCounterAgent(data: any): Promise<void> {
     where: { id: data.id },
     update: {
       name: data.name,
-      balance: data.balance ?? 0,
+      // balance не пишем — см. saveAggregator (ФИКС 2026-09-28).
       companies: data.companies ?? [],
       cars: data.cars ?? [],
       priceList: data.priceList ?? [],
@@ -1762,6 +1807,8 @@ export async function saveCounterAgent(data: any): Promise<void> {
       allowCustomServices: data.allowCustomServices ?? false,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
+      // Phase 50/60c: водители + цифровые подписи (JSON массив)
+      drivers: data.drivers ?? [],
       // Phase 57b.1: multi-company FK persistence
       preferredOurCompanyId: data.preferredOurCompanyId ?? null,
     },
@@ -1776,8 +1823,10 @@ export async function saveCounterAgent(data: any): Promise<void> {
       allowCustomServices: data.allowCustomServices ?? false,
       archived: data.archived ?? false,
       archivedAt: data.archivedAt ?? null,
-      // Phase 57b.1: multi-company FK persistence
-      preferredOurCompanyId: data.preferredOurCompanyId ?? null,
+      // Phase 50/60c: водители + цифровые подписи (JSON массив)
+      drivers: data.drivers ?? [],
+      // Phase 57b.1: multi-company FK persistence (relation connect для Checked-create)
+      preferredOurCompany: fkConnect(data.preferredOurCompanyId),
     },
   });
 }
@@ -1829,8 +1878,8 @@ export async function saveExpense(data: any): Promise<void> {
       quantity: data.quantity ?? null,
       unit: data.unit ?? null,
       pricePerUnit: data.pricePerUnit ?? null,
-      // Phase 57b.1: multi-company FK persistence
-      ourCompanyId: data.ourCompanyId ?? null,
+      // Phase 57b.1: multi-company FK persistence (relation connect для Checked-create)
+      ourCompany: fkConnect(data.ourCompanyId),
     },
   });
 }
@@ -2042,6 +2091,8 @@ export async function saveEmployeeTransaction(data: any): Promise<void> {
   await prisma.employeeTransaction.upsert({
     where: { id: data.id },
     update: {
+      // employeeId — для update оставляем scalar (Unchecked variant), т.к. relation
+      // не меняется (одна транзакция всегда у одного сотрудника). Меняем только meta.
       employeeId: data.employeeId,
       date: new Date(data.date),
       type: data.type,
@@ -2050,7 +2101,7 @@ export async function saveEmployeeTransaction(data: any): Promise<void> {
     },
     create: {
       id: data.id,
-      employeeId: data.employeeId,
+      employee: fkConnect(data.employeeId)!,
       date: new Date(data.date),
       type: data.type,
       amount: data.amount,
@@ -2060,6 +2111,20 @@ export async function saveEmployeeTransaction(data: any): Promise<void> {
 }
 
 export async function saveEmployeeTransactions(employeeId: string, transactions: any[]): Promise<void> {
+  // 🔥 ФИКС 2026-08-13: «удалить все и создать заново» — наследие работы с
+  // JSON-массивами. В Postgres при пересоздании Prisma заново проставляет
+  // createdAt (@default(now())), и КАЖДАЯ выплата затирала время создания у всей
+  // прошлой истории сотрудника. Поймано на живой выплате: транзакции от 26.05 и
+  // 09.08 получили createdAt = 13.08 17:14:56 — ту же миллисекунду, что и новая.
+  // Поле date (дата операции по смыслу бизнеса) не страдало, но аудит «когда
+  // запись реально появилась в системе» терялся целиком.
+  // Сохраняем исходное время для тех записей, что уже были.
+  const existing = await prisma.employeeTransaction.findMany({
+    where: { employeeId },
+    select: { id: true, createdAt: true },
+  });
+  const createdAtById = new Map(existing.map((r) => [r.id, r.createdAt]));
+
   // Replace all transactions for this employee
   await prisma.$transaction([
     prisma.employeeTransaction.deleteMany({ where: { employeeId } }),
@@ -2067,11 +2132,14 @@ export async function saveEmployeeTransactions(employeeId: string, transactions:
       prisma.employeeTransaction.create({
         data: {
           id: t.id,
-          employeeId: t.employeeId ?? employeeId,
+          employee: fkConnect(t.employeeId ?? employeeId)!,
           date: new Date(t.date),
           type: t.type,
           amount: t.amount,
           description: t.description ?? '',
+          // у существующей записи оставляем её настоящее время создания,
+          // у новой Prisma проставит now() сама
+          ...(createdAtById.has(t.id) ? { createdAt: createdAtById.get(t.id)! } : {}),
         },
       })
     ),
@@ -2094,6 +2162,8 @@ export async function saveClientTransaction(data: any): Promise<void> {
   await prisma.clientTransaction.upsert({
     where: { id: data.id },
     update: {
+      // Update block: оставляем scalar (Unchecked variant) — поддерживает
+      // null для очистки FK. Свитч agg↔agent делается через scalar safe.
       clientId,
       aggregatorId,
       counterAgentId,
@@ -2107,14 +2177,15 @@ export async function saveClientTransaction(data: any): Promise<void> {
     create: {
       id: data.id,
       clientId,
-      aggregatorId,
-      counterAgentId,
+      // Phase 60 helper: relation connect для Checked-create
+      aggregator: fkConnect(aggregatorId),
+      counterAgent: fkConnect(counterAgentId),
       date: new Date(data.date),
       type: data.type ?? 'payment',
       amount: data.amount,
       description: data.description ?? '',
       // Phase 57b.1: multi-company FK persistence
-      ourCompanyId: data.ourCompanyId ?? null,
+      ourCompany: fkConnect(data.ourCompanyId),
     },
   });
 }
@@ -2129,6 +2200,14 @@ export async function saveClientTransactions(clientId: string, transactions: any
   if (clientId.startsWith('agg_')) aggregatorId = clientId;
   else if (clientId.startsWith('agent_')) counterAgentId = clientId;
 
+  // Сохраняем исходное время создания — тот же баг, что исправлен
+  // в saveEmployeeTransactions 13.08: пересоздание затирало createdAt всей истории.
+  const existing = await prisma.clientTransaction.findMany({
+    where: { clientId },
+    select: { id: true, createdAt: true },
+  });
+  const createdAtById = new Map(existing.map((r) => [r.id, r.createdAt]));
+
   await prisma.$transaction([
     prisma.clientTransaction.deleteMany({ where: { clientId } }),
     ...transactions.map(t =>
@@ -2136,14 +2215,16 @@ export async function saveClientTransactions(clientId: string, transactions: any
         data: {
           id: t.id,
           clientId: t.clientId ?? clientId,
-          aggregatorId,
-          counterAgentId,
+          // Phase 60 helper: relation connect для Checked-create
+          aggregator: fkConnect(aggregatorId),
+          counterAgent: fkConnect(counterAgentId),
           date: new Date(t.date),
           type: t.type ?? 'payment',
           amount: t.amount,
           description: t.description ?? '',
           // Phase 57b.1: multi-company FK persistence
-          ourCompanyId: t.ourCompanyId ?? null,
+          ourCompany: fkConnect(t.ourCompanyId),
+          ...(createdAtById.has(t.id) ? { createdAt: createdAtById.get(t.id)! } : {}),
         },
       })
     ),
@@ -2153,46 +2234,50 @@ export async function saveClientTransactions(clientId: string, transactions: any
 // --- Shifts ---
 
 export async function saveShift(data: any): Promise<void> {
-  await prisma.shift.upsert({
-    where: { id: data.id },
-    update: {
-      date: data.date,
-      washId: data.washId ?? 'wash_1',
-      boxNumber: data.boxNumber,
-      shiftType: data.shiftType,
-      startTime: data.startTime ?? '08:00',
-      endTime: data.endTime ?? '20:00',
-      releasedEmployeeId: data.releasedEmployeeId ?? null,
-      isAutoAssigned: data.isAutoAssigned ?? false,
-      status: data.status ?? 'scheduled',
-      startedAt: data.startedAt ? new Date(data.startedAt) : null,
-      closedAt: data.closedAt ? new Date(data.closedAt) : null,
-    },
-    create: {
-      id: data.id,
-      date: data.date,
-      washId: data.washId ?? 'wash_1',
-      boxNumber: data.boxNumber,
-      shiftType: data.shiftType,
-      startTime: data.startTime ?? '08:00',
-      endTime: data.endTime ?? '20:00',
-      releasedEmployeeId: data.releasedEmployeeId ?? null,
-      isAutoAssigned: data.isAutoAssigned ?? false,
-      status: data.status ?? 'scheduled',
-      startedAt: data.startedAt ? new Date(data.startedAt) : null,
-      closedAt: data.closedAt ? new Date(data.closedAt) : null,
-    },
-  });
-
-  // Sync junction table
-  const employeeIds: string[] = data.employeeIds ?? [];
-  await prisma.shiftEmployee.deleteMany({ where: { shiftId: data.id } });
-  if (employeeIds.length > 0) {
-    await prisma.shiftEmployee.createMany({
-      data: employeeIds.map(empId => ({ shiftId: data.id, employeeId: empId })),
-      skipDuplicates: true,
+  // Смена и её люди — одной транзакцией: сбой между deleteMany и createMany
+  // оставлял смену без сотрудников (как было в saveWashEvent до 28.09).
+  await prisma.$transaction(async (tx) => {
+    await tx.shift.upsert({
+      where: { id: data.id },
+      update: {
+        date: data.date,
+        washId: data.washId ?? 'wash_1',
+        boxNumber: data.boxNumber,
+        shiftType: data.shiftType,
+        startTime: data.startTime ?? '08:00',
+        endTime: data.endTime ?? '20:00',
+        releasedEmployeeId: data.releasedEmployeeId ?? null,
+        isAutoAssigned: data.isAutoAssigned ?? false,
+        status: data.status ?? 'scheduled',
+        startedAt: data.startedAt ? new Date(data.startedAt) : null,
+        closedAt: data.closedAt ? new Date(data.closedAt) : null,
+      },
+      create: {
+        id: data.id,
+        date: data.date,
+        washId: data.washId ?? 'wash_1',
+        boxNumber: data.boxNumber,
+        shiftType: data.shiftType,
+        startTime: data.startTime ?? '08:00',
+        endTime: data.endTime ?? '20:00',
+        releasedEmployeeId: data.releasedEmployeeId ?? null,
+        isAutoAssigned: data.isAutoAssigned ?? false,
+        status: data.status ?? 'scheduled',
+        startedAt: data.startedAt ? new Date(data.startedAt) : null,
+        closedAt: data.closedAt ? new Date(data.closedAt) : null,
+      },
     });
-  }
+
+    // Sync junction table
+    const employeeIds: string[] = data.employeeIds ?? [];
+    await tx.shiftEmployee.deleteMany({ where: { shiftId: data.id } });
+    if (employeeIds.length > 0) {
+      await tx.shiftEmployee.createMany({
+        data: employeeIds.map(empId => ({ shiftId: data.id, employeeId: empId })),
+        skipDuplicates: true,
+      });
+    }
+  });
 }
 
 export async function deleteShift(id: string): Promise<void> {
@@ -2278,7 +2363,8 @@ export async function saveEmployeeDayStatus(data: any): Promise<void> {
     },
     create: {
       id: data.id,
-      employeeId: data.employeeId,
+      // Phase 60 helper: relation connect для Checked-create
+      employee: fkConnect(data.employeeId)!,
       date: data.date,
       status: data.status,
       shiftType: data.shiftType ?? null,
@@ -2348,6 +2434,7 @@ export async function saveStockMovement(data: any): Promise<void> {
   await prisma.stockMovement.upsert({
     where: { id: data.id },
     update: {
+      // Update block: scalar (Unchecked) — для гибкого partial update + null-clearing employee
       materialId,
       type: data.type,
       amount: data.amount,
@@ -2361,7 +2448,8 @@ export async function saveStockMovement(data: any): Promise<void> {
     },
     create: {
       id: data.id,
-      materialId,
+      // Phase 60 helper: relation connect для Checked-create
+      material: fkConnect(materialId)!,
       type: data.type,
       amount: data.amount,
       balanceAfter: data.balanceAfter,
@@ -2369,7 +2457,7 @@ export async function saveStockMovement(data: any): Promise<void> {
       description: data.description ?? '',
       relatedEntityType: data.relatedEntityType ?? null,
       relatedEntityId: data.relatedEntityId ?? null,
-      employeeId: data.employeeId ?? null,
+      employee: fkConnect(data.employeeId),
       createdBy: data.createdBy ?? null,
     },
   });
@@ -2391,7 +2479,8 @@ export async function saveEmployeeCanister(data: any): Promise<void> {
     },
     create: {
       id: data.id,
-      employeeId: data.employeeId,
+      // Phase 60 helper: relation connect для Checked-create
+      employee: fkConnect(data.employeeId)!,
       issuedAt: new Date(data.issuedAt),
       initialAmountGrams: data.initialAmountGrams,
       remainingAmountGrams: data.remainingAmountGrams,
@@ -2583,11 +2672,23 @@ export async function createWashEventWithSideEffects(
         // Phase 60: водитель + цифровая роспись (для Ведомости)
         driverName: washEvent.driverName ?? null,
         driverSignature: washEvent.driverSignature ?? null,
+        // 🔥 ФИКС 2026-08-09: этих четырёх полей в insert НЕ БЫЛО — они писались
+        // только в saveWashEvent (путь PUT). Всё, что приходило через POST, то
+        // есть каждая мойка, оформленная с терминала или рабочей станции, теряло
+        // их молча. Замер до фикса: 87 моек из 87 с shiftId = NULL и
+        // createdInClosedPeriod = false у всех.
+        // Последствия: мойка не попадала в отчёт по смене (он матчит по shiftId),
+        // а защита закрытого зарплатного периода не срабатывала ни разу —
+        // wash-event-create-service выставляет флаг, а слой записи его выбрасывал.
+        shiftId: washEvent.shiftId ?? null,
+        createdInClosedPeriod: washEvent.createdInClosedPeriod ?? false,
+        closedPeriodAtCreate: washEvent.closedPeriodAtCreate ?? null,
+        editHistory: washEvent.editHistory ?? undefined,
       },
     });
 
     // 2. Junction table
-    const employeeIds: string[] = washEvent.employeeIds ?? [];
+    const employeeIds = await withoutDeviceEmployees(tx, washEvent.employeeIds ?? []);
     if (employeeIds.length > 0) {
       await tx.washEventEmployee.createMany({
         data: employeeIds.map(empId => ({ washEventId: washEvent.id, employeeId: empId })),
@@ -2609,20 +2710,17 @@ export async function createWashEventWithSideEffects(
           },
         });
       }
-      await tx.stockMovement.create({
-        data: {
-          id: stockMovement.id,
-          // Phase 60 — relation connect для FK (Prisma 5.22 Checked-create требует)
-          material: { connect: { id: stockMovement.materialId } },
-          type: stockMovement.type,
-          amount: stockMovement.amount,
-          balanceAfter: stockMovement.balanceAfter,
-          date: new Date(stockMovement.date),
-          description: stockMovement.description ?? '',
-          relatedEntityType: stockMovement.relatedEntityType ?? null,
-          relatedEntityId: stockMovement.relatedEntityId ?? null,
-          ...(stockMovement.employeeId ? { employee: { connect: { id: stockMovement.employeeId } } } : {}),
-        },
+      await createStockMovement(tx, {
+        id: stockMovement.id,
+        materialId: stockMovement.materialId,
+        type: stockMovement.type,
+        amount: stockMovement.amount,
+        balanceAfter: stockMovement.balanceAfter,
+        date: new Date(stockMovement.date),
+        description: stockMovement.description ?? '',
+        relatedEntityType: stockMovement.relatedEntityType ?? null,
+        relatedEntityId: stockMovement.relatedEntityId ?? null,
+        employeeId: stockMovement.employeeId ?? null,
       });
     }
 
@@ -2732,7 +2830,8 @@ export async function saveViolation(violation: Violation): Promise<void> {
     where: { id: violation.id },
     create: {
       id: violation.id,
-      employeeId: violation.employeeId,
+      // Phase 60 helper: relation connect для Checked-create
+      employee: fkConnect(violation.employeeId)!,
       date: violation.date,
       type: violation.type,
       description: violation.description,
@@ -3090,22 +3189,19 @@ export async function issueCanisterAtomic(
       const prevBalance = lastMov?.balanceAfter ?? 0;
       const newBalance = prevBalance - amountGrams;
 
-      await tx.stockMovement.create({
-        data: {
-          id: `sm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-          // Phase 60 — relation connect для FK
-          material: { connect: { id: materialId } },
-          type: 'issue',
-          amount: -amountGrams,
-          balanceAfter: newBalance,
-          date: now,
-          description: `Канистра ${input.mode} → ${employee.fullName}`,
-          relatedEntityType: 'employee_canister',
-          relatedEntityId: canisterId,
-          employee: { connect: { id: input.employeeId } },
-          createdBy: input.issuedBy,
-          warehouse: 'main',
-        },
+      await createStockMovement(tx, {
+        id: `sm_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        materialId,
+        type: 'issue',
+        amount: -amountGrams,
+        balanceAfter: newBalance,
+        date: now,
+        description: `Канистра ${input.mode} → ${employee.fullName}`,
+        relatedEntityType: 'employee_canister',
+        relatedEntityId: canisterId,
+        employeeId: input.employeeId,
+        createdBy: input.issuedBy,
+        warehouse: 'main',
       });
 
       // Update material currentStock
@@ -3246,8 +3342,9 @@ export async function createDriverKickback(data: {
 }): Promise<import('@/types').DriverKickback> {
   const created = await prisma.driverKickback.create({
     data: {
-      washEventId: data.washEventId,
-      counterAgentId: data.counterAgentId,
+      // Phase 60 helper: relation connect для Checked-create
+      washEvent: fkConnect(data.washEventId)!,
+      counterAgent: fkConnect(data.counterAgentId)!,
       driverName: data.driverName.trim(),
       driverPhone: (data.driverPhone ?? '').trim(),
       plate: (data.plate ?? '').trim(),

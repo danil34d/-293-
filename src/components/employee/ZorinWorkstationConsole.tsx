@@ -30,11 +30,15 @@ import {
   Box,
   X,
   ArrowRight,
+  AlertCircle,
+  PenLine,
+  RefreshCw,
 } from 'lucide-react';
 import type { CounterAgent, Aggregator, PriceListItem, Car as CarType, RetailPriceConfig, PaymentType, Employee, WashEvent, EmployeeConsumption, WashComment, OurCompany } from '@/types';
 import { KioskServiceSelectionStep, type KioskPaymentMethod } from './KioskServiceSelectionStep';
 import { SplitDriverCard, DriverPickerModal } from './SplitDriverWidgets';
 import SignaturePad from './SignaturePad';
+import SignatureFullscreenModal from './SignatureFullscreenModal';
 import DriverComboBox from './DriverComboBox';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -53,7 +57,13 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { PlateRecognitionDialog } from '@/components/plate-recognition/PlateRecognitionDialog';
 import { LicensePlateInput } from '@/components/plate-recognition/LicensePlateInput';
-import { isEmployeeAdmin } from '@/lib/employee-role';
+// 🔥 ФИКС 2026-08-09: добавлен isKiosk — он покрывает И 'kiosk', И 'kiosk1'.
+// Фильтры ниже сравнивали только с 'kiosk', поэтому терминал бокса
+// (role='kiosk1', «Общий терминал») предлагался как мойщик в команду
+// и, будучи выбранным, делил зарплату. Раньше не стреляло только
+// потому, что pg-adapter молча отдавал ему 'employee'.
+import { isEmployeeAdmin, isKiosk } from '@/lib/employee-role';
+import { parseCameraTime, minutesAgo, formatHHmm, formatMinutes, formatCameraMoment } from '@/lib/camera-time';
 
 type OperationPaymentMethod = "cash" | "card" | "transfer" | "aggregator" | "counterAgentContract";
 type CurrentStep = "idle" | "vehicleInput" | "paymentSelection" | "aggregatorSelection" | "serviceSelection" | "confirmation";
@@ -196,7 +206,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
       }
     }
     // Auto-select logged-in non-admin employee (so they can start shift without schedule)
-    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') {
+    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && !isKiosk(loggedInEmployee)) {
       return [loggedInEmployee];
     }
     return [];
@@ -226,6 +236,8 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   //   водителя на этом номере (см. effect ниже). Можно править вручную.
   const [driverNameInput, setDriverNameInput] = useState('');
   const [driverSignatureDataUrl, setDriverSignatureDataUrl] = useState<string | null>(null);
+  // Phase 60M — full-screen signature modal state
+  const [signatureModalOpen, setSignatureModalOpen] = useState(false);
   // Phase 60e — источник росписи:
   //   'cached'  — подтянута из CounterAgent.drivers[*].signature (водителю не нужно расписываться)
   //   'fresh'   — нарисована сейчас (новый образец, пойдёт в save-signature)
@@ -397,7 +409,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
   useEffect(() => {
     // Don't auto-add kiosk account as employee
     if (isKioskMode) return;
-    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') {
+    if (loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && !isKiosk(loggedInEmployee)) {
       setSelectedEmployees(prev => {
         if (!prev.some(e => e.id === loggedInEmployee.id)) {
           return [...prev, loggedInEmployee];
@@ -488,7 +500,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
           setAllCounterAgents(activeAgents);
           setAllAggregators(aggregatorsData);
           setRetailPriceConfig(retailData);
-          const activeEmployees = (employeesData as any[]).filter((e: any) => e.role !== 'admin' && e.role !== 'kiosk');
+          const activeEmployees = (employeesData as any[]).filter((e: any) => e.role !== 'admin' && !isKiosk(e));
           setAllEmployees(activeEmployees);
           setEmployeeMap(new Map(activeEmployees.map((e: any) => [e.id, e.fullName])));
           setAllWashEvents(washEventsData);
@@ -1225,11 +1237,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         // Phase 51c: метаданные водителя для backend Phase 50d
         // (создаст DriverKickback после atomic POST)
         ...(driverKickbackPayload ? { driverKickback: driverKickbackPayload } : {}),
-        // Phase 60a/b — ФИО водителя + цифровая роспись (только для split-услуг + contract).
-        // Поле UI скрыто для разовых/не-split, поэтому даже если state остался — не отправляем.
-        ...(selectedPaymentMethod === 'counterAgentContract' && hasSplitServiceLocal && driverNameInput.trim()
+        // Phase 60a/b/L — ФИО водителя + цифровая роспись для ВСЕХ contract-моек.
+        // Phase 60L снял ограничение «только split» — обычные contract-мойки тоже идут в Ведомость.
+        ...(selectedPaymentMethod === 'counterAgentContract' && driverNameInput.trim()
           ? { driverName: driverNameInput.trim() } : {}),
-        ...(selectedPaymentMethod === 'counterAgentContract' && hasSplitServiceLocal && driverSignatureDataUrl
+        ...(selectedPaymentMethod === 'counterAgentContract' && driverSignatureDataUrl
           ? { driverSignature: driverSignatureDataUrl } : {}),
     };
 
@@ -1245,11 +1257,11 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
             throw new Error(errorData.error || 'Не удалось сохранить мойку.');
         }
 
-        // Phase 60c/e — fire-and-forget: сохранить роспись на CounterAgent.drivers[*].signature
+        // Phase 60c/e/L — fire-and-forget: сохранить роспись на CounterAgent.drivers[*].signature
         //   только если это СВЕЖАЯ роспись (cached уже лежит у водителя). Не блокируем UI.
+        //   Для ЛЮБОЙ contract-мойки (не только split) — Phase 60L снял ограничение.
         if (
           selectedPaymentMethod === 'counterAgentContract' &&
-          hasSplitServiceLocal &&
           foundCounterAgent?.id &&
           driverNameInput.trim() &&
           driverSignatureDataUrl &&
@@ -1294,7 +1306,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         if ((isKioskMode || isAdminMode) && selectedBoxState.employees.length > 0) {
           setSelectedEmployees(selectedBoxState.employees);
         } else {
-          setSelectedEmployees((loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && loggedInEmployee.role !== 'kiosk') ? [loggedInEmployee] : []);
+          setSelectedEmployees((loggedInEmployee && !isEmployeeAdmin(loggedInEmployee) && !isKiosk(loggedInEmployee)) ? [loggedInEmployee] : []);
         }
       }
     }
@@ -1699,6 +1711,56 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
             Выберите команду на смену, затем введите номер машины. Система автоматически определит тип клиента.
           </p>
 
+          {/* Phase 60k — KIOSK FIX: на терминале нельзя выбрать сотрудников вручную (только из графика).
+              Если график на сегодня пустой → кнопка «Проверить» disabled, и юзер не понимает почему.
+              Показываем явное сообщение с инструкцией что делать. */}
+          {isKioskMode && selectedEmployees.length === 0 && (
+            <div className="my-4 rounded-xl border-2 border-amber-300 bg-amber-50/80 p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-6 w-6 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-amber-900 mb-1">
+                    На боксе {selectedBoxNumber} нет назначенных сотрудников
+                  </p>
+                  <p className="text-sm text-amber-800 leading-snug mb-2">
+                    Оформить мойку можно, только когда в графике на сегодня стоит бригада на этом боксе.
+                    Попросите администратора поставить смену, затем нажмите «Обновить».
+                  </p>
+                  {/* 2026-09-14: здесь были ссылки на /workstation и /schedule — админские
+                      страницы, с которых терминал сразу уводит обратно на /kiosk. Работник жал
+                      большую оранжевую кнопку и оказывался на главной. Терминалу доступен
+                      только свой график — на него и ведём. */}
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <Link
+                      href="/kiosk/schedule"
+                      className="inline-flex min-h-[44px] items-center gap-2 px-4 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700"
+                    >
+                      <Calendar className="h-4 w-4" />
+                      Кто работает сегодня
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => router.refresh()}
+                      className="inline-flex min-h-[44px] items-center gap-2 px-4 rounded-lg text-sm font-semibold bg-white text-amber-700 border border-amber-300 hover:bg-amber-50"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      Обновить
+                    </button>
+                  </div>
+                  {boxShiftStateByBox.box1.employees.length === 0 && boxShiftStateByBox.box2.employees.length === 0 ? (
+                    <p className="text-[11px] text-amber-700 italic mt-2">
+                      Подсказка: ни на одном боксе нет сотрудников. Скорее всего график на сегодня вообще не составлен.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-700 italic mt-2">
+                      Подсказка: на другом боксе сотрудники есть — переключитесь кнопкой Бокс сверху.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {cameraSessionContext && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4">
               {/* Header badges */}
@@ -1711,6 +1773,49 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                   <Badge variant="outline">{cameraSessionContext.vehicleClass}</Badge>
                 )}
               </div>
+
+              {/* 🔥 2026-08-09: карточка не показывала, КОГДА машина была под камерой.
+                  Оператор оформляет в 15:50 сессию, снятую в 10:47, и не видит
+                  разницы — легко приписать услуги не той машине. Время в ссылке
+                  ехало (cameraStart/cameraEnd), просто не отображалось. */}
+              {cameraSessionContext.start && (
+                <div className="mb-3 rounded-lg bg-white/70 border border-amber-200 px-3 py-2 text-[13px] text-slate-700">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span>
+                      <span className="text-slate-500">Заехала:</span>{' '}
+                      <b>{formatCameraMoment(cameraSessionContext.start)}</b>
+                    </span>
+                    {cameraSessionContext.end && (
+                      <span>
+                        <span className="text-slate-500">выехала:</span>{' '}
+                        <b>{formatHHmm(cameraSessionContext.end)}</b>
+                      </span>
+                    )}
+                    {cameraSessionContext.end && (() => {
+                      const a = parseCameraTime(cameraSessionContext.start);
+                      const b = parseCameraTime(cameraSessionContext.end);
+                      if (!a || !b) return null;
+                      const mins = Math.round((b.getTime() - a.getTime()) / 60000);
+                      if (mins <= 0) return null;
+                      return (
+                        <span>
+                          <span className="text-slate-500">в боксе:</span>{' '}
+                          <b>{formatMinutes(mins)}</b>
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  {(() => {
+                    const ago = minutesAgo(cameraSessionContext.start);
+                    if (!Number.isFinite(ago) || ago < 30) return null;
+                    return (
+                      <p className="mt-1 text-[12px] font-medium text-rose-700">
+                        Съёмка была {formatMinutes(ago)} назад — убедитесь, что оформляете именно эту машину.
+                      </p>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* 🔥 ФИКС 2026-05-05: одно фото — крупный план номера. Раньше показывали
                   два (общий план + crop) — общий лишний, оператору важен только номер.
@@ -1785,7 +1890,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                         Добавить/убрать
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0">
+                    <PopoverContent className="w-[calc(100vw-2rem)] max-w-[300px] p-0">
                       <ScrollArea className="h-60">
                         <div className="p-2 space-y-1">
                           {allEmployees.map(employee => (
@@ -1830,7 +1935,18 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                     {normalizedVehicleNumber && (
                       <p className="text-sm text-muted-foreground mt-1">Нормализованный: {normalizedVehicleNumber}</p>
                     )}
-                    <button onClick={() => checkVehicleNumber()} disabled={isLoading || !vehicleNumberInput.trim() || selectedEmployees.length === 0} className="zorin-button primary zorin-check-button">
+                    <button
+                      onClick={() => checkVehicleNumber()}
+                      disabled={isLoading || !vehicleNumberInput.trim() || selectedEmployees.length === 0}
+                      className="zorin-button primary zorin-check-button"
+                      title={
+                        selectedEmployees.length === 0
+                          ? 'Сначала назначьте сотрудников на смену (см. жёлтую плашку выше)'
+                          : !vehicleNumberInput.trim()
+                          ? 'Введите номер машины'
+                          : ''
+                      }
+                    >
                       {isLoading && normalizedVehicleNumber ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Car className="mr-2 h-4 w-4" />}
                       Проверить
                     </button>
@@ -2053,44 +2169,60 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
               </h3>
 
               <div className="space-y-3">
-                <p><strong>Номер машины:</strong> {normalizedVehicleNumber} (Введено: {vehicleNumberInput})</p>
-                <p><strong>Клиент:</strong> {
-                  selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent ? `${foundCounterAgent.name} (Контрагент по договору)` :
-                  selectedPaymentMethod === 'aggregator' && selectedAggregator ? `Клиент агрегатора (${selectedAggregator.name})` :
-                  'Розничный клиент'
-                }</p>
-                <p><strong>Способ оплаты:</strong> {
-                  selectedPaymentMethod ? (paymentMethodLabels[selectedPaymentMethod] || 'Не определен') : 'Не определен'
-                }</p>
-                <p><strong>Исполнители:</strong> {selectedEmployees.map(e => e.fullName).join(', ')}</p>
-
-                {/* Phase 57c: бейдж «От имени ИП» — какое наше юр.лицо оформит мойку.
-                    Логика дублирует серверный resolveOurCompanyIdForWashEvent: counterAgent.preferredOurCompanyId
-                    → aggregator.preferredOurCompanyId → primary. Сотрудник видит куда пойдут деньги. */}
+                {/* Phase 60P — компактная info-карточка вместо 5 отдельных <p>.
+                    На мобильнике 5 строк × ~32px = 160px вертикали сжаты в ~80px.
+                    Главное (номер + клиент) видно сразу. Остальное — мелкий шрифт ниже. */}
                 {(() => {
-                  if (allOurCompanies.length === 0) return null;
-                  const active = allOurCompanies.filter(c => !c.archived);
+                  // Компонуем info для targetOc один раз
                   let targetOc: OurCompany | undefined;
                   let reasonHint = '';
+                  const active = allOurCompanies.filter(c => !c.archived);
                   if (selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent?.preferredOurCompanyId) {
                     targetOc = active.find(c => c.id === foundCounterAgent.preferredOurCompanyId);
-                    reasonHint = `назначено контрагенту ${foundCounterAgent.name}`;
+                    reasonHint = `назначено ${foundCounterAgent.name}`;
                   } else if (selectedPaymentMethod === 'aggregator' && selectedAggregator?.preferredOurCompanyId) {
                     targetOc = active.find(c => c.id === selectedAggregator.preferredOurCompanyId);
-                    reasonHint = `назначено агрегатору ${selectedAggregator.name}`;
+                    reasonHint = `назначено ${selectedAggregator.name}`;
                   }
                   if (!targetOc) {
                     targetOc = active.find(c => c.isPrimary);
-                    reasonHint = 'основное ИП по умолчанию';
+                    reasonHint = 'основное ИП';
                   }
-                  if (!targetOc) return null;
+                  const clientLabel =
+                    selectedPaymentMethod === 'counterAgentContract' && foundCounterAgent
+                      ? foundCounterAgent.name
+                      : selectedPaymentMethod === 'aggregator' && selectedAggregator
+                      ? `${selectedAggregator.name} (агрегатор)`
+                      : 'Розничный клиент';
+                  const employeeNames = selectedEmployees.map(e => e.fullName.split(' ').slice(0, 2).join(' ')).join(', ');
+                  const paymentLabel = selectedPaymentMethod ? (paymentMethodLabels[selectedPaymentMethod] || '—') : '—';
                   return (
-                    <p style={{ background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '8px 12px', margin: '8px 0' }}>
-                      <strong>От имени ИП:</strong>{' '}
-                      <span style={{ fontWeight: 700 }}>{targetOc.shortName}</span>
-                      {targetOc.isPrimary && <span style={{ marginLeft: 6 }}>⭐</span>}
-                      <span style={{ marginLeft: 8, fontSize: 12, color: '#6366f1' }}>({reasonHint})</span>
-                    </p>
+                    <div className="rounded-lg border border-slate-200 bg-white/60 p-3 space-y-1.5 text-[13px]">
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span className="font-mono font-bold text-base text-slate-900 tracking-wider">{normalizedVehicleNumber}</span>
+                        <span className="text-xs text-slate-400 truncate">введено {vehicleNumberInput}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5 min-w-0">
+                        <span className="text-slate-500 text-xs flex-shrink-0">Клиент:</span>
+                        <span className="font-semibold text-slate-800 truncate">{clientLabel}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5 min-w-0">
+                        <span className="text-slate-500 text-xs flex-shrink-0">Оплата:</span>
+                        <span className="text-slate-700">{paymentLabel}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5 min-w-0">
+                        <span className="text-slate-500 text-xs flex-shrink-0">Бригада:</span>
+                        <span className="text-slate-700 truncate">{employeeNames}</span>
+                      </div>
+                      {targetOc && (
+                        <div className="flex items-baseline gap-1.5 min-w-0 mt-1 pt-1 border-t border-slate-100">
+                          <span className="text-indigo-500 text-xs flex-shrink-0">ИП:</span>
+                          <span className="font-semibold text-indigo-700">{targetOc.shortName}</span>
+                          {targetOc.isPrimary && <span className="text-amber-500">⭐</span>}
+                          <span className="text-[11px] text-slate-400 truncate">· {reasonHint}</span>
+                        </div>
+                      )}
+                    </div>
                   );
                 })()}
 
@@ -2104,12 +2236,13 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                   onClearDriver={() => setSelectedDriver(null)}
                 />
 
-                {/* Phase 60a/b — ФИО водителя + цифровая роспись.
-                    Показывается ТОЛЬКО когда среди услуг есть split (мойка скотовоза и т.п.) —
-                    именно там нужен водитель/роспись для Ведомости. Обычные contract-мойки
-                    без split (например, легковая по договору) — не требуют. */}
-                {selectedPaymentMethod === 'counterAgentContract' &&
-                  washServices.some((s) => (s as any).split?.driverBonus > 0) && (
+                {/* Phase 60a/b/L — ФИО водителя + цифровая роспись.
+                    Показывается ВСЕГДА для contract-моек (для Ведомости учёта).
+                    Для split-услуг водитель ОБЯЗАТЕЛЕН (блокирует кнопку Подтвердить).
+                    Для обычных contract — опциональна (но видна, можно расписаться).
+                    Phase 60d ужесточение откатили — слишком частая ситуация когда split-config
+                    потерян в priceList (был баг normalizeItems до Phase 60j). */}
+                {selectedPaymentMethod === 'counterAgentContract' && (
                   <div className="space-y-3 pt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                     <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                       🖊️ Водитель — ФИО и роспись
@@ -2178,7 +2311,7 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                             <label className="zorin-form-label text-xs flex items-center justify-between">
                               <span>
                                 Роспись водителя
-                                <span className="ml-2 text-[10px] text-slate-500 italic font-normal">
+                                <span className="ml-2 text-[11px] text-slate-500 italic font-normal">
                                   (можно отрывать — рисуй по частям)
                                 </span>
                               </span>
@@ -2199,26 +2332,55 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                                     setDriverSignatureDataUrl(null);
                                     setDriverSignatureSource(null);
                                   }}
-                                  className="px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100 rounded whitespace-nowrap"
+                                  className="px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 rounded whitespace-nowrap"
                                   title="Очистить и расписаться заново"
                                 >
                                   Расписаться заново
                                 </button>
                               </div>
                             )}
-                            <SignaturePad
-                              value={driverSignatureDataUrl}
-                              onChange={(dataUrl) => {
-                                setDriverSignatureDataUrl(dataUrl);
-                                // если рисовал — это свежая роспись (а не sticky из CA)
-                                if (dataUrl) {
-                                  setDriverSignatureSource('fresh');
-                                } else {
-                                  setDriverSignatureSource(null);
-                                }
-                              }}
-                              height={130}
-                            />
+                            {/* Phase 60M — кнопка открывает FULL-SCREEN modal с канвой на весь экран.
+                                Раньше inline-канва 130px высоты разъезжала layout на мобильнике. */}
+                            {driverSignatureDataUrl && driverSignatureSource !== 'cached' ? (
+                              <div className="rounded-md border border-slate-200 bg-white p-2 flex items-center gap-3">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={driverSignatureDataUrl}
+                                  alt="роспись"
+                                  className="rounded"
+                                  style={{ maxHeight: 60, maxWidth: '60%', objectFit: 'contain' }}
+                                />
+                                <div className="flex flex-col gap-1.5 ml-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSignatureModalOpen(true)}
+                                    className="px-3 py-1.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                                  >
+                                    Перерисовать
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDriverSignatureDataUrl(null);
+                                      setDriverSignatureSource(null);
+                                    }}
+                                    className="px-3 py-1.5 rounded text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                                  >
+                                    Очистить
+                                  </button>
+                                </div>
+                              </div>
+                            ) : driverSignatureSource !== 'cached' ? (
+                              <button
+                                type="button"
+                                onClick={() => setSignatureModalOpen(true)}
+                                className="w-full py-4 rounded-lg border-2 border-dashed border-amber-400 bg-amber-50 hover:bg-amber-100 active:scale-[0.98] text-amber-900 font-bold text-sm flex items-center justify-center gap-2 transition"
+                              >
+                                <PenLine className="w-5 h-5" />
+                                Открыть и расписаться
+                                <ArrowRight className="w-4 h-4" />
+                              </button>
+                            ) : null}
                           </div>
                         </>
                       );
@@ -2318,11 +2480,29 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                   <p className="text-xl font-bold text-right"><strong>Оплата:</strong> По договору</p>
                 )}
 
-                <div className="flex space-x-3 pt-3">
-                  {(() => {
-                    const hasSplitConfirm = washServices.some((s) => (s as any).split?.driverBonus > 0);
-                    const splitBlockedNoDriver = hasSplitConfirm && !selectedDriver?.name;
-                    return (
+                {/* Phase 60O — spacer чтобы контент не залезал под sticky-bar внизу.
+                    Высота примерно равна sticky bar (~76px на мобильнике, ~64 на desktop). */}
+                <div className="h-20 md:h-16" aria-hidden />
+              </div>
+
+              {/* Phase 60O — Sticky bottom bar с кнопкой Подтвердить.
+                  На мобильнике постоянно виден внизу — водитель не теряет кнопку при scroll
+                  в длинной форме подтверждения (9 секций × ~100px = 1000px вертикали).
+                  На desktop становится sticky внутри карточки. */}
+              <div className="zorin-confirm-sticky-bar">
+                {(() => {
+                  const hasSplitConfirm = washServices.some((s) => (s as any).split?.driverBonus > 0);
+                  const splitBlockedNoDriver = hasSplitConfirm && !selectedDriver?.name;
+                  return (
+                    <div className="flex gap-2 items-center">
+                      <button
+                        onClick={() => setCurrentStep("serviceSelection")}
+                        className="zorin-button secondary px-3"
+                        title="Назад к выбору услуг"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span className="hidden sm:inline ml-1">Назад</span>
+                      </button>
                       <button
                         onClick={confirmWash}
                         disabled={isLoading || splitBlockedNoDriver}
@@ -2330,14 +2510,15 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
                         title={splitBlockedNoDriver ? 'Выберите водителя для split-услуги' : ''}
                       >
                         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        {splitBlockedNoDriver ? 'Выберите водителя →' : 'Подтвердить и зарегистрировать'}
+                        {splitBlockedNoDriver
+                          ? 'Выберите водителя →'
+                          : showPrices
+                            ? `✓ Подтвердить · ${totalAmount.toFixed(0)} ₽`
+                            : '✓ Подтвердить и зарегистрировать'}
                       </button>
-                    );
-                  })()}
-                  <button onClick={() => setCurrentStep("serviceSelection")} className="zorin-button secondary">
-                    Назад к услугам
-                  </button>
-                </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -2368,6 +2549,21 @@ export function ZorinWorkstationConsole({ scheduleByBox, shiftStateByBox, isKios
         onOpenChange={setIsPlateDialogOpen}
         onPlateRecognized={handlePlateRecognized}
         onRecognitionFailed={handlePlateRecognitionFailed}
+      />
+
+      {/* Phase 60M — full-screen modal для росписи водителя.
+          Канва на весь экран — водитель уверенно расписывается пальцем. */}
+      <SignatureFullscreenModal
+        open={signatureModalOpen}
+        initialSignature={driverSignatureDataUrl}
+        driverName={driverNameInput || undefined}
+        onClose={() => setSignatureModalOpen(false)}
+        onSave={(dataUrl) => {
+          setDriverSignatureDataUrl(dataUrl);
+          setDriverSignatureSource('fresh');
+          setSignatureModalOpen(false);
+          toast({ title: 'Подпись зафиксирована', description: 'Можно подтверждать мойку.', variant: 'default' });
+        }}
       />
     </div>
   );

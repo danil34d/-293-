@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { Employee } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, Clock, DollarSign, Car } from 'lucide-react';
+import { isKiosk } from '@/lib/employee-role';
 
 interface ShiftReportRecord {
   id: string;
@@ -136,7 +137,12 @@ export function ShiftReportsTab({ reports, employees }: ShiftReportsTabProps) {
       const closedTs = parseTimestamp(closedAt);
       const sortTimestamp = closedTs ?? startedTs ?? parseTimestamp(report.createdAt) ?? 0;
       const durationMs = startedTs !== null && closedTs !== null ? Math.max(0, closedTs - startedTs) : null;
-      const kioskOnly = employeeIds.length > 0 && employeeIds.every((employeeId) => employeeMap.get(employeeId)?.role === 'kiosk');
+      // 🔥 2026-08-09: сравнение с 'kiosk' не ловило роль терминала 'kiosk1',
+      // и смена, где кроме устройства никого нет, не считалась технической.
+      const kioskOnly = employeeIds.length > 0 && employeeIds.every((employeeId) => {
+        const emp = employeeMap.get(employeeId);
+        return !!emp && isKiosk(emp);
+      });
 
       const isComputed = report.id.startsWith('computed_');
 
@@ -254,7 +260,7 @@ export function ShiftReportsTab({ reports, employees }: ShiftReportsTabProps) {
             </thead>
             <tbody>
               {filteredReports.map((report) => {
-                const visibleEmployees = report.employeeIds.filter((employeeId) => employeeMap.get(employeeId)?.role !== 'kiosk');
+                const visibleEmployees = report.employeeIds.filter((employeeId) => !isKiosk(employeeMap.get(employeeId)));
                 const employeeIdsToRender = visibleEmployees.length > 0 ? visibleEmployees : report.employeeIds;
 
                 return (

@@ -343,19 +343,6 @@ export default async function TransactionsPage({ searchParams }: Props) {
         </div>
       )}
 
-      {/* Phase 38 changes summary */}
-      <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 mb-4">
-        <div className="text-[11px] uppercase tracking-wider font-bold text-emerald-800 flex items-center gap-1.5 mb-2">
-          <ShieldCheck className="w-3.5 h-3.5" /> Phase 38 — что изменилось
-        </div>
-        <ul className="text-[12px] text-emerald-900 space-y-1 leading-relaxed">
-          <li>• <b>Period switcher</b> (Сегодня / Неделя / Месяц) — URL ?from=&to=</li>
-          <li>• <b>5 method cards</b>: добавлены Агрегатор и Договор с топ-источником</li>
-          <li>• <b>Упрощённая cash reconciliation</b>: cash washes − все расходы → ориентир</li>
-          <li>• <b>Total summary</b> с эквайрингом и «К получению»</li>
-          <li>• Таблица retail-транзакций (cash/card/transfer) сохранена ниже для редактирования</li>
-        </ul>
-      </div>
 
       {/* Retail Transactions Table — сохраняем для редактирования */}
       <div className="transactions-table-card">

@@ -117,7 +117,7 @@ export default function DriverComboBox({ drivers, selectedName, vehiclePlate, on
               >
                 {isPlateMatch && <span className="text-amber-500">⭐</span>}
                 {d.name}
-                {hasSignature && <span className="text-[10px] text-emerald-600">✓</span>}
+                {hasSignature && <span className="text-[11px] text-emerald-600">✓</span>}
               </button>
             );
           })}
@@ -132,7 +132,7 @@ export default function DriverComboBox({ drivers, selectedName, vehiclePlate, on
             </button>
           )}
         </div>
-        <p className="text-[10px] text-slate-500 italic">
+        <p className="text-[11px] text-slate-500 italic">
           ⭐ — закреплён за этой машиной · ✓ — есть сохранённая роспись
         </p>
       </div>
@@ -199,8 +199,8 @@ export default function DriverComboBox({ drivers, selectedName, vehiclePlate, on
                       <span className="flex items-center gap-2">
                         {isPlateMatch && <span className="text-amber-500" title="закреплён за этой машиной">⭐</span>}
                         <span className="text-slate-800">{d.name}</span>
-                        {d.position && <span className="text-[10px] text-slate-500">· {d.position}</span>}
-                        {d.phone && <span className="text-[10px] text-slate-400">· {d.phone}</span>}
+                        {d.position && <span className="text-[11px] text-slate-500">· {d.position}</span>}
+                        {d.phone && <span className="text-[11px] text-slate-400">· {d.phone}</span>}
                       </span>
                       {d.signature && <CheckCircle2 size={12} className="text-emerald-500" />}
                     </button>

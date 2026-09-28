@@ -16,6 +16,7 @@ import { Plus, Copy, CheckCircle, Calendar, Users, Trash2, Sparkles, Settings, S
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import type { DailyRequirement, SchedulePlan, Employee, WashId } from '@/types';
 import { DEFAULT_WASH_ID, normalizeWashId } from '@/lib/wash';
 import { CheckItem, HazardPill, SafetyBar } from '@/components/admin';
@@ -46,6 +47,7 @@ function getWashLabel(washId: WashId | string): string {
 export function PlanningDashboard({ initialPlans, employees, initialWashId }: PlanningDashboardProps) {
   const { toast } = useToast();
   const router = useRouter();
+  const { employee: loggedInEmployee } = useAuth();
   const [plans, setPlans] = useState<SchedulePlan[]>(initialPlans);
   const [selectedWashId, setSelectedWashId] = useState<WashId>(() => normalizeWashId(initialWashId));
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -202,7 +204,8 @@ export function PlanningDashboard({ initialPlans, employees, initialWashId }: Pl
       name: newPlanName,
       month: newPlanMonth,
       createdAt: new Date().toISOString(),
-      createdBy: 'emp_manager_admin', // TODO: Get from session
+      // Phase 60h — реальный создатель из сессии (раньше захардкожено emp_manager_admin → фальсификация audit-trail)
+      createdBy: loggedInEmployee?.id ?? 'unknown',
       isActive: false,
       employeeConfigs: employees.map(emp => ({
         employeeId: emp.id,

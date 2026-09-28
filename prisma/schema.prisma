@@ -92,6 +92,13 @@ model Employee {
   phone                     String   @default("")
   paymentDetails            String   @default("")
   hasCar                    Boolean  @default(false)
+
+  /// Госномера личных машин сотрудника (09.08.2026). Канон — латиница через
+  /// normalizeLicensePlate(), как и WashEvent.vehicleNumber: сверка «своя машина»
+  /// сравнивает строки напрямую, кириллическая «А» и латинская «A» не совпадут.
+  /// Массив, потому что машин бывает больше одной. Прерквизит бесплатных моек.
+  carPlates                 String[] @default([])
+
   role                      String   @default("employee")
   telegramChatId            String?
   username                  String?  @unique

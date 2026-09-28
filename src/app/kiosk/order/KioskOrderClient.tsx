@@ -9,9 +9,13 @@ import { Button } from '@/components/ui/button';
 import { Car, History, ChevronDown, ChevronUp, Box, Truck } from 'lucide-react';
 import { PendingCameraSessionsPanel } from '@/components/camera/PendingCameraSessionsPanel';
 
+type BoxShiftState = { shiftId: string | null; isShiftActive: boolean };
+
 interface KioskOrderClientProps {
   box1Employees: Employee[];
   box2Employees: Employee[];
+  /** Нужен, чтобы мойка с терминала уехала в базу с shiftId. */
+  shiftStateByBox?: { box1: BoxShiftState; box2: BoxShiftState };
   todayEvents: WashEvent[];
   allEmployees: Employee[];
   initialPendingVehicles: PendingCameraVehicle[];
@@ -46,7 +50,7 @@ function EventRow({ event, employees }: { event: WashEvent; employees: Employee[
   );
 }
 
-export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, allEmployees, initialPendingVehicles }: KioskOrderClientProps) {
+export function KioskOrderClient({ box1Employees, box2Employees, shiftStateByBox, todayEvents, allEmployees, initialPendingVehicles }: KioskOrderClientProps) {
   const [showHistory, setShowHistory] = useState(false);
   const [pendingVehicles, setPendingVehicles] = useState(initialPendingVehicles);
   // 🔥 ФИКС 2026-05-11: когда оператор перешёл в активный wizard (выбор оплаты/услуг/подтверждение),
@@ -105,6 +109,7 @@ export function KioskOrderClient({ box1Employees, box2Employees, todayEvents, al
       <ZorinWorkstationConsole
         isKioskMode={true}
         scheduleByBox={{ box1: box1Employees, box2: box2Employees }}
+        shiftStateByBox={shiftStateByBox}
         onWizardStateChange={setIsInWizard}
       />
 

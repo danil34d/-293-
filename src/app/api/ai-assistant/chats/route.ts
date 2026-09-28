@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getChats, createChat } from '@/lib/db/ai-database';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAdmin } from '@/lib/server-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * Get all chats
  */
 export async function GET(request: NextRequest) {
-  const auth = requireAuth();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
  * Create a new chat
  */
 export async function POST(request: NextRequest) {
-  const auth = requireAuth();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {

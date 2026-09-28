@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { isKiosk } from '@/lib/employee-role';
 
 const VEHICLE_CLASS_LABELS: Record<string, string> = {
   car: 'легковой',
@@ -49,8 +50,29 @@ function formatSessionTime(value: string | null | undefined) {
   return value;
 }
 
+/** Формат российского номера — тот же, что в ocr_utils.validate_plate на камерах. */
+const RU_PLATE_RE = /^[\u0410\u0412\u0415\u041a\u041c\u041d\u041e\u0420\u0421\u0422\u0423\u0425]\d{3}[\u0410\u0412\u0415\u041a\u041c\u041d\u041e\u0420\u0421\u0422\u0423\u0425]{2}\d{2,3}$/;
+
 function getPendingVehicleStatus(vehicle: PendingCameraVehicle) {
+  // 🔥 2026-08-08: раньше статус зависел ТОЛЬКО от наличия номера, и сессия,
+  // где OCR уже отработал и ничего не принял, показывала «ждём итоговое
+  // распознавание» — оператор ждал того, что не придёт.
   if (!vehicle.plateNumber) {
+    const hasCandidates = (vehicle.plateCandidates?.length || 0) > 0;
+    if (hasCandidates) {
+      return {
+        label: 'Выберите номер',
+        description: 'OCR прочитал варианты, но не уверен — подтвердите нужный',
+        badgeClassName: 'bg-white/90 text-orange-700',
+      };
+    }
+    if (vehicle.ocrDone) {
+      return {
+        label: 'Номер не распознан',
+        description: 'Распознавание отработало, номер прочитать не удалось — введите вручную',
+        badgeClassName: 'bg-white/90 text-rose-700',
+      };
+    }
     return {
       label: 'Обработка номера',
       description: 'Сессия собрана, ждём итоговое распознавание номера',
@@ -70,6 +92,7 @@ function buildCameraEntryHref(
   boxNumber: number,
   vehicle: PendingCameraVehicle,
   mode: 'checkout' | 'edit',
+  plateOverride?: string,
 ) {
   const params = new URLSearchParams({
     box: String(boxNumber),
@@ -79,8 +102,9 @@ function buildCameraEntryHref(
     cameraMode: mode,
   });
 
-  if (vehicle.plateNumber) {
-    params.set('cameraPlate', vehicle.plateNumber);
+  const plate = plateOverride || vehicle.plateNumber;
+  if (plate) {
+    params.set('cameraPlate', plate);
   }
 
   if (vehicle.vehicleClass) {
@@ -124,9 +148,11 @@ export function PendingCameraSessionsPanel({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const availableEmployees = useMemo(() => {
-    const fromBox = boxEmployees.filter((employee) => employee.role !== 'kiosk');
+    // 🔥 ФИКС 2026-08-09: сравнение с 'kiosk' пропускало роль 'kiosk1'
+    // (терминал бокса). Готовый isKiosk() покрывает обе роли-устройства.
+    const fromBox = boxEmployees.filter((employee) => !isKiosk(employee));
     if (fromBox.length > 0) return fromBox;
-    return allEmployees.filter((employee) => employee.role !== 'kiosk');
+    return allEmployees.filter((employee) => !isKiosk(employee));
   }, [allEmployees, boxEmployees]);
 
   const openDismissDialog = (vehicle: PendingCameraVehicle) => {
@@ -251,6 +277,49 @@ export function PendingCameraSessionsPanel({
                     <p className="mt-1 text-[11px] text-muted-foreground/90">
                       {status.description}
                     </p>
+                    {/* 🔥 2026-08-08: кандидаты OCR прямо на карточке. Раньше их
+                        видел только дашборд камер, а сотрудник набирал номер
+                        руками, хотя система его уже прочитала. Клик по чипу
+                        открывает форму с подставленным номером.
+                        Валидные по ГОСТ — зелёные и первыми, остальные тускло. */}
+                    {!vehicle.plateNumber && (vehicle.plateCandidates?.length || 0) > 0 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] text-muted-foreground/80">
+                          OCR прочитал:
+                        </span>
+                        {[...(vehicle.plateCandidates || [])]
+                          .sort((a, b) =>
+                            Number(RU_PLATE_RE.test(b.text)) - Number(RU_PLATE_RE.test(a.text))
+                            || b.votes - a.votes)
+                          .map((cand) => {
+                            const valid = RU_PLATE_RE.test(cand.text);
+                            return (
+                              <Link
+                                key={cand.text}
+                                href={buildCameraEntryHref(basePath, boxNumber, vehicle, 'edit', cand.text)}
+                                title={
+                                  (valid ? 'Проходит формат ГОСТ. ' : 'Формат нестандартный. ')
+                                  + `Прочитан ${cand.votes} раз`
+                                  + (cand.conf ? `, уверенность ${Math.round(cand.conf * 100)}%` : '')
+                                  + '. Нажмите, чтобы оформить с этим номером'
+                                }
+                                className={
+                                  'rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors '
+                                  + (valid
+                                    ? 'border-emerald-400 bg-emerald-50 font-semibold text-emerald-800 hover:bg-emerald-100'
+                                    : 'border-slate-300 bg-white/70 text-slate-500 hover:bg-slate-100')
+                                }
+                              >
+                                {valid ? '\u2713 ' : ''}{cand.text}
+                                <span className="ml-1 opacity-60">
+                                  {'\u00d7'}{cand.votes}
+                                  {cand.conf ? ` \u00b7 ${Math.round(cand.conf * 100)}%` : ''}
+                                </span>
+                              </Link>
+                            );
+                          })}
+                      </div>
+                    )}
                     <p className="mt-1 text-[11px] text-muted-foreground/80">
                       {vehicle.dirName}
                     </p>

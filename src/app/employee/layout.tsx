@@ -1,5 +1,5 @@
 'use client';
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Bell, BellDot, Home, CalendarDays, Wallet, ClipboardList } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
@@ -10,25 +10,54 @@ import { EmployeeAvatar } from '@/components/employee/EmployeeAvatar';
 import { LogoutConfirmSheet } from '@/components/employee/sheets/LogoutConfirmSheet';
 import { NotificationsSheet, type NotificationItem } from '@/components/employee/sheets/NotificationsSheet';
 
-// Заглушка пока нет реального API уведомлений (TODO Phase 2: использовать /api/employee/notifications)
-const STUB_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'n1',
-    kind: 'swap-incoming',
-    title: 'Петров С. хочет поменяться',
-    subtitle: '18 мая (твоя ☀) ↔ 22 мая (его 🌙)',
-    ago: '2 мин назад',
-    href: '/employee/schedule',
-  },
-  {
-    id: 'n2',
-    kind: 'request-approved',
-    title: 'Запрос смены 25 мая принят админом',
-    subtitle: '☀ День · Бокс 1 · добавлено в график',
-    ago: 'Вчера',
-    href: '/employee/schedule',
-  },
-];
+/** Формат уведомления, который отдаёт GET /api/employee/notifications. */
+interface ApiNotificationItem {
+  id: string;
+  type: 'swap-incoming' | 'request-approved' | 'request-rejected' | 'shift-assigned' | 'info';
+  title: string;
+  body?: string;
+  createdAt: string;
+  link?: string;
+  level?: 'info' | 'warn' | 'success';
+}
+
+/** «N мин/час/дн назад» для краткой ленты уведомлений. */
+function timeAgo(iso: string): string {
+  try {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const min = Math.round(diffMs / 60_000);
+    if (min < 1) return 'Только что';
+    if (min < 60) return `${min} мин назад`;
+    const hr = Math.round(min / 60);
+    if (hr < 24) return `${hr} ч назад`;
+    const d = Math.round(hr / 24);
+    if (d === 1) return 'Вчера';
+    if (d < 7) return `${d} дн назад`;
+    return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  } catch {
+    return '';
+  }
+}
+
+/** API-формат → UI-формат для существующего NotificationsSheet. */
+function toUiNotification(api: ApiNotificationItem): NotificationItem {
+  // 'shift-assigned' UI пока не знает — мапим на 'request-approved' (sky/blue стиль)
+  const kindMap: Record<ApiNotificationItem['type'], NotificationItem['kind']> = {
+    'swap-incoming': 'swap-incoming',
+    'request-approved': 'request-approved',
+    'request-rejected': 'request-rejected',
+    'shift-assigned': 'request-approved',
+    info: 'info',
+  };
+  return {
+    id: api.id,
+    kind: kindMap[api.type] ?? 'info',
+    title: api.title,
+    subtitle: api.body,
+    ago: timeAgo(api.createdAt),
+    href: api.link,
+  };
+}
 
 export default function EmployeeLayout({ children }: { children: ReactNode }) {
   const { logout, employee } = useAuth();
@@ -37,7 +66,44 @@ export default function EmployeeLayout({ children }: { children: ReactNode }) {
 
   const [bellOpen, setBellOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(STUB_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/employee/notifications', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = (await res.json()) as { items?: ApiNotificationItem[] };
+      const items = Array.isArray(data.items) ? data.items.map(toUiNotification) : [];
+      setNotifications(items);
+    } catch {
+      // молчим — bell просто останется без счётчика
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!employee?.id) return;
+    if (isKiosk(employee)) return;
+    fetchNotifications();
+    // лёгкий пуллинг каждые 60 сек, пока вкладка открыта
+    const interval = setInterval(fetchNotifications, 60_000);
+    return () => clearInterval(interval);
+  }, [employee?.id, employee, fetchNotifications]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    const ids = notifications.map((n) => n.id);
+    if (ids.length === 0) return;
+    setNotifications([]);
+    try {
+      await fetch('/api/employee/notifications/mark-read', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+    } catch {
+      // если упало — при следующем GET список снова появится, не критично
+    }
+  }, [notifications]);
 
   if (pathname === '/login') {
     return <>{children}</>;
@@ -177,7 +243,7 @@ export default function EmployeeLayout({ children }: { children: ReactNode }) {
         open={bellOpen}
         onOpenChange={setBellOpen}
         items={notifications}
-        onMarkAllRead={() => setNotifications([])}
+        onMarkAllRead={handleMarkAllRead}
       />
     </div>
   );

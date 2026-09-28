@@ -1,6 +1,8 @@
-'use server';
+// Серверный модуль: не 'use server' — иначе экспорты становятся server actions
+// без проверки ролей (ФИКС 2026-09-28, подробности в pg-adapter.ts).
 
 import type { Shift } from '@/types';
+import { isKiosk } from '@/lib/employee-role';
 import { getEmployeesData, getWashEventsData } from '@/lib/data';
 import { saveEntity } from '@/lib/data/write-helpers';
 
@@ -110,9 +112,10 @@ export async function generateShiftReport(shift: Shift): Promise<ShiftReportSumm
     ? Math.max(0, closedAtMs - startedAtMs)
     : null;
 
-  const employeeRoleMap = new Map(employees.map((employee) => [employee.id, employee.role]));
+  // isKiosk покрывает и 'kiosk', и 'kiosk1' (раньше сравнивали только с 'kiosk')
+  const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
   const kioskOnlyShift = shift.employeeIds.length > 0
-    && shift.employeeIds.every((employeeId) => employeeRoleMap.get(employeeId) === 'kiosk');
+    && shift.employeeIds.every((employeeId) => isKiosk(employeeById.get(employeeId)));
 
   const shouldSkipTechnicalReport = shiftWashes.length === 0
     && totalAmount === 0

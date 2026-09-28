@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackgroundAnalysis, updateBackgroundAnalysis } from '@/lib/db/ai-database';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAdmin } from '@/lib/server-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +12,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireAuth();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {
@@ -47,7 +47,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireAuth();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {

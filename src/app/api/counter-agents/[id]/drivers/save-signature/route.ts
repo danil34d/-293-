@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import type { CounterAgent, CounterAgentDriver } from '@/types';
 import { invalidateCounterAgentsCache } from '@/lib/data';
 import { requireAuth } from '@/lib/server-auth';
+import { hasAdminAccess } from '@/lib/employee-role';
 import { saveEntity, readEntity } from '@/lib/data/write-helpers';
 
 /**
@@ -72,7 +73,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
       action = 'created';
     } else {
       const driver = drivers[existingIdx];
-      if (!driver.signature || body.overwrite) {
+      // Сохранённый образец подписи уходит в Ведомость — перезаписать его может
+      // только админ (ФИКС 2026-09-28: раньше любой вошедший через overwrite=true).
+      // Терминал сам шлёт overwrite=false.
+      if (!driver.signature || (body.overwrite && hasAdminAccess(auth))) {
         drivers[existingIdx] = {
           ...driver,
           // обогащаем телефоном если раньше не было

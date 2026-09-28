@@ -5,6 +5,7 @@ import type { Violation, ViolationType, EmployeeTransaction } from '@/types';
 import { getViolationsData, getEmployeeTransactions } from '@/lib/data';
 import { saveEntity, saveEmployeeTransactions } from '@/lib/data/write-helpers';
 import { requireAuth, requireAdmin } from '@/lib/server-auth';
+import { hasAdminAccess } from '@/lib/employee-role';
 
 // Phase 44 / ТЕХ-#7: deterministic id для связанной EmployeeTransaction (loan).
 // Позволяет POST/PATCH/DELETE синхронно править одну транзакцию без новой колонки в Violation.
@@ -50,7 +51,8 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const employeeId = searchParams.get('employeeId');
+    // Не-админ видит только свои штрафы (ФИКС 2026-09-28: раньше — штрафы всех)
+    const employeeId = hasAdminAccess(auth) ? searchParams.get('employeeId') : auth.id;
     const date = searchParams.get('date');
     const month = searchParams.get('month');
     const type = searchParams.get('type');

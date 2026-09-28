@@ -2,9 +2,50 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import type { Shift } from '@/types';
-import { getShiftsData, invalidateShiftsCache } from '@/lib/data';
+import { getShiftsData, invalidateShiftsCache, getEmployeesData } from '@/lib/data';
 import { saveEntity } from '@/lib/data/write-helpers';
 import { requireAuth } from '@/lib/server-auth';
+import { resolveCurrentBoxShiftStates } from '@/lib/current-box-team';
+import { isKiosk } from '@/lib/employee-role';
+
+/**
+ * 🔥 2026-08-09: GET не существовало, и терминалу неоткуда было узнать, какая
+ * смена открыта в КАКОМ боксе. Кнопка закрытия читала единственный глобальный
+ * ключ sessionStorage.activeShiftId — нажатие «Завершить Бокс 2» могло закрыть
+ * смену бокса 1 и показать при этом «Бокс 2 — смена закрыта».
+ * Теперь источник правды — сервер.
+ */
+export async function GET() {
+  const auth = requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
+  const [shifts, employees] = await Promise.all([getShiftsData(), getEmployeesData()]);
+  const now = new Date();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const hour = now.getHours();
+  const shiftType = hour >= 8 && hour < 20 ? 'day' : 'night';
+
+  const states = resolveCurrentBoxShiftStates({
+    shifts,
+    employees: employees.filter((e) => !isKiosk(e)),
+    date,
+    shiftType,
+  });
+
+  // Смена могла остаться открытой с прошлых суток или с другого типа смены —
+  // тогда по текущему слоту её не найти. Отдаём и такие, иначе закрыть нечем.
+  const orphanActive = shifts.filter(
+    (s) => s.status === 'active' && s.id !== states.box1.shiftId && s.id !== states.box2.shiftId,
+  );
+
+  return NextResponse.json({
+    box1: { shiftId: states.box1.shiftId, isShiftActive: states.box1.isShiftActive },
+    box2: { shiftId: states.box2.shiftId, isShiftActive: states.box2.isShiftActive },
+    orphanActive: orphanActive.map((s) => ({
+      id: s.id, date: s.date, boxNumber: s.boxNumber, shiftType: s.shiftType,
+    })),
+  });
+}
 
 function uniqueEmployeeIds(employeeIds: unknown): string[] {
   if (!Array.isArray(employeeIds)) {

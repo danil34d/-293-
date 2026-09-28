@@ -9,6 +9,7 @@ import { verifyCookieValue } from '@/lib/employee-auth-cookie';
 import { getAllFinanceDataForEmployee } from '@/lib/data';
 import { generateSalaryReport } from '@/services/salary-calculator';
 import { FinanceMobile } from './components/FinanceMobile';
+import { transactionSign } from '@/lib/employee-transaction';
 
 async function getCurrentEmployee(): Promise<Employee | null> {
   const cookieStore = cookies();
@@ -86,8 +87,7 @@ export default async function MyFinancePage() {
 
     // Баланс
     const txnSum = transactions.reduce((s: number, t: any) => {
-      const sign = (t.type === 'bonus' || t.type === 'debt_write_off') ? 1 : -1;
-      return s + sign * t.amount;
+      return s + transactionSign(t.type) * t.amount;
     }, 0);
     balance = monthEarned + txnSum;
 

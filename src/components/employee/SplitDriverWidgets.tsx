@@ -172,7 +172,7 @@ export function DriverPickerModal({
           {/* Existing drivers list */}
           {drivers.length > 0 && (
             <div>
-              <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">
+              <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-2">
                 Водители контрагента ({drivers.length})
               </div>
               <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
@@ -224,12 +224,12 @@ export function DriverPickerModal({
 
           {/* Add new driver inline */}
           <div className="rounded-lg border-2 border-dashed border-violet-300 bg-violet-50/40 p-3">
-            <div className="text-[10px] uppercase tracking-wider font-bold text-violet-700 mb-2">
+            <div className="text-[11px] uppercase tracking-wider font-bold text-violet-700 mb-2">
               + Новый водитель
             </div>
             <div className="space-y-2">
               <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">ФИО *</label>
+                <label className="block text-[11px] font-bold text-slate-600 mb-0.5">ФИО *</label>
                 <input
                   type="text"
                   value={newDriverName}
@@ -240,7 +240,7 @@ export function DriverPickerModal({
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Телефон</label>
+                <label className="block text-[11px] font-bold text-slate-600 mb-0.5">Телефон</label>
                 <input
                   type="text"
                   value={newDriverPhone}
@@ -258,7 +258,7 @@ export function DriverPickerModal({
                 Добавить и выбрать
               </button>
             </div>
-            <div className="mt-2 text-[10px] text-slate-500 leading-snug">
+            <div className="mt-2 text-[11px] text-slate-500 leading-snug">
               Новый водитель привязан только к этой мойке — в справочник CounterAgent добавьте его
               через /counter-agents/[id]/edit → Автопарк → Водители.
             </div>

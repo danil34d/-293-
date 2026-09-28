@@ -10,6 +10,7 @@ import {
   Droplets, Activity, Briefcase, Clock,
 } from "lucide-react";
 import { ROLE_LABELS, type Employee, type EmployeeRole, type SalaryScheme, type WashEvent } from "@/types";
+import { isKiosk as isKioskDevice } from '@/lib/employee-role';
 
 /**
  * Phase 39 / V2-#9 «employees inline-expand»:
@@ -210,7 +211,10 @@ export function ExpandedEmployee({ employee, salaryScheme, metrics }: Props) {
 
   // Computed
   const isOwner = employee.id === "emp_manager_admin";
-  const isKiosk = employee.role === "kiosk";
+  // 🔥 ФИКС 2026-08-09: от этого флага зависит isProtected — защита записи
+  // от правки и архивации. Роль kiosk1 сюда не попадала, и карточка
+  // терминала бокса оставалась без защиты.
+  const isKiosk = isKioskDevice(employee);
   const isProtected = isOwner || isKiosk;
   const isArchived = !!employee.archived;
   const washesMonth = metrics?.washesThisMonth ?? 0;

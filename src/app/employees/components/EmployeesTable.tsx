@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { SafetyBar, HazardPill } from "@/components/admin";
 import { EmployeeDeleteModal } from "./EmployeeDeleteModal";
 import { ExpandedEmployee } from "./ExpandedEmployee";
+import { isKiosk as isKioskDevice } from '@/lib/employee-role';
 
 export interface EmployeesTableProps {
   employees: Employee[];
@@ -84,7 +85,14 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
       if (filter === "active" && e.archived) return false;
       if (filter === "archived" && !e.archived) return false;
       // Filter by role
-      if (roleFilter !== "all" && e.role !== roleFilter) return false;
+      // 🔥 ФИКС 2026-08-09: вкладка «Терминалы» сравнивала роль с литералом
+      // "kiosk", а у терминала бокса роль "kiosk1" — вкладка была всегда пустой,
+      // при том что сама запись висела в «Все роли». Устройства ищем помощником.
+      if (roleFilter === "kiosk") {
+        if (!isKioskDevice(e)) return false;
+      } else if (roleFilter !== "all" && e.role !== roleFilter) {
+        return false;
+      }
       // Search
       if (search) {
         const s = search.toLowerCase();
@@ -100,7 +108,7 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
 
   const activeCount = employees.filter((e) => !e.archived).length;
   const archivedCount = employees.filter((e) => !!e.archived).length;
-  const protectedCount = employees.filter((e) => e.id === "emp_manager_admin" || e.role === "kiosk").length;
+  const protectedCount = employees.filter((e) => e.id === "emp_manager_admin" || isKioskDevice(e)).length;
 
   async function handleUnarchive(emp: Employee) {
     try {
@@ -238,10 +246,15 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
             <tbody className="divide-y divide-gray-100">
               {filtered.map((e) => {
                 const isArchived = !!e.archived;
+                // 🔥 ФИКС 2026-08-09: от isProtected зависят кнопки «Финансы» и
+                // «Архивировать/Удалить». Сравнение с литералом пропускало
+                // 'kiosk1' — карточку терминала бокса можно было заархивировать.
                 const isProtected =
-                  e.id === "emp_manager_admin" || e.role === "kiosk";
+                  e.id === "emp_manager_admin" || isKioskDevice(e);
                 const isOwner = e.id === "emp_manager_admin";
-                const isKiosk = e.role === "kiosk";
+                // 🔥 ФИКС 2026-08-09: было isKioskDevice(e) — терминал
+                // с ролью kiosk1 не опознавался как устройство.
+                const isKiosk = isKioskDevice(e);
                 const noLogin = !e.username && !isProtected;
                 const isExpanded = expandedId === e.id;
                 return (
@@ -281,7 +294,7 @@ export function EmployeesTable({ employees, salarySchemes, metrics = {} }: Emplo
                         style={
                           e.role === "admin"
                             ? { background: "#fef3c7", color: "#92400e" }
-                            : e.role === "kiosk"
+                            : isKioskDevice(e)
                               ? { background: "#ede9fe", color: "#5b21b6" }
                               : { background: "#dbeafe", color: "#1d4ed8" }
                         }

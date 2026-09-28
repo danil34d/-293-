@@ -453,7 +453,11 @@ export function ZorinWashLogClient({
           <table className="w-full">
             <thead>
               <tr className="zorin-table-header">
-                <th className="w-[110px]">Дата</th>
+                {/* 🔥 2026-08-09: было просто «Дата» и голое время — непонятно,
+                    заезд это или момент оформления. Сортировка идёт по заезду
+                    (getDisplayDate: logTimeline.entryAt → exitAt → timestamp),
+                    поэтому так и подписываем. */}
+                <th className="w-[110px]">Заезд машины</th>
                 <th>Клиент / Машина</th>
                 <th>Услуги</th>
                 <th>Исполнители</th>
@@ -580,6 +584,7 @@ export function ZorinWashLogClient({
                             {format(entryDate, 'dd.MM.yyyy', { locale: ru })}
                           </div>
                           <div className="zorin-date-time">
+                            <span className="text-slate-400 font-normal">заехала </span>
                             {format(entryDate, 'HH:mm', { locale: ru })}
                           </div>
                           {cameraWashDuration && (
@@ -597,6 +602,22 @@ export function ZorinWashLogClient({
                               Выехала: {format(exitDate, 'HH:mm', { locale: ru })}
                             </div>
                           )}
+                          {/* Момент оформления показываем только когда он заметно
+                              позже заезда — иначе это лишний шум. Так видно мойки,
+                              оформленные задним числом. */}
+                          {(() => {
+                            if (!event.createdAt) return null;
+                            const created = new Date(event.createdAt);
+                            if (Number.isNaN(created.getTime())) return null;
+                            const lagMin = Math.round((created.getTime() - entryDate.getTime()) / 60000);
+                            if (lagMin < 30) return null;
+                            return (
+                              <div className="text-[11px] text-amber-700 leading-tight">
+                                Оформлена: {format(created, 'HH:mm', { locale: ru })}
+                                <span className="text-slate-400"> (+{lagMin < 60 ? `${lagMin} мин` : `${Math.floor(lagMin / 60)} ч`})</span>
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div className="zorin-date-icons">
                           {(event.driverComments && event.driverComments.length > 0) && (

@@ -36,10 +36,26 @@ export default async function KioskOrderPage() {
     (event) => event.timestamp?.startsWith(today) && isCompletedWashEvent(event)
   );
 
+  // 🔥 ФИКС 2026-08-09: shiftId вычисляется прямо здесь (resolveCurrentBoxShiftStates)
+  // и ВЫБРАСЫВАЛСЯ — из состояния брали только .employees. Поэтому мойки,
+  // оформленные с терминала, уходили в базу без привязки к смене: 75 записей
+  // из 75 с shiftId = NULL за всю историю. Админский /workstation этот же проп
+  // передаёт правильно (workstation/page.tsx:41) — расходились две страницы,
+  // рендерящие один и тот же компонент.
   return (
     <KioskOrderClient
       box1Employees={boxShiftStates.box1.employees}
       box2Employees={boxShiftStates.box2.employees}
+      shiftStateByBox={{
+        box1: {
+          shiftId: boxShiftStates.box1.shiftId,
+          isShiftActive: boxShiftStates.box1.isShiftActive,
+        },
+        box2: {
+          shiftId: boxShiftStates.box2.shiftId,
+          isShiftActive: boxShiftStates.box2.isShiftActive,
+        },
+      }}
       todayEvents={todayEvents}
       allEmployees={realEmployees}
       initialPendingVehicles={pendingCameraVehicles}

@@ -16,6 +16,8 @@ export default function AIAssistantPageClient() {
   const [glmApiKeySet, setGlmApiKeySet] = useState(false);
   const [keySource, setKeySource] = useState<'env' | 'db' | 'none'>('none');
   const [keySourceWarning, setKeySourceWarning] = useState<string | null>(null);
+  const [encryptedAtRest, setEncryptedAtRest] = useState(false);
+  const [encryptionAvailable, setEncryptionAvailable] = useState(false);
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [keyMessage, setKeyMessage] = useState<string | null>(null);
 
@@ -27,6 +29,8 @@ export default function AIAssistantPageClient() {
         setGlmApiKeySet(!!data.glmApiKeySet);
         setKeySource(data.keySource ?? 'none');
         setKeySourceWarning(data.keySourceWarning ?? null);
+        setEncryptedAtRest(!!data.encryptedAtRest);
+        setEncryptionAvailable(!!data.encryptionAvailable);
       } catch (error) {
         setKeyMessage('Не удалось загрузить статус API ключа.');
       }
@@ -56,6 +60,8 @@ export default function AIAssistantPageClient() {
       if (!response.ok) throw new Error(data.error || 'Ошибка сохранения');
       setGlmApiKeySet(!!data.glmApiKeySet);
       setKeySource(data.keySource ?? 'none');
+      setEncryptedAtRest(!!data.encryptedAtRest);
+      setEncryptionAvailable(!!data.encryptionAvailable);
       // Phase 19: показываем warnings из backend если есть
       const warnText = Array.isArray(data.warnings) && data.warnings.length > 0
         ? data.warnings.join(' · ')
@@ -204,9 +210,26 @@ export default function AIAssistantPageClient() {
                   ENV (защищён)
                 </span>
               )}
-              {keySource === 'db' && (
+              {keySource === 'db' && !encryptedAtRest && (
                 <span style={{ marginLeft: 8, padding: '2px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 700 }}>
                   SQLite (plain text)
+                </span>
+              )}
+              {keySource === 'db' && encryptedAtRest && (
+                <span style={{ marginLeft: 8, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#15803d', fontSize: 10, fontWeight: 700 }}>
+                  SQLite (encrypted)
+                </span>
+              )}
+              {/* Phase 61: «Encrypted at rest» chip — показываем, когда DB-значение реально зашифровано */}
+              {encryptedAtRest && (
+                <span title="AES-256-GCM, master key из env AI_KEY_ENCRYPTION_SECRET" style={{ marginLeft: 6, padding: '2px 6px', borderRadius: 4, background: '#d1fae5', color: '#065f46', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  🔒 Encrypted at rest
+                </span>
+              )}
+              {/* Phase 61: hint когда master key задан, но в БД лежит plain (миграция не выполнена) */}
+              {keySource === 'db' && !encryptedAtRest && encryptionAvailable && (
+                <span title="POST /api/admin/encrypt-secrets чтобы перешифровать" style={{ marginLeft: 6, padding: '2px 6px', borderRadius: 4, background: '#dbeafe', color: '#1e40af', fontSize: 10, fontWeight: 700 }}>
+                  Migration available
                 </span>
               )}
             </div>

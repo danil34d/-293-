@@ -11,6 +11,7 @@ import { generateSalaryReport } from '@/services/salary-calculator';
 import { EmployeeCabinetClient } from './components/EmployeeCabinetClient';
 import { verifyCookieValue } from '@/lib/employee-auth-cookie';
 import type { Shift, WashEvent, EmployeeTransaction } from '@/types';
+import { transactionSign } from '@/lib/employee-transaction';
 
 // Heuristic: Какой shift активен прямо сейчас (для employee)
 function findActiveShift(myShifts: Shift[], now: Date): Shift | null {
@@ -69,11 +70,7 @@ function thisMonthWashes(allWashes: WashEvent[], employeeId: string, now: Date):
 }
 
 function computeBalance(transactions: EmployeeTransaction[], earnedFromWashes: number): number {
-  // Сумма знаком: payment/loan/purchase = -, bonus/debt_write_off = +
-  const txnSum = transactions.reduce((sum, t) => {
-    const sign = t.type === 'bonus' || t.type === 'debt_write_off' ? 1 : -1;
-    return sum + sign * t.amount;
-  }, 0);
+  const txnSum = transactions.reduce((sum, t) => sum + transactionSign(t.type) * t.amount, 0);
   return earnedFromWashes + txnSum;
 }
 

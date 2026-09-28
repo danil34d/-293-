@@ -1,138 +1,87 @@
 # Менеджер автомойки
 
-Локальная система управления автомойкой: учёт моек, сотрудники, смены, зарплата, расходы, склад химии, контрагенты, агрегаторы, акты и аналитика. Дополнительно — Telegram-бот для сотрудников с чатовым оформлением мойки и уведомлениями.
+Система управления автомойкой: учёт моек, сотрудники, смены, зарплата, расходы, склад химии, контрагенты, агрегаторы, счета и аналитика. Рядом — терминал в боксе (Android APK), кабинет сотрудника, Telegram-бот и дашборд камер с распознаванием номеров.
+
+> Обновлено 28.09.2026. Документы в `docs/` написаны в марте 2026, до перехода на PostgreSQL, — это история, а не инструкция. Живая база знаний — Obsidian vault `D:\автомойка\ВАЖНОЕ-АВТОМОЙКА 01\`.
 
 ## Технологии
 
-- **Frontend:** Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, shadcn/ui (Radix)
-- **Backend:** Next.js API Routes (основной режим) / Go (Fiber) — опциональный
-- **Данные:** JSON-файлы (`data/`) + SQLite (AI-ассистент)
-- **AI:** GLM API (ассистент, фоновый анализ), Genkit
-- **Telegram:** Node.js worker (`telegram-bot/worker.mjs`) — бот сотрудника
-- **OCR:** Python-скрипт распознавания номеров (`scripts/plate_reader.py`)
-- **Инфраструктура:** Cloudflare Tunnel (для внешнего доступа), Docker (опционально)
+- **Приложение:** Next.js 14 (App Router) — страницы и API-роуты, React 18, TypeScript, Tailwind, shadcn/ui (Radix)
+- **Данные:** PostgreSQL через Prisma 5 (`prisma/schema.prisma`, 28 моделей). SQLite — только для AI-ассистента (`data/ai-assistant.db`)
+- **AI:** GLM API (ассистент, фоновый анализ), Genkit (AI-отчёт)
+- **Telegram:** Node.js worker (`telegram-bot/worker.mjs`)
+- **Камеры и OCR:** отдельный FastAPI-дашборд на машине с камерами (`CAMERA_DASHBOARD_BASE_URL`, по умолчанию `192.168.1.59:8050`)
 
-## Быстрый старт (Windows)
+## Где что работает
 
-1. Установите **Node.js 20+**.
-2. Скопируйте `.env.example` → `.env.local` и заполните значения.
-3. Для Telegram-бота: скопируйте `telegram-bot/.env.example` → `telegram-bot/.env.local`, заполните токен и привязки.
-4. Запуск: **`ЗАПУСК-ПРОЕКТА.bat`** (двойной клик).
-5. Пересборка (после обновлений): **`ПЕРЕСБОРКА.bat`** (двойной клик).
-6. Остановка: `STOP.bat` (или `STOP.ps1`).
-7. Приложение доступно на `http://localhost:3000`.
+| Что | Где |
+|---|---|
+| Прод | `192.168.1.150:3000`, systemd-сервис `carwash-web`, код в `/srv/carwash/app` (`/home/carwash/Project` — symlink на него) |
+| Конфиг прода | `/etc/default/carwash` (`DATA_SOURCE`, `DATABASE_URL`, `COOKIE_SECRET`, …) |
+| База | PostgreSQL `carwash` на том же сервере |
+| Терминал | APK `com.carwash.local.kiosk` на телефоне в боксе, открывает `/k` → `/kiosk` |
 
-## Linux
+## Слой данных — правило
 
-Для Linux/VPS используйте отдельную инструкцию: `LINUX-DEPLOY.md`.
+Код ходит в данные **только через `@/lib/data`** (`src/lib/data/index.ts`). Он выбирает адаптер по `DATA_SOURCE`:
 
-Коротко:
+- `postgres` → `src/lib/data/pg-adapter.ts` — **прод**;
+- `json` → `src/lib/data-loader.ts` — фолбэк для локальной разработки без базы (не удалять).
 
-1. Не переносите `node_modules` из Windows на Linux.
-2. Поднимайте проект на обычном Linux-сервере/VPS с постоянным диском, а не на статическом/serverless-хостинге.
-3. Для первичной подготовки используйте:
+Модули данных — серверные и **не помечаются `'use server'`**: с этой директивой каждая экспортируемая функция становится server action без проверки ролей. Клиентские компоненты получают данные только через API-роуты с `requireAdmin` / `requireAuth` (`src/lib/server-auth.ts`).
+
+Роли: `admin`, `employee`, `kiosk` / `kiosk1` (терминал — устройство, не человек; проверять через `isKiosk()` из `src/lib/employee-role.ts`, не литералом).
+
+## Разработка
 
 ```bash
-bash scripts/linux-prepare.sh --with-ocr
+npm install
+cp .env.example .env.local   # заполнить DATABASE_URL, COOKIE_SECRET
+npx prisma generate
+npm run dev
 ```
 
-Если OCR должен остаться на другом ПК, запускайте без `--with-ocr` и выносите OCR отдельно.
+Проверки:
 
-## Структура проекта
-
-```
-├── src/
-│   ├── app/             # Страницы и API-роуты Next.js (39 страниц)
-│   ├── components/      # UI-компоненты (shadcn/ui + кастомные)
-│   ├── lib/             # Серверная логика, AI, загрузка данных, утилиты
-│   ├── types/           # TypeScript-типы доменной модели
-│   ├── contexts/        # React-контексты (Auth и др.)
-│   └── services/        # Сервисы (погода, прогнозы)
-├── backend-go/          # Go backend (Fiber), порт 8080
-├── telegram-bot/        # Telegram worker — бот сотрудника
-├── data/                # Рабочие данные (JSON + SQLite)
-├── scripts/             # Миграции, OCR, проверки, сборка
-├── tools/               # Cloudflare Tunnel (cloudflared)
-├── доки/                # Эксплуатационная документация
-├── ЗАПУСК-ПРОЕКТА.bat   # Главный файл запуска (двойной клик)
-├── ПЕРЕСБОРКА.bat       # Полная пересборка после обновлений
-├── START.bat / .ps1     # Техническй запуск (вызывается из ЗАПУСК-ПРОЕКТА.bat)
-├── STOP.bat / .ps1      # Остановка проекта
-└── START-TUNNEL.*       # Запуск Cloudflare Tunnel
+```bash
+npm run typecheck
+node --experimental-strip-types scripts/test-without-device-employees.mjs
+node --experimental-strip-types scripts/test-non-admin-paths.mjs
+node scripts/test-middleware-cookie.mjs
 ```
 
-## Основные разделы приложения
+## Деплой
 
-- **Дашборд** (`/dashboard`) — сводка, графики, активность
-- **Мойки** (`/wash-log`) — журнал моек, создание/редактирование
-- **Сотрудники** (`/employees`) — управление персоналом, финансы
-- **Смены и график** (`/schedule`, `/schedule/planning`) — планирование, авто-заполнение, заявки на обмен/назначение
-- **Расходы** (`/expenses`) — учёт расходов
-- **Склад химии** (`/inventory`) — остатки, движения
-- **Контрагенты** (`/counter-agents`) — партнёры, балансы
-- **Агрегаторы** (`/aggregators`) — агрегаторы заказов, финансы
-- **Зарплатные схемы** (`/salary-schemes`, `/salary-report`) — формулы расчёта, отчёты
-- **Счета/акты** (`/invoices`) — формирование документов
-- **Аналитика** (`/reports`, `/client-analytics`) — отчёты и клиентская аналитика
-- **AI-ассистент** (`/ai-assistant`) — чат, фоновый анализ, генерация отчётов
-- **Рабочая станция** (`/employee/workstation`) — интерфейс сотрудника
+Только по навыку Claude `prod-deploy-guard`. Коротко:
 
-## Режимы работы API
+```bash
+git push carwash:/home/carwash/Project <ветка>:<ветка>
+ssh carwash 'cd /home/carwash/Project && git merge --ff-only <ветка> && DATA_SOURCE=postgres npm run build && sudo systemctl restart carwash-web'
+```
 
-- `USE_GO_BACKEND=false` (по умолчанию) — все API обслуживает Next.js
-- `USE_GO_BACKEND=true` — большинство `/api/*` проксируется на Go backend (порт 8080)
+- ветка — от продового `main`, не от `origin/main` на GitHub (они разошлись);
+- **никогда** голый `git pull` на проде;
+- `DATA_SOURCE=postgres` обязателен при сборке;
+- после изменения `schema.prisma` — `DATA_SOURCE=postgres npx prisma generate` перед сборкой. Схема не под Prisma Migrate: SQL-изменения лежат в `prisma/migrations-pending/` и применяются вручную.
 
-## Telegram-бот
+Скрипты `ops/deploy.sh` и `ops/linux/deploy-from-repo.sh` устарели и сами останавливаются: они откатили бы прод на `origin/main`.
 
-Бот сотрудника для чатового оформления моек через команду `/wash`. Работает как отдельный Node.js worker. Взаимодействует с основным приложением через internal API (`/api/telegram/internal/*`), защищённый секретом.
+## Структура
 
-Настройка: `telegram-bot/.env.local` (токен, привязки chatId ↔ сотрудник, интервалы).
-
-## Скрипты
-
-| Скрипт | Назначение |
-|--------|-----------|
-| `ЗАПУСК-ПРОЕКТА.bat` | **Главный файл запуска** (двойной клик) |
-| `ПЕРЕСБОРКА.bat` | **Полная пересборка** (чистка + install + typecheck + build) |
-| `START.bat / .ps1` | Технический запуск (вызывается из ЗАПУСК-ПРОЕКТА.bat) |
-| `STOP.bat / .ps1` | Остановка процессов |
-| `START-TUNNEL.bat / .ps1` | Запуск Cloudflare Tunnel |
-| `STOP-TUNNEL.bat / .ps1` | Остановка Tunnel |
-| `scripts/rebuild-safe.ps1` | Полная пересборка (stop → clean → install → typecheck → build) |
-| `scripts/cleanup-safe.ps1` | Очистка генерируемых артефактов |
-| `scripts/health-check.ps1` | Проверка здоровья страниц и API |
-| `npm run migrate:json-v2:dry-run` | Миграция данных — пробный прогон |
-| `npm run migrate:json-v2:apply` | Миграция данных — применение |
+```
+src/
+  app/          страницы и API-роуты
+  components/   UI-компоненты
+  lib/          данные (lib/data), авторизация, роли, утилиты
+  services/     бизнес-логика (зарплата, смены, отчёты, Telegram)
+  types/        доменные типы
+prisma/         схема и ручные SQL-миграции
+telegram-bot/   worker бота сотрудника
+scripts/        проверки, миграция JSON → PG (история), OCR
+ops/            устаревшие скрипты деплоя и Docker (не используются)
+docs/           документация марта 2026 (история)
+```
 
 ## Переменные окружения
 
-Два файла с секретами (не передавать третьим лицам):
-
-- **`.env.local`** (корень) — настройки backend, AI (GLM API key), Go backend URL
-- **`telegram-bot/.env.local`** — токен бота, секрет, привязки сотрудников, интервалы
-
-Пример: см. `.env.example` и `telegram-bot/.env.example`.
-
-## Данные
-
-- `data/*` — файловое хранилище сущностей (JSON-файлы по папкам)
-- `data/ai-assistant.db` — SQLite для AI-чатов и фоновых анализов
-- `data/_meta/schema-version.json` — версия схемы (`json-v2`)
-- `data-backups/` — автоматические бэкапы при миграциях
-
-## Документация
-
-Подробная документация в папке `доки/`:
-
-| Файл | Содержание |
-|------|-----------|
-| `00-ПЛАН-ЗАПУСКА.md` | Инструкция по запуску |
-| `01-КАРТА-ПРОЕКТА.md` | Структура, модули, API |
-| `02-ШПАРГАЛКИ.md` | Быстрые команды и диагностика |
-| `03-ЖУРНАЛ-РАБОТ.md` | Журнал технических работ |
-| `04-СТАТУС-СИСТЕМЫ.md` | Текущий статус и риски |
-| `05-ПЛАН-УЛУЧШЕНИЙ.md` | План развития |
-| `06-ЖУРНАЛ-БД-ВЗАИМОДЕЙСТВИЯ.md` | Карта данных и связи сущностей |
-| `07-ВЕБ-TG-ЖУРНАЛ.md` | Архитектура веб + Telegram |
-| `08-ГРАФИК-СМЕН-И-ПЛАНИРОВАНИЕ.md` | Смены, авто-fill, заявки |
-| `09-ПОГОДА-И-ПАТТЕРНЫ.md` | Погодные рекомендации для планирования |
+Пример — `.env.example` и `telegram-bot/.env.example`. На проде — `/etc/default/carwash`. Секреты не коммитить.

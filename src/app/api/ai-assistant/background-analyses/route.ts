@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackgroundAnalyses } from '@/lib/db/ai-database';
 import { triggerAnalysis } from '@/lib/ai/cron-scheduler';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAdmin } from '@/lib/server-auth';
 import { checkAndIncrementAIQuota } from '@/lib/ai/rate-limit';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  * Get background analyses
  */
 export async function GET(request: NextRequest) {
-  const auth = requireAuth();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
  * Manually trigger a background analysis
  */
 export async function POST(request: NextRequest) {
-  const auth = requireAuth();
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   // Phase 18 / finding #22: rate-limit для manual trigger background analysis

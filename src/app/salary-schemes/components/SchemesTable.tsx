@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import type { SalaryScheme, Aggregator, CounterAgent, Employee } from "@/types";
+import { isKiosk } from "@/lib/employee-role";
 import { HazardPill, SafetyBar, Impact } from "@/components/admin";
 import {
   Dialog,
@@ -80,7 +81,7 @@ export function SchemesTable({
     const scheme = schemes.find((s) => s.id === e.salarySchemeId);
     return scheme && !scheme.archived;
   }).length;
-  const totalActiveEmployees = employees.filter((e) => e.role !== "kiosk" && e.role !== "admin").length;
+  const totalActiveEmployees = employees.filter((e) => !isKiosk(e) && e.role !== "admin").length;
 
   // Modal state
   const [schemeToArchive, setSchemeToArchive] = React.useState<SalaryScheme | null>(null);

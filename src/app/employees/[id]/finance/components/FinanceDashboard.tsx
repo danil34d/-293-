@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { DialogDescription } from "@/components/ui/dialog";
 import { EarningsChart } from "./EarningsChart";
 import { EmployeeCanistersCard } from "./EmployeeCanistersCard";
-import { getAllFinanceDataForEmployee } from "@/lib/data-loader";
+import { fetchJson } from "@/lib/fetch-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { CommentDialog } from "@/components/common/CommentDialog";
@@ -59,6 +59,7 @@ const transactionTypeDetails: Record<EmployeeTransactionType, { label: string; i
     bonus: { label: 'Премия', icon: Gift, sign: 1, color: 'text-sky-600' },
     loan: { label: 'Долг/Аванс', icon: MinusCircle, sign: -1, color: 'text-orange-600' },
     purchase: { label: 'Покупка', icon: MinusCircle, sign: -1, color: 'text-red-600' },
+    'salary-deduction': { label: 'Удержание из ЗП', icon: MinusCircle, sign: -1, color: 'text-red-600' },
     debt_write_off: { label: 'Списание долга', icon: CircleOff, sign: 1, color: 'text-green-600' },
 };
 
@@ -234,7 +235,7 @@ function AddTransactionDialog({ employee, isSubmitting, setIsSubmitting, onTrans
                      <div className="space-y-2">
                         <Label>Тип операции</Label>
                         <div className="grid grid-cols-3 gap-2">
-                          {(Object.keys(transactionTypeDetails) as EmployeeTransactionType[]).filter(key => key !== 'purchase').map(key => {
+                          {(Object.keys(transactionTypeDetails) as EmployeeTransactionType[]).filter(key => key !== 'purchase' && key !== 'salary-deduction').map(key => {
                             const { label, icon: Icon } = transactionTypeDetails[key];
                             return (
                                <Button 
@@ -554,7 +555,7 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
         if (initialData) return; // Data was passed in, no need to fetch
         try {
             setDataLoadingError(null);
-            const data = await getAllFinanceDataForEmployee(employee.id);
+            const data = await fetchJson<AllData>(`/api/employees/${encodeURIComponent(employee.id)}/finance-data`);
             setAllData(data);
             setTransactions(data.initialTransactions);
         } catch (e: any) {
@@ -649,6 +650,7 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
                 case 'bonus': summary.bonuses += t.amount; break;
                 case 'loan':
                 case 'purchase':
+                case 'salary-deduction':
                     summary.loansAndPurchases += t.amount; break;
                 case 'debt_write_off':
                     summary.debtWriteOffs += t.amount; break;

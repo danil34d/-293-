@@ -9,6 +9,10 @@ import { saveEntity } from '@/lib/data/write-helpers';
 
 
 export async function GET() {
+  // Только админ (ФИКС 2026-09-28: раньше отдавалось любой учётке — расходы — приватные финансы владельца)
+  const auth = requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const expenses = await getExpensesData();
     return NextResponse.json(expenses);

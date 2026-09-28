@@ -151,7 +151,7 @@ function RetailSection({
             /settings
           </Link>{' '}
           (tab «Прайс-лист»). Изменения применяются только к новым мойкам — исторические цены
-          сохраняются (audit-trail, Phase 41/АРХ-#18).
+          сохраняются.
         </div>
         <Link
           href="/settings"
@@ -400,7 +400,7 @@ function SplitsSection({
         <div className="text-[12px] text-violet-900 leading-snug">
           <b>Сплит-услуги</b> — особое распределение дохода для B2B контрагентов.
           Контрагент платит цену → водителю фикс-бонус (DriverKickback) → мойщику % от остатка →
-          мойке остаток (прибыль). Workflow: pending → ready → paid через Phase 50.
+          мойке остаток (прибыль). Бонус водителю проходит статусы: ожидает → к выплате → выплачен.
         </div>
       </div>
 

@@ -6,6 +6,7 @@ import { getEmployeesData } from '@/lib/data';
 import { normalizeLicensePlate } from '@/lib/utils';
 import { createWashEvent } from '@/services/wash-event-create-service';
 import type { WashEvent } from '@/types';
+import { isKiosk } from '@/lib/employee-role';
 
 interface DismissCameraPendingPayload {
   dirName: string;
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     }
 
     const employees = await getEmployeesData();
-    const employee = employees.find((item) => item.id === employeeId && item.role !== 'kiosk');
+    const employee = employees.find((item) => item.id === employeeId && !isKiosk(item));
     if (!employee) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
     }

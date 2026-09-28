@@ -17,7 +17,8 @@ import {
   saveInventoryData,
   updateBalance,
 } from '@/lib/data/write-helpers';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAdmin, requireAuth } from '@/lib/server-auth';
+import { hasAdminAccess, isKioskTerminal } from '@/lib/employee-role';
 import { isCompletedWashEvent } from '@/lib/wash-event-status';
 
 /**
@@ -136,6 +137,12 @@ export async function GET(request: Request, { params }: { params: { id: string }
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   const auth = requireAuth();
   if (auth instanceof NextResponse) return auth;
+  // 🔥 ФИКС 2026-09-28: раньше хватало любого входа — сотрудник мог поменять
+  // сумму, исполнителей или клиента любой мойки (а с ними зарплату и баланс).
+  // Правят только админ и терминал бокса kiosk1 (см. employee-role.ts).
+  if (!hasAdminAccess(auth) && !isKioskTerminal(auth)) {
+    return NextResponse.json({ error: 'Править мойку может только администратор' }, { status: 403 });
+  }
 
   const { id } = params;
   if (!id) {
@@ -163,6 +170,60 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     if (!updatedData.id || updatedData.id !== id) {
       updatedData.id = id;
+    }
+
+    // 🔥 ФИКС 2026-08-09: денежный инвариант проверяем на сервере, а не надеемся
+    // на клиента. Розничная мойка не может быть привязана к агрегатору или
+    // контрагенту: иначе выручка идёт в кассу И одновременно висит на балансе
+    // клиента. Клиент присылал sourceId при paymentMethod='cash' — поймано на
+    // живой записи 09.08.
+    const RETAIL_METHODS = ['cash', 'card', 'transfer'];
+    if (RETAIL_METHODS.includes(updatedData.paymentMethod)) {
+      if (updatedData.sourceId || updatedData.sourceName) {
+        console.warn(
+          `[wash-events PUT] розничная оплата '${updatedData.paymentMethod}' пришла с источником `
+          + `'${updatedData.sourceId}' — очищаю (id=${id})`,
+        );
+      }
+      updatedData.sourceId = undefined;
+      updatedData.sourceName = undefined;
+      updatedData.priceListName = undefined;
+    }
+
+    // 🔥 ФИКС 2026-08-09: зеркальный инвариант. Безналичный источник обязан быть
+    // назван: иначе мойка числится за агрегатором, но баланс не трогается —
+    // updateBalance ниже вызывается только `if (newSourceId)`, и сумма пропадает.
+    // 🔥 ФИКС 2026-08-09 (найдено ревью): проверялось только наличие sourceId,
+    // но не его ТИП. При переключении «Агрегатор» → «Контрагент» старый
+    // sourceId оставался, и мойка сохранялась как договорная с id агрегатора:
+    // updateBalance списывал деньги с агрегатора (он смотрит на префикс id),
+    // а запись не попадала ни в отчёт агрегатора (paymentMethod не тот),
+    // ни в отчёт контрагента (id не тот). Мойка становилась «ничьей».
+    if (updatedData.paymentMethod === 'aggregator' && updatedData.sourceId
+        && !updatedData.sourceId.startsWith('agg_')) {
+      return NextResponse.json(
+        { error: 'Выбран не агрегатор. Выберите агрегатора заново.' },
+        { status: 400 },
+      );
+    }
+    if (updatedData.paymentMethod === 'counterAgentContract' && updatedData.sourceId
+        && !updatedData.sourceId.startsWith('agent_')) {
+      return NextResponse.json(
+        { error: 'Выбран не контрагент. Выберите контрагента заново.' },
+        { status: 400 },
+      );
+    }
+
+    const SOURCE_METHODS = ['aggregator', 'counterAgentContract'];
+    if (SOURCE_METHODS.includes(updatedData.paymentMethod) && !updatedData.sourceId) {
+      return NextResponse.json(
+        {
+          error: updatedData.paymentMethod === 'aggregator'
+            ? 'Не выбран агрегатор — мойку не на кого списать.'
+            : 'Не выбран контрагент — мойку не на кого списать.',
+        },
+        { status: 400 },
+      );
     }
 
     // Migration logic for data coming from client
@@ -216,7 +277,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 }
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-  const auth = requireAuth();
+  // Удаление мойки необратимо и двигает баланс клиента — только админ (ФИКС 2026-09-28)
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   const { id } = params;

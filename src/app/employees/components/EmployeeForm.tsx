@@ -8,6 +8,7 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { normalizeLicensePlate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Save, X, UserCog, KeyRound, WalletCards, Loader2, ShieldCheck } from "lucide-react";
 import type { Employee, EmployeeRole, SalaryScheme } from "@/types";
@@ -28,8 +29,11 @@ const employeeFormSchema = z.object({
   phone: z.string().min(5, "Телефон должен содержать не менее 5 символов."),
   paymentDetails: z.string().min(10, "Платежные реквизиты должны содержать не менее 10 символов."),
   hasCar: z.boolean(),
+  carPlates: z.array(z.string()).default([]),
   canSwapShifts: z.boolean(),
-  role: z.enum(["admin", "employee", "kiosk"]).default("employee"),
+  // 🔥 2026-08-09: без kiosk1 селект показывал «Сотрудник» для терминала,
+  // а выбор «Киоск (терминал, бокс 1)» из ROLE_LABELS валился на валидации.
+  role: z.enum(["admin", "employee", "kiosk", "kiosk1"]).default("employee"),
   telegramChatId: z.string().regex(/^-?\d+$/, "Telegram ID должен содержать только цифры.").optional().or(z.literal('')),
   username: z.string().min(3, "Логин должен быть не менее 3 символов.").regex(/^[a-z0-9_]+$/i, "Логин может содержать только латинские буквы, цифры и нижнее подчеркивание.").optional().or(z.literal('')),
   password: z.string().min(6, "Пароль должен быть не менее 6 символов.").optional().or(z.literal('')),
@@ -45,7 +49,7 @@ interface EmployeeFormProps {
 }
 
 function normalizeEmployeeFormRole(role: EmployeeRole | undefined): EmployeeFormRole {
-  if (role && ["admin", "employee", "kiosk"].includes(role)) {
+  if (role && ["admin", "employee", "kiosk", "kiosk1"].includes(role)) {
     return role as EmployeeFormRole;
   }
   return "employee";
@@ -54,6 +58,7 @@ function normalizeEmployeeFormRole(role: EmployeeRole | undefined): EmployeeForm
 export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const [plateDraft, setPlateDraft] = useState('');
   const [salarySchemes, setSalarySchemes] = useState<SalaryScheme[]>([]);
   const [isLoadingSchemes, setIsLoadingSchemes] = useState(true);
 
@@ -113,6 +118,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
       phone: "",
       paymentDetails: "",
       hasCar: false,
+      carPlates: [],
       canSwapShifts: true, // По умолчанию обмен разрешён
       role: "employee",
       telegramChatId: "",
@@ -128,6 +134,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
       form.reset({
         ...initialData,
         role: normalizeEmployeeFormRole(initialData.role),
+        carPlates: initialData.carPlates ?? [],
         telegramChatId: initialData.telegramChatId || "",
         password: "", // never pre-fill — admin enters new password or leaves empty
         username: initialData.username || "",
@@ -231,9 +238,28 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
     return changes;
   }
 
+  /** Номер приводим к канону (латиница) сразу — дубли кириллица/латиница не нужны. */
+  function addPlate(current: string[], onChange: (v: string[]) => void) {
+    const plate = normalizeLicensePlate(plateDraft);
+    if (!plate) return;
+    if (!current.includes(plate)) onChange([...current, plate]);
+    setPlateDraft('');
+  }
+
   async function performSave(data: EmployeeFormValues) {
     const currentEmployeeId = employeeId || `emp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const enforcedRole: EmployeeRole = normalizeEmployeeFormRole(data.role);
+    // 🔥 ФИКС 2026-08-09: форма знает только admin/employee/kiosk, а в базе есть
+    // ещё роль-устройство 'kiosk1' (терминал бокса). normalizeEmployeeFormRole
+    // сводила её к 'employee' — то есть простое сохранение карточки терминала
+    // молча лишало его прав. Раньше это не стреляло только потому, что адаптер
+    // и так отдавал 'employee' (см. БАГИ-СПОСОБ-ОПЛАТЫ-2026-08-09). Теперь роль
+    // читается верно, и форму нужно научить её не трогать.
+    const initialRole = initialData?.role as string | undefined;
+    const roleIsBeyondForm = !!initialRole
+      && !['admin', 'employee', 'kiosk', 'kiosk1'].includes(initialRole);
+    const enforcedRole: EmployeeRole = roleIsBeyondForm
+      ? (initialRole as EmployeeRole)
+      : normalizeEmployeeFormRole(data.role);
 
     const employeeToSave: Employee = {
       id: currentEmployeeId,
@@ -241,6 +267,7 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
       phone: data.phone,
       paymentDetails: data.paymentDetails,
       hasCar: data.hasCar,
+      carPlates: data.carPlates,
       canSwapShifts: data.canSwapShifts,
       role: enforcedRole,
       telegramChatId: data.telegramChatId?.trim() ? data.telegramChatId.trim() : undefined,
@@ -435,6 +462,71 @@ export function EmployeeForm({ initialData, employeeId }: EmployeeFormProps) {
                 </FormItem>
               )}
             />
+            {/* 🔥 2026-08-09: до этого номер машины сотрудника хранить было негде —
+                только галочка «есть автомобиль», да/нет. Номер нужен, чтобы
+                система узнавала свою машину на мойке (бесплатные мойки
+                сотрудникам). Показываем только когда галочка включена. */}
+            {form.watch('hasCar') && (
+              <FormField
+                control={form.control}
+                name="carPlates"
+                render={({ field }) => (
+                  <FormItem className="rounded-lg border p-4 shadow-sm">
+                    <FormLabel className="text-base">Госномера машин</FormLabel>
+                    <FormDescription>
+                      Номер приводится к латинице автоматически — так же, как номера
+                      на мойках. Машин может быть несколько.
+                    </FormDescription>
+                    {field.value && field.value.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        {field.value.map((plate) => (
+                          <span
+                            key={plate}
+                            className="inline-flex items-center gap-1.5 rounded-md border bg-muted/50 px-2 py-1 font-mono text-sm"
+                          >
+                            {plate}
+                            <button
+                              type="button"
+                              aria-label={`Убрать номер ${plate}`}
+                              // Замер 09.08: без -mr/px/leading область нажатия была 8×20 px —
+                              // мимо промахивается и мышь, и палец. Даём 24×24.
+                              className="-mr-1 flex h-6 w-6 items-center justify-center rounded text-base leading-none text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => field.onChange(field.value.filter((p) => p !== plate))}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-2">
+                      <FormControl>
+                        <Input
+                          placeholder="Х096ТВ33"
+                          className="font-mono uppercase"
+                          value={plateDraft}
+                          onChange={(e) => setPlateDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              addPlate(field.value, field.onChange);
+                            }
+                          }}
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => addPlate(field.value, field.onChange)}
+                      >
+                        Добавить
+                      </Button>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <FormField
               control={form.control}
               name="canSwapShifts"

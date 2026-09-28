@@ -4,16 +4,17 @@
 import { useState, useEffect, useMemo } from "react";
 import { DateRange } from "react-day-picker";
 import { startOfMonth, endOfMonth, startOfDay, endOfDay, format } from "date-fns";
-import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, EmployeeTransactionType, SalaryReportData, OurCompany } from '@/types';
+import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, SalaryReportData, OurCompany } from '@/types';
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, FilePieChart, TrendingUp, Wallet, AlertTriangle, Trophy, EyeOff, Eye, Car, Building2 } from 'lucide-react';
-import { getEmployeesData, getWashEventsData, getSalarySchemesData, getAllEmployeeTransactions, getViolationsData } from "@/lib/data-loader";
+import { fetchJson } from "@/lib/fetch-json";
 import { SalaryReportRow } from "./SalaryReportRow";
 import { generateSalaryReport } from "@/services/salary-calculator";
 import { Table, TableBody, TableHeader, TableHead, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { isEmployeeAdmin, isKiosk } from "@/lib/employee-role";
+import { transactionSign } from "@/lib/employee-transaction";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TableCell, TableRow as TableRowUI, TableFooter } from "@/components/ui/table";
@@ -85,25 +86,21 @@ export function SalaryReportClient() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reportMonth]);
 
-    // Define transactionTypeDetails here
-    const transactionTypeDetails: Record<EmployeeTransactionType, { sign: number }> = {
-        payment: { sign: -1 },
-        bonus: { sign: 1 },
-        loan: { sign: -1 },
-        purchase: { sign: -1 },
-        debt_write_off: { sign: 1 },
-    };
-
     const fetchAndProcessData = async () => {
         setIsLoading(true);
         try {
-            const [allEmployeesRaw, rawWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
-                getEmployeesData(),
-                getWashEventsData(),
-                getSalarySchemesData(),
-                getAllEmployeeTransactions(),
-                getViolationsData(),
-            ]);
+            const source = await fetchJson<{
+                employees: Employee[];
+                washEvents: WashEvent[];
+                schemes: SalaryScheme[];
+                transactions: EmployeeTransaction[];
+                violations: any[];
+            }>('/api/salary-report/source');
+            const allEmployeesRaw = source.employees;
+            const rawWashEvents = source.washEvents;
+            const allSchemes = source.schemes;
+            const allTransactions = source.transactions;
+            const allViolations = source.violations;
 
             // Phase 57d: фильтрация моек по ourCompanyId. "all" = без фильтра.
             // ВАЖНО: только мойки с этим ourCompanyId попадают в расчёт ЗП — позволяет видеть
@@ -146,10 +143,7 @@ export function SalaryReportClient() {
 
                     const previousTransactions = employeeTransactions.filter(t => new Date(t.date) < periodStart);
                     previousTransactions.forEach(t => {
-                        const details = transactionTypeDetails[t.type];
-                        if (details) {
-                            balance += details.sign * t.amount;
-                        }
+                        balance += transactionSign(t.type) * t.amount;
                     });
 
                     return balance;
@@ -183,10 +177,7 @@ export function SalaryReportClient() {
 
                 const otherOperationsTotal = periodTransactions
                     .filter(t => t.type !== 'payment')
-                    .reduce((sum, t) => {
-                        const details = transactionTypeDetails[t.type as Exclude<EmployeeTransactionType, 'payment'>];
-                        return sum + (details.sign * t.amount);
-                    }, 0);
+                    .reduce((sum, t) => sum + transactionSign(t.type) * t.amount, 0);
 
                 return {
                     employee: emp,

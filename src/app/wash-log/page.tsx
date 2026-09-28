@@ -5,7 +5,8 @@ import { WashLogPageWrapper } from './components/WashLogPageWrapper';
 import { ShiftReportsTab } from './components/ShiftReportsTab';
 import { ViolationsTab } from './components/ViolationsTab';
 import { WashLogTabs } from './components/WashLogTabs';
-import { getWashEventsData, getEmployeesData, getViolationsData, getShiftReportsData, getShiftsData } from '@/lib/data';
+import { getWashEventsData, getEmployeesData, getViolationsData, getShiftReportsData, getShiftsData, getSalarySchemesData } from '@/lib/data';
+import { generateSalaryReport } from '@/services/salary-calculator';
 import { enrichWashEventsForLog } from '@/lib/wash-log-timeline';
 import type { Shift, WashEvent } from '@/types';
 
@@ -102,12 +103,13 @@ function buildSyntheticShiftReports(
 }
 
 export default async function WashLogPage() {
-  const [sourceWashEvents, employees, violations, shiftReports, shifts] = await Promise.all([
+  const [sourceWashEvents, employees, violations, shiftReports, shifts, salarySchemes] = await Promise.all([
     getWashEventsData(),
     getEmployeesData(),
     getViolationsData(),
     getShiftReportsData(),
     getShiftsData(),
+    getSalarySchemesData(),
   ]);
 
   const washEvents = await enrichWashEventsForLog(sourceWashEvents);
@@ -123,10 +125,40 @@ export default async function WashLogPage() {
   const syntheticReports = buildSyntheticShiftReports(shifts, sourceWashEvents, existingReportShiftIds);
   const combinedReports = [...shiftReports, ...syntheticReports];
 
+  // 🔥 2026-08-09: настоящий заработок за сегодня. Раньше сводка складывала
+  // «долю выручки» (totalAmount / число исполнителей) и называла это grossPay —
+  // это не зарплата, схемы (проценты, split, вычеты) не учитывались вовсе.
+  // generateSalaryReport считает по схемам и сам отсеивает роли-устройства.
+  // 🔥 2026-08-09: было toISOString() (UTC), а события сравнивались по
+  // локальной дате. Сервер в UTC+3, поэтому с 00:00 до 03:00 ключ указывал
+  // на вчера и ранние мойки выпадали из разбивки «кто сколько заработал».
+  const nowLocal = new Date();
+  const todayKey = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
+  const todaysEvents = sourceWashEvents.filter((e) => {
+    const d = new Date(e.timestamp);
+    if (Number.isNaN(d.getTime())) return false;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === todayKey;
+  });
+  let todayEarnings: Array<{ employeeId: string; employeeName: string; totalEarnings: number; washes: number }> = [];
+  try {
+    const report = await generateSalaryReport(todaysEvents, employees, salarySchemes, violations, employees);
+    todayEarnings = report
+      .map((r) => ({
+        employeeId: r.employeeId,
+        employeeName: r.employeeName,
+        totalEarnings: r.totalEarnings,
+        washes: todaysEvents.filter((e) => e.employeeIds?.includes(r.employeeId)).length,
+      }))
+      .filter((r) => r.washes > 0 || r.totalEarnings > 0)
+      .sort((a, b) => b.totalEarnings - a.totalEarnings);
+  } catch (e) {
+    console.error('[wash-log] не удалось посчитать заработок за сегодня:', e);
+  }
+
   return (
     <WashLogTabs
       washLogContent={
-        <WashLogPageWrapper initialWashEvents={washEvents} initialEmployees={employees} />
+        <WashLogPageWrapper initialWashEvents={washEvents} initialEmployees={employees} todayEarnings={todayEarnings} />
       }
       shiftsContent={
         <ShiftReportsTab reports={combinedReports} employees={employees} />

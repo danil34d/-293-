@@ -2,10 +2,11 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from 'next/server';
 import { getShiftReportsData } from '@/lib/data';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAdmin } from '@/lib/server-auth';
 
 export async function GET(request: Request) {
-  const auth = requireAuth();
+  // Только админ (ФИКС 2026-09-28: было requireAuth — разбивка кассы с безналом и агрегаторами)
+  const auth = requireAdmin();
   if (auth instanceof NextResponse) return auth;
 
   try {

@@ -7,6 +7,10 @@ import { LogOut, Monitor, Home, ClipboardList, XCircle, History, Calendar } from
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export default function KioskLayout({ children }: { children: ReactNode }) {
   const { logout } = useAuth();
@@ -14,28 +18,93 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [isEndingShift, setIsEndingShift] = useState(false);
   const [endingBox, setEndingBox] = useState<number | null>(null);
+  // 🔥 2026-08-09: закрытие смены необратимо, а подтверждения не было. Пока
+  // кнопка была заглушкой, это ничем не грозило; теперь она реально закрывает.
+  const [confirmBox, setConfirmBox] = useState<number | null>(null);
+  // 2026-09-14: «Выход» стоял вплотную к «Б2» и срабатывал с первого касания —
+  // промах мокрым пальцем выкидывал терминал на /login посреди смены.
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const isHome = pathname === '/kiosk';
   const isOrder = pathname.includes('/order');
   const isHistory = pathname.includes('/history');
   const isSchedule = pathname.includes('/schedule');
 
+  // 🔥 ФИКС 2026-08-09: кнопка была НАРИСОВАННОЙ. Обработчик чистил
+  // sessionStorage и показывал зелёный тост «смена завершена», не отправляя на
+  // сервер ничего — с 14.04 (коммит fcb06c2) и ни разу не менялся. Оператор был
+  // уверен, что закрыл смену; в БД она оставалась active навсегда. Отсюда шесть
+  // смен, висящих с 26 апреля, и всего 4 ShiftReport за историю: отчёт создаётся
+  // только внутри PUT /api/workstation/shift, который никто не вызывал.
+  // Теперь закрываем по-настоящему и показываем итог, а при ошибке — ошибку.
   const handleEndBoxShift = async (boxNumber: number) => {
     setIsEndingShift(true);
     setEndingBox(boxNumber);
     try {
+      // Спрашиваем сервер, какая смена открыта именно в ЭТОМ боксе.
+      // sessionStorage тут не источник правды: ключ один на оба бокса.
+      const stateResponse = await fetch('/api/workstation/shift');
+      if (!stateResponse.ok) {
+        toast({
+          title: 'Смена НЕ закрыта',
+          description: 'Не удалось получить состояние смен. Попробуйте ещё раз.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const state = await stateResponse.json();
+      const boxState = boxNumber === 2 ? state?.box2 : state?.box1;
+      const shiftId: string | null = boxState?.shiftId ?? null;
+
+      if (!shiftId || !boxState?.isShiftActive) {
+        toast({
+          title: `Бокс ${boxNumber}: открытой смены нет`,
+          description: Array.isArray(state?.orphanActive) && state.orphanActive.length > 0
+            ? `Закрывать нечего. Есть незакрытые смены прошлых дней (${state.orphanActive.length}) — их закрывает владелец в админке.`
+            : 'Закрывать нечего — смена в этом боксе не начиналась.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const response = await fetch('/api/workstation/shift', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftId }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        toast({
+          title: 'Смена НЕ закрыта',
+          description: err?.error || `Сервер ответил ${response.status}. Смена осталась открытой.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const result = await response.json().catch(() => ({}));
+      const summary = result?.summary;
+
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('isShiftActive');
         sessionStorage.removeItem('activeShiftId');
         sessionStorage.removeItem('selectedEmployees');
       }
+
       toast({
-        title: `Бокс ${boxNumber} — смена завершена`,
-        description: 'Данные смены очищены. Следующая команда загрузится из графика.',
+        title: `Бокс ${boxNumber} — смена закрыта`,
+        description: summary
+          ? `Моек: ${summary.totalWashes ?? 0}, на сумму ${(summary.totalAmount ?? 0).toLocaleString('ru-RU')} ₽. Отчёт сохранён.`
+          : 'Отчёт по смене сохранён.',
       });
       window.location.href = '/kiosk';
     } catch (error) {
-      toast({ title: 'Ошибка', description: 'Не удалось завершить смену.', variant: 'destructive' });
+      toast({
+        title: 'Смена НЕ закрыта',
+        description: 'Нет связи с сервером. Смена осталась открытой, попробуйте ещё раз.',
+        variant: 'destructive',
+      });
     } finally {
       setIsEndingShift(false);
       setEndingBox(null);
@@ -66,26 +135,26 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
           </div>
 
           {/* Действия справа */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <BoxShiftButton
               boxNumber={1}
               isLoading={isEndingShift && endingBox === 1}
               disabled={isEndingShift}
-              onClick={() => handleEndBoxShift(1)}
+              onClick={() => setConfirmBox(1)}
             />
             <BoxShiftButton
               boxNumber={2}
               isLoading={isEndingShift && endingBox === 2}
               disabled={isEndingShift}
-              onClick={() => handleEndBoxShift(2)}
+              onClick={() => setConfirmBox(2)}
             />
-            <div className="mx-1 h-6 w-px bg-gray-200" />
+            <div className="mx-3 h-8 w-px bg-gray-200" />
             <button
-              onClick={logout}
-              className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 active:bg-red-100"
+              onClick={() => setConfirmLogout(true)}
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-lg px-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 active:bg-red-100"
               aria-label="Выход"
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <LogOut className="h-5 w-5" />
               <span className="hidden sm:inline">Выход</span>
             </button>
           </div>
@@ -137,6 +206,60 @@ export default function KioskLayout({ children }: { children: ReactNode }) {
           })}
         </div>
       </nav>
+
+      {/* 🔥 2026-08-09: подтверждение перед необратимым действием. Смену
+          закрывают мокрыми руками на телефоне у стены — промах по кнопке
+          стоил бы закрытой смены и отчёта, который уже не переоткрыть. */}
+      <AlertDialog open={confirmBox !== null} onOpenChange={(o) => { if (!o) setConfirmBox(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Завершить смену — Бокс {confirmBox}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Смена закроется, будет сохранён отчёт: касса, разбивка по оплатам,
+              чаевые, расход химии. <b>Отменить это будет нельзя.</b>
+              <br /><br />
+              Закрывайте, только когда бокс действительно закончил работу.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="min-h-[48px]">Нет, продолжаем работу</AlertDialogCancel>
+            <AlertDialogAction
+              className="min-h-[48px] bg-orange-600 hover:bg-orange-700"
+              onClick={() => {
+                const box = confirmBox;
+                setConfirmBox(null);
+                if (box) handleEndBoxShift(box);
+              }}
+            >
+              Да, завершить смену
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmLogout} onOpenChange={setConfirmLogout}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Выйти из терминала?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Откроется страница входа, и оформлять мойки на этом телефоне будет нельзя,
+              пока в терминал снова не войдут. Смены при этом не закрываются.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="min-h-[48px]">Нет, остаться</AlertDialogCancel>
+            <AlertDialogAction
+              className="min-h-[48px] bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                setConfirmLogout(false);
+                logout();
+              }}
+            >
+              Да, выйти
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -161,7 +284,7 @@ function BoxShiftButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition-all',
+        'flex min-h-[44px] min-w-[44px] items-center justify-center gap-1 rounded-lg px-2 text-xs font-semibold transition-all',
         'text-orange-700 hover:bg-orange-50 active:bg-orange-100',
         'disabled:opacity-40 disabled:cursor-not-allowed',
         isLoading && 'animate-pulse',
