@@ -63,6 +63,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     if (!existing) {
       return NextResponse.json({ error: 'Shift swap request not found' }, { status: 404 });
     }
+    // Удалить заявку может её автор или админ (ФИКС 2026-09-28: раньше — любой по id)
+    if (!isEmployeeAdmin(auth) && existing.requesterId !== auth.id) {
+      return NextResponse.json({ error: 'Можно удалить только свою заявку' }, { status: 403 });
+    }
 
     await deleteEntity('shiftSwapRequest', id);
     invalidateShiftSwapRequestsCache();
