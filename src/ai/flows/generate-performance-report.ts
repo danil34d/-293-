@@ -13,6 +13,7 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/server-auth';
+import type { WashEvent } from '@/types';
 import {
   getWashEventsData,
   getEmployeesData,
@@ -174,6 +175,13 @@ async function buildReportContext(periodStart: Date, periodEnd: Date): Promise<A
     byPaymentMethod[pm].revenue += w.totalAmount || 0;
   }
 
+  // 🔥 ФИКС 2026-09-28: у WashEvent нет полей aggregatorId/counterAgentId —
+  // клиент лежит в sourceId с префиксом agg_ / agent_ (см. washEventFromPrisma).
+  // Отчёт читал несуществующие поля: все мойки считались розницей, разбивки
+  // по агрегаторам и контрагентам всегда были пустыми.
+  const aggregatorIdOf = (w: WashEvent) => (w.sourceId?.startsWith('agg_') ? w.sourceId : undefined);
+  const counterAgentIdOf = (w: WashEvent) => (w.sourceId?.startsWith('agent_') ? w.sourceId : undefined);
+
   // By client type (retail / aggregator / counterAgent)
   const byClientType = {
     retail: { count: 0, revenue: 0 },
@@ -182,10 +190,10 @@ async function buildReportContext(periodStart: Date, periodEnd: Date): Promise<A
   };
   for (const w of currWashes) {
     const amt = w.totalAmount || 0;
-    if (w.counterAgentId) {
+    if (counterAgentIdOf(w)) {
       byClientType.counterAgent.count += 1;
       byClientType.counterAgent.revenue += amt;
-    } else if (w.aggregatorId) {
+    } else if (aggregatorIdOf(w)) {
       byClientType.aggregator.count += 1;
       byClientType.aggregator.revenue += amt;
     } else {
@@ -197,8 +205,9 @@ async function buildReportContext(periodStart: Date, periodEnd: Date): Promise<A
   // By aggregator (top by revenue)
   const aggregatorMap = new Map<string, { name: string; washes: number; revenue: number }>();
   for (const w of currWashes) {
-    if (!w.aggregatorId) continue;
-    const name = aggMap.get(w.aggregatorId) ?? w.aggregatorId;
+    const aggregatorId = aggregatorIdOf(w);
+    if (!aggregatorId) continue;
+    const name = aggMap.get(aggregatorId) ?? aggregatorId;
     const v = aggregatorMap.get(name) ?? { name, washes: 0, revenue: 0 };
     v.washes += 1;
     v.revenue += w.totalAmount || 0;
@@ -211,8 +220,9 @@ async function buildReportContext(periodStart: Date, periodEnd: Date): Promise<A
   // By counterAgent
   const ctaAccMap = new Map<string, { name: string; washes: number; revenue: number }>();
   for (const w of currWashes) {
-    if (!w.counterAgentId) continue;
-    const name = ctaMap.get(w.counterAgentId) ?? w.counterAgentId;
+    const counterAgentId = counterAgentIdOf(w);
+    if (!counterAgentId) continue;
+    const name = ctaMap.get(counterAgentId) ?? counterAgentId;
     const v = ctaAccMap.get(name) ?? { name, washes: 0, revenue: 0 };
     v.washes += 1;
     v.revenue += w.totalAmount || 0;
