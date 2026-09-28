@@ -11,6 +11,8 @@
 import 'dotenv/config';
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import { NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/server-auth';
 import {
   getWashEventsData,
   getEmployeesData,
@@ -417,5 +419,10 @@ const generatePerformanceReportFlow = ai.defineFlow(
 );
 
 export async function generatePerformanceReport(input: PerformanceReportInput): Promise<PerformanceReportOutput> {
+  // Это server action ('use server'): его можно вызвать POST-запросом с любой
+  // страницы, поэтому роль проверяем здесь, а не надеемся на UI (ФИКС 2026-09-28).
+  // Отчёт содержит выручку, расходы и прибыль — только владельцу.
+  const auth = requireAdmin();
+  if (auth instanceof NextResponse) throw new Error('Отчёт доступен только администратору');
   return generatePerformanceReportFlow(input);
 }

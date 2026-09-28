@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { DialogDescription } from "@/components/ui/dialog";
 import { EarningsChart } from "./EarningsChart";
 import { EmployeeCanistersCard } from "./EmployeeCanistersCard";
-import { getAllFinanceDataForEmployee } from "@/lib/data-loader";
+import { fetchJson } from "@/lib/fetch-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { CommentDialog } from "@/components/common/CommentDialog";
@@ -555,7 +555,7 @@ export function FinanceDashboard({ employee, initialData, embedded = false, onTr
         if (initialData) return; // Data was passed in, no need to fetch
         try {
             setDataLoadingError(null);
-            const data = await getAllFinanceDataForEmployee(employee.id);
+            const data = await fetchJson<AllData>(`/api/employees/${encodeURIComponent(employee.id)}/finance-data`);
             setAllData(data);
             setTransactions(data.initialTransactions);
         } catch (e: any) {

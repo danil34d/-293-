@@ -15,16 +15,10 @@ export async function GET(request: Request) {
 
   try {
     // Проверяем подпись
-    let rawPayload: string | null = verifyCookieValue(token.value);
-
-    // Обратная совместимость со старыми неподписанными cookie
+    // Неподписанную куку не принимаем (ФИКС 2026-09-28, см. server-auth.ts)
+    const rawPayload = verifyCookieValue(token.value);
     if (!rawPayload) {
-      try {
-        JSON.parse(token.value);
-        rawPayload = token.value;
-      } catch {
-        return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-      }
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
     const parsed = JSON.parse(rawPayload) as Partial<Employee>;

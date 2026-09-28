@@ -1,4 +1,7 @@
-'use server';
+// Серверный модуль. НЕ 'use server': с этой директивой каждая экспортируемая
+// функция становилась server action, которую можно вызвать POST-запросом
+// с любой страницы (включая публичную /login) в обход проверок ролей
+// (ФИКС 2026-09-28). Клиентские компоненты ходят в данные только через API.
 
 import { prisma } from '@/lib/db/prisma';
 import { fkConnect, createStockMovement, parseEnum, withoutDeviceEmployees } from './prisma-helpers';

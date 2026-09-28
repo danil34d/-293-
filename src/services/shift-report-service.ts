@@ -1,4 +1,5 @@
-'use server';
+// Серверный модуль: не 'use server' — иначе экспорты становятся server actions
+// без проверки ролей (ФИКС 2026-09-28, подробности в pg-adapter.ts).
 
 import type { Shift } from '@/types';
 import { getEmployeesData, getWashEventsData } from '@/lib/data';

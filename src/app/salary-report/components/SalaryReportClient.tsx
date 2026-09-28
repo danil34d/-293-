@@ -8,7 +8,7 @@ import type { Employee, SalaryScheme, WashEvent, EmployeeTransaction, SalaryRepo
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, FilePieChart, TrendingUp, Wallet, AlertTriangle, Trophy, EyeOff, Eye, Car, Building2 } from 'lucide-react';
-import { getEmployeesData, getWashEventsData, getSalarySchemesData, getAllEmployeeTransactions, getViolationsData } from "@/lib/data-loader";
+import { fetchJson } from "@/lib/fetch-json";
 import { SalaryReportRow } from "./SalaryReportRow";
 import { generateSalaryReport } from "@/services/salary-calculator";
 import { Table, TableBody, TableHeader, TableHead, TableRow } from "@/components/ui/table";
@@ -89,13 +89,18 @@ export function SalaryReportClient() {
     const fetchAndProcessData = async () => {
         setIsLoading(true);
         try {
-            const [allEmployeesRaw, rawWashEvents, allSchemes, allTransactions, allViolations] = await Promise.all([
-                getEmployeesData(),
-                getWashEventsData(),
-                getSalarySchemesData(),
-                getAllEmployeeTransactions(),
-                getViolationsData(),
-            ]);
+            const source = await fetchJson<{
+                employees: Employee[];
+                washEvents: WashEvent[];
+                schemes: SalaryScheme[];
+                transactions: EmployeeTransaction[];
+                violations: any[];
+            }>('/api/salary-report/source');
+            const allEmployeesRaw = source.employees;
+            const rawWashEvents = source.washEvents;
+            const allSchemes = source.schemes;
+            const allTransactions = source.transactions;
+            const allViolations = source.violations;
 
             // Phase 57d: фильтрация моек по ourCompanyId. "all" = без фильтра.
             // ВАЖНО: только мойки с этим ourCompanyId попадают в расчёт ЗП — позволяет видеть

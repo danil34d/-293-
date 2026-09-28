@@ -1,4 +1,5 @@
-'use server';
+// Серверный модуль: не 'use server' — иначе экспорты становятся server actions
+// без проверки ролей (ФИКС 2026-09-28, подробности в pg-adapter.ts).
 
 /**
  * Universal write helpers that dispatch to either JSON files or PostgreSQL

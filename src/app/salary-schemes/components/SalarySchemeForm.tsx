@@ -9,7 +9,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Save, X, Percent, Wallet, Loader2, ListTodo, Library, Info, Globe, Search } from "lucide-react";
-import type { SalaryScheme, PriceListItem, Aggregator, CounterAgent, RateSource, SalaryRate } from "@/types";
+import type { SalaryScheme, PriceListItem, Aggregator, CounterAgent, RateSource, SalaryRate, RetailPriceConfig } from "@/types";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHeader, TableHead, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { getRetailPriceConfig, getAggregatorsData, getCounterAgentsData } from "@/lib/data-loader";
+import { fetchJson } from "@/lib/fetch-json";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 
@@ -179,9 +179,9 @@ export function SalarySchemeForm({ initialData, schemeId }: SalarySchemeFormProp
       setIsLoadingSources(true);
       try {
         const [retailData, aggregators, agents] = await Promise.all([
-            getRetailPriceConfig(),
-            getAggregatorsData(),
-            getCounterAgentsData()
+            fetchJson<RetailPriceConfig>('/api/retail-price-config'),
+            fetchJson<Aggregator[]>('/api/aggregators'),
+            fetchJson<CounterAgent[]>('/api/counter-agents?includeArchived=true')
         ]);
         
         const options: RateSourceOption[] = [];

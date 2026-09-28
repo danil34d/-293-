@@ -11,15 +11,12 @@ function parseEmployeeFromCookie(): Employee | null {
   try {
     // Проверяем HMAC-подпись cookie
     const payload = verifyCookieValue(authCookie.value);
-    if (!payload) {
-      // Попробуем старый формат (без подписи) для обратной совместимости
-      // при следующем логине cookie будет подписан
-      const parsed = JSON.parse(authCookie.value) as Partial<Employee>;
-      if (!parsed || typeof parsed.id !== 'string' || typeof parsed.username !== 'string') {
-        return null;
-      }
-      return parsed as Employee;
-    }
+    // 🔥 ФИКС 2026-09-28: убран откат на неподписанную куку «для обратной
+    // совместимости». Middleware подпись на публичных путях (/login, /api/auth/*,
+    // /api/wallboard…) не проверяет, и кука {"username":"admin","role":"admin"}
+    // без подписи проходила здесь как админ. Старые неподписанные куки
+    // просто разлогинятся.
+    if (!payload) return null;
 
     const parsed = JSON.parse(payload) as Partial<Employee>;
     if (!parsed || typeof parsed.id !== 'string' || typeof parsed.username !== 'string') {
