@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit --incremental false -p tsconfig.typecheck.json",
+    "preview:reconciliation": "node scripts/reconciliation-preview/server.cjs",
+    "test:reconciliation": "node --experimental-strip-types scripts/test-reconciliation-demo.mjs && node --experimental-strip-types scripts/test-reconciliation-storage.mjs",
     "bot:telegram": "node telegram-bot/worker.mjs",
     "migrate:json-v2:dry-run": "node scripts/migrations/json-v2/index.mjs --mode=dry-run",
     "migrate:json-v2:apply": "node scripts/migrations/json-v2/index.mjs --mode=apply",

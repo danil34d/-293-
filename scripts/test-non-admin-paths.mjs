@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { isNonAdminAppPath } from '../src/lib/public-routes.ts';
 
 const allowed = ['/employee', '/employee/finance', '/kiosk', '/kiosk/order', '/login', '/wallboard', '/status', '/k'];
-const admin = ['/', '/employees', '/employees/emp_1/edit', '/expenses', '/dashboard', '/kiosks', '/kx', '/workstation', '/wash-log'];
+const admin = ['/', '/employees', '/employees/emp_1/edit', '/expenses', '/dashboard', '/kiosks', '/kx', '/workstation', '/wash-log', '/reconciliation/demo'];
 
 for (const p of allowed) assert.equal(isNonAdminAppPath(p), true, `${p} должен быть доступен не-админу`);
 // Главный регресс: /employees (список с паролями) раньше считался страницей сотрудника
