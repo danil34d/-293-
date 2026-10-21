@@ -8,6 +8,19 @@ const root = path.resolve(__dirname, '../..');
 const output = path.join(root, '.next-runtime/p06-preview');
 const port = Number(process.env.P06_PREVIEW_PORT || 3216);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Некорректный P06_PREVIEW_PORT');
+// Optional explicit local snapshot. No database access or connection to cameras.
+let snapshotMarkup = '';
+let snapshotRoute = '';
+if (process.env.P06_SNAPSHOT_FILE) {
+  const snapshotPath = path.resolve(process.env.P06_SNAPSHOT_FILE);
+  const stat = fs.statSync(snapshotPath);
+  if (!stat.isFile() || stat.size > 20 * 1024 * 1024) throw new Error('Некорректный размер локального среза');
+  const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8').replace(/^\uFEFF/, ''));
+  if (!snapshot.dataset || !/^snapshot-\d{4}-\d{2}-\d{2}-[a-z0-9-]+$/.test(snapshot.dataset.shiftId) || !snapshot.presentation) throw new Error('Некорректный локальный срез');
+  snapshotRoute = '/reconciliation/' + snapshot.dataset.shiftId;
+  const safe = JSON.stringify(snapshot).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  snapshotMarkup = '<script id="reconciliation-snapshot" type="application/json">' + safe + '</script>';
+}
 
 const build = compiler.webpack({
   mode: 'development',
@@ -41,9 +54,10 @@ build.run((err, stats) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'");
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
-    if (url.pathname === '/' || url.pathname === '/reconciliation/demo') {
+    if (url.pathname === '/' || url.pathname === '/reconciliation/demo' || (snapshotRoute && url.pathname === snapshotRoute)) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.end(req.method === 'HEAD' ? undefined : html);
+      const content = url.pathname === snapshotRoute ? html.replace('<title>Сверка смены — тестовый виджет</title>', '<title>Сверка смены — локальный срез</title>').replace('<script defer', snapshotMarkup + '<script defer') : html;
+      res.end(req.method === 'HEAD' ? undefined : content);
       return;
     }
     const asset = assets[url.pathname];
@@ -53,5 +67,9 @@ build.run((err, stats) => {
     fs.createReadStream(asset[0]).pipe(res);
   });
   server.on('error', error => { console.error(error.message); process.exitCode = 1; });
-  server.listen(port, '127.0.0.1', () => console.log(`P06: http://127.0.0.1:${port}/ — только тестовые данные, без БД и камер.`));
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`P06 demo: http://127.0.0.1:${port}/`);
+    if (snapshotRoute) console.log(`P06 snapshot: http://127.0.0.1:${port}${snapshotRoute}`);
+    console.log('Локальный просмотр, без записи в базы данных и без управления камерами.');
+  });
 });

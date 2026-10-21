@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2020", "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx", "module": "ESNext", "moduleResolution": "Bundler",
+    "strict": true, "noEmit": true, "esModuleInterop": true, "skipLibCheck": true,
+    "types": ["node", "react", "react-dom"]
+  },
+  "include": ["src/lib/reconciliation/*.ts", "src/components/reconciliation/*.tsx", "scripts/reconciliation-preview/entry.tsx"]
+}

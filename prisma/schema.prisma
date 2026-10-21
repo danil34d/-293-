@@ -786,3 +786,40 @@ model Violation {
   @@index([date])
   @@index([type])
 }
+
+/// Phase 62P: результаты сверки отделены от учёта моек и финансов.
+model ReconciliationShift {
+  id        String @id
+  date      String
+  period    String
+  revision  Int
+  document  Json
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  history   ReconciliationRevision[]
+  paperImages ReconciliationPaperImage[]
+
+  @@unique([date, period])
+}
+
+model ReconciliationRevision {
+  shiftId   String
+  revision  Int
+  actorId   String
+  action    String
+  document  Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  shift     ReconciliationShift @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+
+  @@id([shiftId, revision])
+}
+
+model ReconciliationPaperImage {
+  id        String @id
+  shiftId   String
+  mime      String
+  bytes     Bytes
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  shift     ReconciliationShift @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+
+  @@index([shiftId])
+}

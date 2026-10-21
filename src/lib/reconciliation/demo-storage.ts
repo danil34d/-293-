@@ -15,15 +15,16 @@ export interface DemoStorageLocks {
 export async function withDemoStorageLock<T>(
   locks: DemoStorageLocks | null | undefined,
   action: () => T | Promise<T>,
+  key: string = DEMO_STORAGE_KEY,
 ): Promise<T> {
   if (!locks || typeof locks.request !== 'function') {
     throw new Error('Браузер не поддерживает безопасную блокировку сохранения между вкладками. Запись отключена: откройте прототип в актуальном браузере по localhost или HTTPS.');
   }
-  return locks.request<T>(DEMO_STORAGE_KEY, action);
+  return locks.request<T>(key, action);
 }
 
-export function loadDemo(storage: DemoStorage, validate: (value: unknown) => DemoState): DemoState | null {
-  const raw = storage.getItem(DEMO_STORAGE_KEY);
+export function loadDemo(storage: DemoStorage, validate: (value: unknown) => DemoState, key: string = DEMO_STORAGE_KEY): DemoState | null {
+  const raw = storage.getItem(key);
   if (raw === null) return null;
   try {
     return validate(JSON.parse(raw));
@@ -38,14 +39,15 @@ export function persistDemo(
   next: DemoState,
   expectedRevision: number,
   validate: (value: unknown) => DemoState,
+  key: string = DEMO_STORAGE_KEY,
 ): void {
-  const current = loadDemo(storage, validate);
+  const current = loadDemo(storage, validate, key);
   if ((current?.revision ?? 0) !== expectedRevision) {
     throw new Error('Смена изменена в другом окне. Загрузите сохранённую версию перед следующей записью.');
   }
   const payload = JSON.stringify(validate(next));
-  storage.setItem(DEMO_STORAGE_KEY, payload);
-  if (storage.getItem(DEMO_STORAGE_KEY) !== payload) {
+  storage.setItem(key, payload);
+  if (storage.getItem(key) !== payload) {
     throw new Error('Не удалось подтвердить сохранение. Введённые поля остаются на экране.');
   }
 }

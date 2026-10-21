@@ -19,6 +19,16 @@ const adapter = usePostgres
   ? require('./pg-adapter')
   : require('@/lib/data-loader');
 
+// Сверка рабочих смен хранится только в PostgreSQL; учебный прототип имеет отдельное хранилище.
+type ReconciliationStore = ReturnType<typeof import('../reconciliation/postgres-store').createPostgresReconciliationStore>;
+const reconciliationNeedsPostgres = async (): Promise<never> => { throw new Error('Для рабочей сверки требуется DATA_SOURCE=postgres.'); };
+export const getReconciliation: ReconciliationStore['read'] = adapter.getReconciliation ?? reconciliationNeedsPostgres;
+export const saveReconciliation: ReconciliationStore['write'] = adapter.saveReconciliation ?? reconciliationNeedsPostgres;
+export const getReconciliationHistory: ReconciliationStore['history'] = adapter.getReconciliationHistory ?? reconciliationNeedsPostgres;
+export const getReconciliations: ReconciliationStore['list'] = adapter.getReconciliations ?? reconciliationNeedsPostgres;
+export const getReconciliationPaperImage: ReconciliationStore['readPaperImage'] = adapter.getReconciliationPaperImage ?? reconciliationNeedsPostgres;
+export const saveReconciliationPaperImage: ReconciliationStore['writePaperImage'] = adapter.saveReconciliationPaperImage ?? reconciliationNeedsPostgres;
+
 // ─── Read functions ─────────────────────────────────────────
 
 export const getWashEventsData: () => Promise<WashEvent[]> = adapter.getWashEventsData;
