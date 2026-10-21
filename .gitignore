@@ -63,3 +63,7 @@ Thumbs.db
 
 # --- Бэкапы сторонних инструментов ---
 .codex-backup/
+
+# Изолированные проверки виджета: временная БД, архивы и журналы.
+/.tmp/reconciliation-*/
+/.tmp/reconciliation-*.txt

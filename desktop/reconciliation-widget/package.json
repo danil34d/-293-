@@ -1,0 +1,14 @@
+{
+  "name": "zorin-reconciliation-widget",
+  "productName": "ZORIN Сверка смены",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Окно сверки смены ZORIN",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test.cjs",
+    "package": "electron-packager . ZorinReconciliation --platform=win32 --arch=x64 --out=dist --overwrite --prune --ignore=^/test.cjs$"
+  },
+  "devDependencies": { "electron": "45.0.0", "@electron/packager": "20.3.0" }
+}

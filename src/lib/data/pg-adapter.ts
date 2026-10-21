@@ -4,6 +4,7 @@
 // (ФИКС 2026-09-28). Клиентские компоненты ходят в данные только через API.
 
 import { prisma } from '@/lib/db/prisma';
+export { getReconciliation, saveReconciliation, getReconciliationHistory, getReconciliations, getReconciliationPaperImage, saveReconciliationPaperImage } from './pg-reconciliation';
 import { fkConnect, createStockMovement, parseEnum, withoutDeviceEmployees } from './prisma-helpers';
 import type {
   WashEvent, Aggregator, CounterAgent, Employee, SalaryScheme,

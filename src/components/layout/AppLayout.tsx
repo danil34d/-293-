@@ -103,6 +103,9 @@ export function AppLayout({ children, newServicesCount = 0 }: { children: ReactN
     );
   }
 
+  // Самостоятельное окно сверки, права владельца уже проверены выше и на сервере.
+  if (pathname === '/reconciliation') return <>{children}</>;
+
   // For the main manager layout
   return (
     <div className="flex min-h-screen bg-gray-50">
