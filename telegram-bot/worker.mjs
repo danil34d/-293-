@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import process from 'process';
 import dotenv from 'dotenv';
+import { createJsonPersister, dateKey, telegramTimeoutMs } from './runtime-io.mjs';
 import {
   handleWashCallback,
   processWashPhotoMessage,
@@ -23,6 +24,7 @@ const INTERNAL_SECRET = process.env.TELEGRAM_BOT_SECRET || '';
 const APP_BASE_URL = process.env.TELEGRAM_APP_BASE_URL || 'http://127.0.0.1:3000';
 const SCAN_INTERVAL_SEC = Number(process.env.TELEGRAM_SCAN_INTERVAL_SEC || '30');
 const TG_TIMEOUT_SEC = Number(process.env.TELEGRAM_API_TIMEOUT_SEC || '50');
+const BOT_TIMEZONE = process.env.TELEGRAM_TIMEZONE || 'Europe/Moscow';
 const EMPLOYEE_MAP_RAW = process.env.TELEGRAM_EMPLOYEE_CHAT_MAP_JSON || '{}';
 const ADMIN_CHAT_IDS = String(process.env.TELEGRAM_ADMIN_CHAT_IDS || '')
   .split(',')
@@ -50,10 +52,11 @@ let isScanning = false;
 let isReporting = false;
 let employeeChatMap = new Map();
 let chatToEmployeeMap = new Map();
+const persistJsonFiles = createJsonPersister();
 
 function createMetrics() {
   const now = new Date();
-  const date = now.toISOString().slice(0, 10);
+  const date = getTodayKey();
   return {
     date,
     startedAt: now.toISOString(),
@@ -64,6 +67,8 @@ function createMetrics() {
     commandsHandled: 0,
     callbacksHandled: 0,
     apiErrors: 0,
+    lastPollSuccessAt: null,
+    lastInternalApiSuccessAt: null,
   };
 }
 
@@ -161,7 +166,7 @@ if (!Number.isFinite(TG_TIMEOUT_SEC) || TG_TIMEOUT_SEC < 1 || TG_TIMEOUT_SEC > 5
 }
 
 function getTodayKey() {
-  return new Date().toISOString().slice(0, 10);
+  return dateKey(BOT_TIMEZONE);
 }
 
 function getCurrentMonthKey() {
@@ -184,10 +189,6 @@ async function readJsonSafe(filePath, fallback) {
   }
 }
 
-async function writeJson(filePath, data) {
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
-}
-
 async function loadRuntimeState() {
   await ensureRuntimeDir();
   state = await readJsonSafe(STATE_PATH, structuredClone(DEFAULT_STATE));
@@ -197,12 +198,19 @@ async function loadRuntimeState() {
   if (!state.lastSentEventIds || typeof state.lastSentEventIds !== 'object') state.lastSentEventIds = {};
   if (!state.pollingOffset || Number.isNaN(Number(state.pollingOffset))) state.pollingOffset = 0;
   if (!state.lastDailyReportDate) state.lastDailyReportDate = '';
+  const savedMetrics = await readJsonSafe(metricsPathFor(metrics.date), null);
+  if (savedMetrics?.date === metrics.date) {
+    metrics = { ...metrics, ...savedMetrics };
+  }
+  metrics.lastStartedAt = new Date().toISOString();
 }
 
 async function persistRuntimeState() {
-  await writeJson(STATE_PATH, state);
-  await writeJson(CONVERSATIONS_PATH, conversations);
-  await writeJson(metricsPathFor(metrics.date), metrics);
+  await persistJsonFiles([
+    [STATE_PATH, state],
+    [CONVERSATIONS_PATH, conversations],
+    [metricsPathFor(metrics.date), metrics],
+  ]);
 }
 
 function ensureMetricsDate() {
@@ -218,6 +226,7 @@ async function callTelegramApi(method, payload = {}) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(telegramTimeoutMs(method, TG_TIMEOUT_SEC)),
   });
 
   let data = null;
@@ -320,6 +329,7 @@ async function callInternalApi(routePath, options = {}) {
       }
 
       if (response.ok && payload && payload.ok === true) {
+        metrics.lastInternalApiSuccessAt = new Date().toISOString();
         return payload.data;
       }
 
@@ -340,7 +350,9 @@ async function fetchTelegramPhotoBase64(fileId) {
     throw new Error('Telegram file path is empty');
   }
 
-  const response = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`);
+  const response = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`, {
+    signal: AbortSignal.timeout(30000),
+  });
   if (!response.ok) {
     throw new Error(`Failed to download telegram file: ${response.status}`);
   }
@@ -1857,6 +1869,7 @@ async function updatesLoop() {
         offset: state.pollingOffset,
         allowed_updates: ['message', 'callback_query'],
       });
+      metrics.lastPollSuccessAt = new Date().toISOString();
 
       for (const update of updates) {
         const nextOffset = Number(update.update_id) + 1;
